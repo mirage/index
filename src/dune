@@ -1,0 +1,5 @@
+(library
+ (public_name deudex)
+ (name deudex)
+ (modules_without_implementation io)
+ (libraries bloomf))
