@@ -34,7 +34,7 @@ let random_string () = String.init string_size (fun _i -> random_char ())
 
 module Index = Deudex_unix.Make (Key) (Value)
 
-let index_name = "hello.index"
+let index_name = "hello"
 
 let log_size = 5
 

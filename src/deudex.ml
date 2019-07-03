@@ -109,9 +109,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let ( // ) = Filename.concat
 
-  let log_path root = root // "store.log"
+  let log_path root = root // "index.log"
 
-  let index_path root = root // "index" // "store.index"
+  let index_path root = root // "index" // "index"
 
   let map_io config f io =
     let max_offset = IO.offset io in
