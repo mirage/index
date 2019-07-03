@@ -1,7 +1,7 @@
 module type S = sig
   type t
 
-  val v : string -> t
+  val v : ?read_only:bool -> string -> t
 
   val name : t -> string
 

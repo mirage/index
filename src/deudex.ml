@@ -35,6 +35,7 @@ module type S = sig
 
   val v :
     ?fresh:bool ->
+    ?read_only:bool ->
     log_size:int ->
     page_size:int ->
     pool_size:int ->
@@ -50,6 +51,8 @@ module type S = sig
 
   val flush : t -> unit
 end
+
+exception RO_Not_Allowed
 
 module Make (K : Key) (V : Value) (IO : IO) = struct
   type key = K.t
@@ -81,7 +84,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     log_size : int;
     page_size : int;
     pool_size : int;
-    fan_out_size : int
+    fan_out_size : int;
+    read_only : bool
   }
 
   type t = {
@@ -129,19 +133,21 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     (aux [@tailcall]) 0L
 
-  let v ?(fresh = false) ~log_size ~page_size ~pool_size ~fan_out_size root =
+  let v ?(fresh = false) ?(read_only = false) ~log_size ~page_size ~pool_size
+      ~fan_out_size root =
     let config =
       { log_size = log_size * entry_size;
         page_size = page_size * entry_size;
         pool_size;
-        fan_out_size
+        fan_out_size;
+        read_only
       }
     in
     let log_path = log_path root in
     let index_path = index_path root in
     try
       let t = Hashtbl.find files root in
-      if fresh then clear t;
+      if fresh then if read_only then raise RO_Not_Allowed else clear t;
       t
     with Not_found ->
       let entries = Bloomf.create ~error_rate:0.01 100_000_000 in
@@ -151,7 +157,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Array.init config.fan_out_size (fun i ->
             let index_path = Printf.sprintf "%s.%d" index_path i in
             let index = IO.v index_path in
-            if fresh then IO.clear index;
+            if read_only then raise RO_Not_Allowed else IO.clear index;
             map_io config (fun e -> Bloomf.add entries e.key) index;
             index )
       in
@@ -315,6 +321,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Array.iter (fun p -> Pool.clear p) t.pages
 
   let append t key value =
+    if t.config.read_only then raise RO_Not_Allowed;
     let entry = { key; value } in
     append_entry t.log entry;
     Tbl.add t.log_mem key entry;

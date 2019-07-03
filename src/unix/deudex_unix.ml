@@ -160,19 +160,21 @@ module IO : Deudex.IO = struct
       Hashtbl.add buffers file buf;
       buf
 
-  let v file =
+  let v ?(read_only = false) file =
     let v ~offset raw =
       { file; offset; raw; buf = buffer file; flushed = header ++ offset }
     in
+    let mode = Unix.(if read_only then O_RDONLY else O_RDWR) in
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
     | false ->
-        let x = Unix.openfile file Unix.[ O_CREAT; O_RDWR ] 0o644 in
+        if read_only then raise Deudex.RO_Not_Allowed;
+        let x = Unix.openfile file Unix.[ O_CREAT; mode ] 0o644 in
         let raw = Raw.v x in
         Raw.unsafe_set_offset raw 0L;
         v ~offset:0L raw
     | true ->
-        let x = Unix.openfile file Unix.[ O_EXCL; O_RDWR ] 0o644 in
+        let x = Unix.openfile file Unix.[ O_EXCL; mode ] 0o644 in
         let raw = Raw.v x in
         let offset = Raw.unsafe_get_offset raw in
         v ~offset raw

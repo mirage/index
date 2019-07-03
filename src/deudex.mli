@@ -24,6 +24,8 @@ end
 
 module type IO = Io.S
 
+exception RO_Not_Allowed
+
 module type S = sig
   type t
 
@@ -35,6 +37,7 @@ module type S = sig
 
   val v :
     ?fresh:bool ->
+    ?read_only:bool ->
     log_size:int ->
     page_size:int ->
     pool_size:int ->
