@@ -51,6 +51,8 @@ module type S = sig
 
   val append : t -> key -> value -> unit
 
+  val length : t -> int
+
   val flush : t -> unit
 end
 
