@@ -1,0 +1,4 @@
+(library
+ (public_name deudex.unix)
+ (name deudex_unix)
+ (libraries deudex))
