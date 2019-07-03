@@ -24,8 +24,39 @@ end
 
 module type IO = Io.S
 
+module type S = sig
+  type t
+
+  type key
+
+  type value
+
+  val clear : t -> unit
+
+  val v :
+    ?fresh:bool ->
+    log_size:int ->
+    page_size:int ->
+    pool_size:int ->
+    fan_out_size:int ->
+    string ->
+    t
+
+  val find : t -> key -> value option
+
+  val mem : t -> key -> bool
+
+  val append : t -> key -> value -> unit
+
+  val flush : t -> unit
+end
+
 module Make (K : Key) (V : Value) (IO : IO) = struct
-  type entry = { key : K.t; value : V.t }
+  type key = K.t
+
+  type value = V.t
+
+  type entry = { key : key; value : value }
 
   let entry_size = K.encoded_size + V.encoded_size
 
@@ -60,7 +91,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     index : IO.t array;
     log : IO.t;
     log_mem : entry Tbl.t;
-    entries : K.t Bloomf.t
+    entries : key Bloomf.t
   }
 
   let clear t =

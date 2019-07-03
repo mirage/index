@@ -24,8 +24,12 @@ end
 
 module type IO = Io.S
 
-module Make (K : Key) (V : Value) (IO : IO) : sig
+module type S = sig
   type t
+
+  type key
+
+  type value
 
   val clear : t -> unit
 
@@ -38,11 +42,14 @@ module Make (K : Key) (V : Value) (IO : IO) : sig
     string ->
     t
 
-  val find : t -> K.t -> V.t option
+  val find : t -> key -> value option
 
-  val mem : t -> K.t -> bool
+  val mem : t -> key -> bool
 
-  val append : t -> K.t -> V.t -> unit
+  val append : t -> key -> value -> unit
 
   val flush : t -> unit
 end
+
+module Make (K : Key) (V : Value) (IO : IO) :
+  S with type key = K.t and type value = V.t
