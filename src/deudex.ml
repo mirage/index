@@ -74,7 +74,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let decode_entry bytes off =
     let string = Bytes.unsafe_to_string bytes in
     let key = K.decode string off in
-    let value = V.decode string (off + entry_size) in
+    let value = V.decode string (off + K.encoded_size) in
     { key; value }
 
   module Tbl = Hashtbl.Make (K)
