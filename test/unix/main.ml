@@ -1,5 +1,7 @@
 let string_size = 20
 
+let index_size = 100
+
 module Key = struct
   (* XXX Generate only 10 long strings here. *)
   type t = string
@@ -47,11 +49,18 @@ let fan_out_size = 16
 let t =
   Index.v ~fresh:true ~log_size ~page_size ~pool_size ~fan_out_size index_name
 
-let l = List.init 50 (fun _ -> (random_string (), random_string ()))
+let l = List.init index_size (fun _ -> (random_string (), random_string ()))
 
 let () = List.iter (fun (k, v) -> Index.append t k v) l
 
-let test_find t =
+let rec random_new_string () =
+  let r = random_string () in
+  try
+    let _ = List.assoc r l in
+    random_new_string ()
+  with Not_found -> r
+
+let test_find_present t =
   List.iter
     (fun (k, v) ->
       match Index.find t k with
@@ -61,17 +70,53 @@ let test_find t =
       | Some s -> Alcotest.(check bool) "" true (String.equal s v) )
     (List.rev l)
 
-let test_fresh_find () = test_find t
+let test_find_absent t =
+  let rec loop i =
+    if i = 0 then ()
+    else
+      let k = random_new_string () in
+      ( match Index.find t k with
+      | None -> ()
+      | Some _ ->
+          Alcotest.fail (Printf.sprintf "Absent value was found: %s." k) );
+      loop (i - 1)
+  in
+  loop index_size
 
-let test_find_on_restart () =
-  test_find
+let find_present_live () = test_find_present t
+
+let find_absent_live () = test_find_absent t
+
+let find_present_restart () =
+  test_find_present
     (Index.v ~fresh:false ~log_size ~page_size ~pool_size ~fan_out_size
        index_name)
 
+let find_absent_restart () =
+  test_find_absent
+    (Index.v ~fresh:false ~log_size ~page_size ~pool_size ~fan_out_size
+       index_name)
+
+let length_live () = Alcotest.(check int) "" index_size (Index.length t)
+
+let length_restart () =
+  let t =
+    Index.v ~fresh:false ~log_size ~page_size ~pool_size ~fan_out_size
+      index_name
+  in
+  Alcotest.(check int) "" index_size (Index.length t)
+
+let live_tests =
+  [ ("find (present)", `Quick, find_present_live);
+    ("find (absent)", `Quick, find_absent_live);
+    ("length", `Quick, length_live)
+  ]
+
+let restart_tests =
+  [ ("find (present)", `Quick, find_present_restart);
+    ("find (absent)", `Quick, find_absent_restart);
+    ("length", `Quick, length_restart)
+  ]
+
 let () =
-  Alcotest.run "deudex"
-    [ ( "deudex",
-        [ ("Find when element was added", `Quick, test_fresh_find);
-          ("Find when element was added (on restart)", `Quick, test_fresh_find)
-        ] )
-    ]
+  Alcotest.run "deudex" [ ("live", live_tests); ("on restart", restart_tests) ]
