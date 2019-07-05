@@ -292,7 +292,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     (go [@tailcall]) None log
 
   let merge t =
-    IO.sync t.log;
     let log = fan_out_cache t t.config.fan_out_size in
     let tmp_path = t.root // "store.index.tmp" in
     Array.iteri
@@ -314,5 +313,5 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
     then merge t
 
-  let flush t = IO.sync t.log
+  let flush t = IO.flush t.log
 end

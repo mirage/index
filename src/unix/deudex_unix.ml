@@ -82,7 +82,7 @@ module IO : Deudex.IO = struct
 
   let header = 8L
 
-  let sync t =
+  let flush t =
     let buf = Buffer.contents t.buf in
     let offset = t.offset in
     Buffer.clear t.buf;
@@ -98,7 +98,7 @@ module IO : Deudex.IO = struct
       t.flushed <- offset ++ header )
 
   let rename ~src ~dst =
-    sync src;
+    flush src;
     Unix.close dst.raw.fd;
     Unix.rename src.file dst.file;
     dst.offset <- src.offset;
@@ -111,7 +111,7 @@ module IO : Deudex.IO = struct
     Buffer.add_string t.buf buf;
     let len = Int64.of_int (String.length buf) in
     t.offset <- t.offset ++ len;
-    if t.offset -- t.flushed > auto_flush_limit then sync t
+    if t.offset -- t.flushed > auto_flush_limit then flush t
 
   let read t ~off buf =
     assert (header ++ off <= t.flushed);

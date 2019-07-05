@@ -11,7 +11,7 @@ module type S = sig
 
   val clear : t -> unit
 
-  val sync : t -> unit
+  val flush : t -> unit
 
   val rename : src:t -> dst:t -> unit
 
