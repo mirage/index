@@ -31,8 +31,6 @@ module type S = sig
 
   type value
 
-  val clear : t -> unit
-
   val v :
     ?fresh:bool ->
     ?read_only:bool ->
@@ -43,13 +41,13 @@ module type S = sig
     string ->
     t
 
+  val clear : t -> unit
+
   val find : t -> key -> value option
 
   val mem : t -> key -> bool
 
-  val append : t -> key -> value -> unit
-
-  val length : t -> int
+  val replace : t -> key -> value -> unit
 
   val flush : t -> unit
 end
@@ -268,7 +266,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         | (k, v) :: r ->
             let last, rst =
               if K.equal e.key k then (
-                append_entry tmp e;
+                append_entry tmp v;
                 (None, r) )
               else
                 let hashed_e = K.hash e.key in
@@ -322,25 +320,14 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Tbl.clear t.log_mem;
     Array.iter (fun p -> Pool.clear p) t.pages
 
-  let append t key value =
+  let replace t key value =
     if t.config.read_only then raise RO_Not_Allowed;
     let entry = { key; value } in
     append_entry t.log entry;
-    Tbl.add t.log_mem key entry;
+    Tbl.replace t.log_mem key entry;
     Bloomf.add t.entries key;
     if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
     then merge t
-
-  let length t =
-    let size =
-      Array.fold_left
-        (fun acc io ->
-          let off = IO.offset io in
-          Int64.add acc (Int64.div off entry_sizeL) )
-        (Int64.of_int (Tbl.length t.log_mem))
-        t.index
-    in
-    Int64.to_int size
 
   let flush t = IO.sync t.log
 end

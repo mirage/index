@@ -88,14 +88,14 @@ module type S = sig
   (** [clear t] clears [t] so that there are no more bindings in it. *)
 
   val find : t -> key -> value option
+  (** [find t k] is the last binding of [k] in [t], if any. *)
 
   val mem : t -> key -> bool
   (** [mem t k] is [true] iff [k] is binded in [t]. *)
 
-  val append : t -> key -> value -> unit
-
-  val length : t -> int
-  (** [length t] is the number of bindings in [t] *)
+  val replace : t -> key -> value -> unit
+  (** [replace t k v] binds [k] to [v] in [t], replacing the existing binding
+      if any. *)
 
   val flush : t -> unit
   (** Flushes all buffers to the disk. *)
