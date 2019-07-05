@@ -2,9 +2,9 @@ opam-version: "2.0"
 maintainer:   "Clement Pascutto"
 authors:      ["Clement Pascutto" "Thomas Gazagnaire"]
 license:      "MIT"
-homepage:     "https://github.com/mirage/deudex"
-bug-reports:  "https://github.com/mirage/deudex/issues"
-dev-repo:     "git+https://github.com/mirage/deudex.git"
+homepage:     "https://github.com/mirage/index"
+bug-reports:  "https://github.com/mirage/index/issues"
+dev-repo:     "git+https://github.com/mirage/index.git"
 
 build: [
  ["dune" "subst"] {pinned}

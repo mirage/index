@@ -36,7 +36,7 @@ module Value = struct
   let encoded_size = string_size
 end
 
-module Index = Deudex_unix.Make (Key) (Value)
+module Index = Index_unix.Make (Key) (Value)
 
 let index_name = "hello"
 
@@ -126,4 +126,4 @@ let restart_tests =
   ]
 
 let () =
-  Alcotest.run "deudex" [ ("live", live_tests); ("on restart", restart_tests) ]
+  Alcotest.run "index" [ ("live", live_tests); ("on restart", restart_tests) ]

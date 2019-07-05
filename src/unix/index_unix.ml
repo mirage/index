@@ -1,4 +1,4 @@
-module IO : Deudex.IO = struct
+module IO : Index.IO = struct
   let ( ++ ) = Int64.add
 
   let ( -- ) = Int64.sub
@@ -169,7 +169,7 @@ module IO : Deudex.IO = struct
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
     | false ->
-        if read_only then raise Deudex.RO_Not_Allowed;
+        if read_only then raise Index.RO_Not_Allowed;
         let x = Unix.openfile file Unix.[ O_CREAT; mode ] 0o644 in
         let raw = Raw.v x in
         Raw.unsafe_set_offset raw 0L;
@@ -181,4 +181,4 @@ module IO : Deudex.IO = struct
         v ~offset raw
 end
 
-module Make (K : Deudex.Key) (V : Deudex.Value) = Deudex.Make (K) (V) (IO)
+module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO)
