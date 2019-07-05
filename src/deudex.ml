@@ -77,11 +77,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   module Tbl = Hashtbl.Make (K)
 
-  type config = {
-    log_size : int;
-    fan_out_size : int;
-    read_only : bool
-  }
+  type config = { log_size : int; fan_out_size : int; read_only : bool }
 
   type t = {
     config : config;
@@ -127,10 +123,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let v ?(fresh = false) ?(read_only = false) ~log_size ~fan_out_size root =
     let config =
-      { log_size = log_size * entry_size;
-        fan_out_size;
-        read_only
-      }
+      { log_size = log_size * entry_size; fan_out_size; read_only }
     in
     let log_path = log_path root in
     let index_path = index_path root in
@@ -156,15 +149,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           Tbl.add log_mem e.key e;
           Bloomf.add entries e.key )
         log;
-      let t =
-        { config;
-          log_mem;
-          root;
-          log;
-          index;
-          entries
-        }
-      in
+      let t = { config; log_mem; root; log; index; entries } in
       Hashtbl.add files root t;
       t
 
@@ -293,7 +278,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let merge t =
     let log = fan_out_cache t t.config.fan_out_size in
-    let tmp_path = t.root // "store.index.tmp" in
+    let tmp_path = t.root // "tmp" // "index" in
     Array.iteri
       (fun i index ->
         let tmp_path = Format.sprintf "%s.%d" tmp_path i in
