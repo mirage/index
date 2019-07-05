@@ -10,7 +10,6 @@
     - When the `log` IO is full, it is merged into multiple `index` IOs.
     Search is done first in `log` then in `index`, which makes recently added
     bindings search faster.
-    All IOs have caches to avoid too much reading during searches.
 *)
 
 (** The input of [Make] for keys. *)
@@ -70,8 +69,6 @@ module type S = sig
     ?fresh:bool ->
     ?read_only:bool ->
     log_size:int ->
-    page_size:int ->
-    pool_size:int ->
     fan_out_size:int ->
     string ->
     t
@@ -79,8 +76,6 @@ module type S = sig
       @param fresh
       @param read_only whether read-only mode is enabled for this index.
       @param log_size  the maximum number of bindings in the `log` IO.
-      @param page_size the number of bindings per cached chunks for IOs.
-      @param pool_size the number of chunks in IOs caches.
       @param fan_out_size the size of the fan out for index IOs. Has to be a pozer of 2.
       *)
 

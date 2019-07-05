@@ -35,8 +35,6 @@ module type S = sig
     ?fresh:bool ->
     ?read_only:bool ->
     log_size:int ->
-    page_size:int ->
-    pool_size:int ->
     fan_out_size:int ->
     string ->
     t
@@ -78,12 +76,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     { key; value }
 
   module Tbl = Hashtbl.Make (K)
-  module Pool = Pool.Make (IO)
 
   type config = {
     log_size : int;
-    page_size : int;
-    pool_size : int;
     fan_out_size : int;
     read_only : bool
   }
@@ -91,7 +86,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   type t = {
     config : config;
     root : string;
-    pages : Pool.t array;
     index : IO.t array;
     log : IO.t;
     log_mem : entry Tbl.t;
@@ -102,8 +96,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     IO.clear t.log;
     Bloomf.clear t.entries;
     Tbl.clear t.log_mem;
-    Array.iter (fun io -> IO.clear io) t.index;
-    Array.iter (fun p -> Pool.clear p) t.pages
+    Array.iter (fun io -> IO.clear io) t.index
 
   let files = Hashtbl.create 0
 
@@ -113,32 +106,28 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let index_path root = root // "index" // "index"
 
-  let map_io config f io =
+  let map_io f io =
     let max_offset = IO.offset io in
     let rec aux offset =
       if offset >= max_offset then ()
       else
-        let raw = Bytes.create config.page_size in
+        let raw = Bytes.create (entry_size * 1_000) in
         let n = IO.read io ~off:offset raw in
-        assert (n = config.page_size);
         let rec read_page page off =
-          if off = config.page_size then ()
+          if off = n then ()
           else
             let entry = decode_entry page off in
             f entry;
             (read_page [@tailcall]) page (off + entry_size)
         in
         read_page raw 0;
-        (aux [@tailcall]) Int64.(add offset (of_int config.page_size))
+        (aux [@tailcall]) Int64.(add offset (of_int (entry_size * 1_000)))
     in
     (aux [@tailcall]) 0L
 
-  let v ?(fresh = false) ?(read_only = false) ~log_size ~page_size ~pool_size
-      ~fan_out_size root =
+  let v ?(fresh = false) ?(read_only = false) ~log_size ~fan_out_size root =
     let config =
       { log_size = log_size * entry_size;
-        page_size = page_size * entry_size;
-        pool_size;
         fan_out_size;
         read_only
       }
@@ -158,11 +147,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             let index_path = Printf.sprintf "%s.%d" index_path i in
             let index = IO.v index_path in
             if read_only then raise RO_Not_Allowed else IO.clear index;
-            map_io config (fun e -> Bloomf.add entries e.key) index;
+            map_io (fun e -> Bloomf.add entries e.key) index;
             index )
       in
       if fresh then IO.clear log;
-      map_io config
+      map_io
         (fun e ->
           Tbl.add log_mem e.key e;
           Bloomf.add entries e.key )
@@ -171,10 +160,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         { config;
           log_mem;
           root;
-          pages =
-            Array.init config.fan_out_size (fun i ->
-                Pool.v ~length:config.page_size ~size:config.pool_size
-                  index.(i) );
           log;
           index;
           entries
@@ -184,8 +169,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       t
 
   let get_entry t i off =
-    let page, ioff = Pool.read t.pages.(i) ~off ~len:entry_size in
-    decode_entry page ioff
+    let buf = Bytes.create entry_size in
+    let _ = IO.read t.index.(i) ~off buf in
+    decode_entry buf 0
 
   let get_entry_iff_needed t i off = function
     | Some e -> e
@@ -317,8 +303,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         IO.rename ~src:tmp ~dst:index )
       t.index;
     IO.clear t.log;
-    Tbl.clear t.log_mem;
-    Array.iter (fun p -> Pool.clear p) t.pages
+    Tbl.clear t.log_mem
 
   let replace t key value =
     if t.config.read_only then raise RO_Not_Allowed;

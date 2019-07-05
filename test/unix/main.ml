@@ -49,7 +49,7 @@ let pool_size = 2
 let fan_out_size = 16
 
 let t =
-  Index.v ~fresh:true ~log_size ~page_size ~pool_size ~fan_out_size index_name
+  Index.v ~fresh:true ~log_size~fan_out_size index_name
 
 let l = List.init index_size (fun _ -> (Key.v (), Value.v ()))
 
@@ -105,19 +105,19 @@ let find_absent_live () = test_find_absent t
 
 let find_present_restart () =
   test_find_present
-    (Index.v ~fresh:false ~log_size ~page_size ~pool_size ~fan_out_size
+    (Index.v ~fresh:false ~log_size~fan_out_size
        index_name)
 
 let find_absent_restart () =
   test_find_absent
-    (Index.v ~fresh:false ~log_size ~page_size ~pool_size ~fan_out_size
+    (Index.v ~fresh:false ~log_size~fan_out_size
        index_name)
 
 let replace_live () = test_replace t
 
 let replace_restart () =
   test_replace
-    (Index.v ~fresh:false ~log_size ~page_size ~pool_size ~fan_out_size
+    (Index.v ~fresh:false ~log_size~fan_out_size
        index_name)
 
 let live_tests =
