@@ -14,8 +14,8 @@
 
 (** The input of [Make] for keys. *)
 module type Key = sig
-  (** The type for keys. *)
   type t
+  (** The type for keys. *)
 
   val equal : t -> t -> bool
   (** The equality function for keys. *)
@@ -50,20 +50,20 @@ end
 
 module type IO = Io.S
 
+exception RO_Not_Allowed
 (** The exception raised when illegal operation is attempted on a read_only
     index. *)
-exception RO_Not_Allowed
 
 (** Index module signature.  *)
 module type S = sig
-  (** The type for indexes. *)
   type t
+  (** The type for indexes. *)
 
-  (** The type for keys. *)
   type key
+  (** The type for keys. *)
 
-  (** The type for values. *)
   type value
+  (** The type for values. *)
 
   val v :
     ?fresh:bool ->

@@ -68,7 +68,7 @@ let test_find_present t =
       | None ->
           Alcotest.fail
             (Printf.sprintf "Inserted value is not present anymore: %s." k)
-      | Some s -> Alcotest.(check bool) "" true (String.equal s v) )
+      | Some s -> Alcotest.(check bool) "" true (String.equal s v))
     (List.rev l)
 
 let test_find_absent t =

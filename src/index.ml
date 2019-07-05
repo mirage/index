@@ -85,7 +85,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     index : IO.t array;
     log : IO.t;
     log_mem : entry Tbl.t;
-    entries : key Bloomf.t
+    entries : key Bloomf.t;
   }
 
   let clear t =
@@ -141,13 +141,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             let index = IO.v index_path in
             if read_only then raise RO_Not_Allowed else IO.clear index;
             map_io (fun e -> Bloomf.add entries e.key) index;
-            index )
+            index)
       in
       if fresh then IO.clear log;
       map_io
         (fun e ->
           Tbl.add log_mem e.key e;
-          Bloomf.add entries e.key )
+          Bloomf.add entries e.key)
         log;
       let t = { config; log_mem; root; log; index; entries } in
       Hashtbl.add files root t;
@@ -212,7 +212,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Tbl.iter
       (fun k v ->
         let index = K.hash k land (n - 1) in
-        caches.(index) <- (k, v) :: caches.(index) )
+        caches.(index) <- (k, v) :: caches.(index))
       t.log_mem;
     Array.map
       (List.sort (fun (k, _) (k', _) -> compare (K.hash k) (K.hash k')))
@@ -233,46 +233,46 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       match get_index_entry last_read with
       | None -> List.iter (fun (_, e) -> append_entry tmp e) l
       | Some e -> (
-        match l with
-        | (k, v) :: r ->
-            let last, rst =
-              if K.equal e.key k then (
-                append_entry tmp v;
-                (None, r) )
-              else
-                let hashed_e = K.hash e.key in
-                let hashed_k = K.hash k in
-                if hashed_e = hashed_k then (
-                  append_entry tmp e;
+          match l with
+          | (k, v) :: r ->
+              let last, rst =
+                if K.equal e.key k then (
                   append_entry tmp v;
                   (None, r) )
-                else if hashed_e < hashed_k then (
-                  append_entry tmp e;
-                  (None, l) )
-                else (
-                  append_entry tmp v;
-                  (Some e, r) )
-            in
-            if !offset >= IO.offset t.index.(i) && last = None then
-              List.iter (fun (_, e) -> append_entry tmp e) rst
-            else (go [@tailcall]) last rst
-        | [] ->
-            append_entry tmp e;
-            if !offset >= IO.offset t.index.(i) then ()
-            else
-              let len = Int64.sub (IO.offset t.index.(i)) !offset in
-              let buf = Bytes.create (min (Int64.to_int len) 4096) in
-              let rec refill () =
-                let n = IO.read t.index.(i) ~off:!offset buf in
-                let buf =
-                  if n = Bytes.length buf then Bytes.unsafe_to_string buf
-                  else Bytes.sub_string buf 0 n
-                in
-                IO.append tmp buf;
-                (offset := Int64.(add !offset (of_int n)));
-                if !offset < IO.offset t.index.(i) then refill ()
+                else
+                  let hashed_e = K.hash e.key in
+                  let hashed_k = K.hash k in
+                  if hashed_e = hashed_k then (
+                    append_entry tmp e;
+                    append_entry tmp v;
+                    (None, r) )
+                  else if hashed_e < hashed_k then (
+                    append_entry tmp e;
+                    (None, l) )
+                  else (
+                    append_entry tmp v;
+                    (Some e, r) )
               in
-              refill () )
+              if !offset >= IO.offset t.index.(i) && last = None then
+                List.iter (fun (_, e) -> append_entry tmp e) rst
+              else (go [@tailcall]) last rst
+          | [] ->
+              append_entry tmp e;
+              if !offset >= IO.offset t.index.(i) then ()
+              else
+                let len = Int64.sub (IO.offset t.index.(i)) !offset in
+                let buf = Bytes.create (min (Int64.to_int len) 4096) in
+                let rec refill () =
+                  let n = IO.read t.index.(i) ~off:!offset buf in
+                  let buf =
+                    if n = Bytes.length buf then Bytes.unsafe_to_string buf
+                    else Bytes.sub_string buf 0 n
+                  in
+                  IO.append tmp buf;
+                  (offset := Int64.(add !offset (of_int n)));
+                  if !offset < IO.offset t.index.(i) then refill ()
+                in
+                refill () )
     in
     (go [@tailcall]) None log
 
@@ -284,7 +284,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         let tmp_path = Format.sprintf "%s.%d" tmp_path i in
         let tmp = IO.v tmp_path in
         merge_with log.(i) t i tmp;
-        IO.rename ~src:tmp ~dst:index )
+        IO.rename ~src:tmp ~dst:index)
       t.index;
     IO.clear t.log;
     Tbl.clear t.log_mem

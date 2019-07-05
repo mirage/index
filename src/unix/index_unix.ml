@@ -77,7 +77,7 @@ module IO : Index.IO = struct
     mutable raw : Raw.t;
     mutable offset : int64;
     mutable flushed : int64;
-    buf : Buffer.t
+    buf : Buffer.t;
   }
 
   let header = 8L
