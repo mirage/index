@@ -133,7 +133,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       t
     with Not_found ->
       let entries = Bloomf.create ~error_rate:0.01 100_000_000 in
-      let log_mem = Tbl.create config.log_size in
+      let log_mem = Tbl.create 1024 in
       let log = IO.v log_path in
       let index =
         Array.init config.fan_out_size (fun i ->
