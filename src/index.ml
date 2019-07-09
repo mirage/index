@@ -167,32 +167,34 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let low = 0. in
     let high = Int64.to_float (IO.offset t.index.(i)) -. entry_sizef in
     let rec search low high lowest_entry highest_entry =
-      let lowest_entry = get_entry_iff_needed t i low lowest_entry in
-      let highest_entry = get_entry_iff_needed t i high highest_entry in
-      if high = low then
-        if K.equal lowest_entry.key key then Some lowest_entry.value else None
+      if high < low then None
       else
-        let lowest_hash = float_of_int (K.hash lowest_entry.key) in
-        let highest_hash = float_of_int (K.hash highest_entry.key) in
-        if high < low || lowest_hash > hashed_key || highest_hash < hashed_key
-        then None
+        let lowest_entry = get_entry_iff_needed t i low lowest_entry in
+        if high = low then
+          if K.equal lowest_entry.key key then Some lowest_entry.value
+          else None
         else
-          let doff =
-            floor
-              ( (high -. low)
-              *. (hashed_key -. lowest_hash)
-              /. (highest_hash -. lowest_hash) )
-          in
-          let off = low +. doff -. mod_float doff entry_sizef in
-          let offL = Int64.of_float off in
-          let e = get_entry t i offL in
-          if K.equal e.key key then Some e.value
-          else if float_of_int (K.hash e.key) < hashed_key then
-            (search [@tailcall]) (off +. entry_sizef) high None
-              (Some highest_entry)
+          let highest_entry = get_entry_iff_needed t i high highest_entry in
+          let lowest_hash = float_of_int (K.hash lowest_entry.key) in
+          let highest_hash = float_of_int (K.hash highest_entry.key) in
+          if lowest_hash > hashed_key || highest_hash < hashed_key then None
           else
-            (search [@tailcall]) low (off -. entry_sizef) (Some lowest_entry)
-              None
+            let doff =
+              floor
+                ( (high -. low)
+                *. (hashed_key -. lowest_hash)
+                /. (highest_hash -. lowest_hash) )
+            in
+            let off = low +. doff -. mod_float doff entry_sizef in
+            let offL = Int64.of_float off in
+            let e = get_entry t i offL in
+            if K.equal e.key key then Some e.value
+            else if float_of_int (K.hash e.key) < hashed_key then
+              (search [@tailcall]) (off +. entry_sizef) high None
+                (Some highest_entry)
+            else
+              (search [@tailcall]) low (off -. entry_sizef) (Some lowest_entry)
+                None
     in
     if high < 0. then None else (search [@tailcall]) low high None None
 
