@@ -47,6 +47,8 @@ module type S = sig
 
   val replace : t -> key -> value -> unit
 
+  val iter : (key -> value -> unit) -> t -> unit
+
   val flush : t -> unit
 end
 
@@ -299,6 +301,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Bloomf.add t.entries key;
     if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
     then merge t
+
+  (* XXX: Perform a merge beforehands to ensure duplicates are not hit twice. *)
+  let iter f t =
+    Tbl.iter (fun _ e -> f e.key e.value) t.log_mem;
+    Array.iter (map_io (fun e -> f e.key e.value)) t.index
 
   let flush t = IO.flush t.log
 end
