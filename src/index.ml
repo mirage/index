@@ -104,7 +104,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let index_path root = root // "index" // "index"
 
-  let map_io f io =
+  let iter_io f io =
     let max_offset = IO.offset io in
     let rec aux offset =
       if offset >= max_offset then ()
@@ -141,16 +141,18 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Array.init config.fan_out_size (fun i ->
             let index_path = Printf.sprintf "%s.%d" index_path i in
             let index = IO.v index_path in
-            if read_only then raise RO_Not_Allowed else IO.clear index;
-            map_io (fun e -> Bloomf.add entries e.key) index;
+            if fresh then
+              if read_only then raise RO_Not_Allowed else IO.clear index
+            else iter_io (fun e -> Bloomf.add entries e.key) index;
             index)
       in
-      if fresh then IO.clear log;
-      map_io
-        (fun e ->
-          Tbl.add log_mem e.key e;
-          Bloomf.add entries e.key)
-        log;
+      if fresh then IO.clear log
+      else
+        iter_io
+          (fun e ->
+            Tbl.add log_mem e.key e;
+            Bloomf.add entries e.key)
+          log;
       let t = { config; log_mem; root; log; index; entries } in
       Hashtbl.add files root t;
       t
@@ -305,7 +307,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   (* XXX: Perform a merge beforehands to ensure duplicates are not hit twice. *)
   let iter f t =
     Tbl.iter (fun _ e -> f e.key e.value) t.log_mem;
-    Array.iter (map_io (fun e -> f e.key e.value)) t.index
+    Array.iter (iter_io (fun e -> f e.key e.value)) t.index
 
   let flush t = IO.flush t.log
 end
