@@ -141,16 +141,18 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Array.init config.fan_out_size (fun i ->
             let index_path = Printf.sprintf "%s.%d" index_path i in
             let index = IO.v index_path in
-            if read_only then raise RO_Not_Allowed else IO.clear index;
-            map_io (fun e -> Bloomf.add entries e.key) index;
+            if fresh then
+              if read_only then raise RO_Not_Allowed else IO.clear index
+            else map_io (fun e -> Bloomf.add entries e.key) index;
             index)
       in
-      if fresh then IO.clear log;
-      map_io
-        (fun e ->
-          Tbl.add log_mem e.key e;
-          Bloomf.add entries e.key)
-        log;
+      if fresh then IO.clear log
+      else
+        map_io
+          (fun e ->
+            Tbl.add log_mem e.key e;
+            Bloomf.add entries e.key)
+          log;
       let t = { config; log_mem; root; log; index; entries } in
       Hashtbl.add files root t;
       t
