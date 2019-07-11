@@ -1,0 +1,8 @@
+(executable
+ (name main)
+ (libraries fmt index.unix))
+
+(alias
+ (name bench)
+ (action
+  (run ./main.exe)))
