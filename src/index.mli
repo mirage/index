@@ -34,6 +34,9 @@ module type Key = sig
   val encoded_size : int
   (** [encoded_size] is the size of the encoded keys, expressed in number of
       bytes. *)
+
+  val pp : t Fmt.t
+  (** Formatter for keys *)
 end
 
 (** The input of [Make] for values. The same requirements as for [Key]
@@ -46,6 +49,8 @@ module type Value = sig
   val decode : string -> int -> t
 
   val encoded_size : int
+
+  val pp : t Fmt.t
 end
 
 module type IO = Io.S

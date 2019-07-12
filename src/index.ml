@@ -10,6 +10,8 @@ module type Key = sig
   val decode : string -> int -> t
 
   val encoded_size : int
+
+  val pp : t Fmt.t
 end
 
 module type Value = sig
@@ -20,6 +22,8 @@ module type Value = sig
   val decode : string -> int -> t
 
   val encoded_size : int
+
+  val pp : t Fmt.t
 end
 
 module type IO = Io.S
@@ -53,6 +57,10 @@ module type S = sig
 end
 
 exception RO_Not_Allowed
+
+let src = Logs.Src.create "index" ~doc:"Index"
+
+module Log = (val Logs.src_log src : Logs.LOG)
 
 module Make (K : Key) (V : Value) (IO : IO) = struct
   type key = K.t
@@ -91,6 +99,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   }
 
   let clear t =
+    Log.debug (fun l -> l "clear \"%s\"" t.root);
     IO.clear t.log;
     Bloomf.clear t.entries;
     Tbl.clear t.log_mem;
@@ -124,6 +133,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     (aux [@tailcall]) 0L
 
   let v ?(fresh = false) ?(read_only = false) ~log_size ~fan_out_size root =
+    Log.debug (fun l ->
+        l "v \"%s\" fresh=%b read_only=%b log_size=%d fan_out_size=%d" root
+          fresh read_only log_size fan_out_size);
     let config =
       { log_size = log_size * entry_size; fan_out_size; read_only }
     in
@@ -203,6 +215,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     if high < 0. then None else (search [@tailcall]) low high None None
 
   let find t key =
+    Log.debug (fun l -> l "find \"%s\" %a" t.root K.pp key);
     if not (Bloomf.mem t.entries key) then None
     else
       match Tbl.find t.log_mem key with
@@ -211,7 +224,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           let i = K.hash key land (t.config.fan_out_size - 1) in
           interpolation_search t i key
 
-  let mem t key = match find t key with None -> false | Some _ -> true
+  let mem t key =
+    Log.debug (fun l -> l "mem \"%s\" %a" t.root K.pp key);
+    match find t key with None -> false | Some _ -> true
 
   let fan_out_cache t n =
     let caches = Array.make n [] in
@@ -225,6 +240,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       caches
 
   let merge_with log t i tmp =
+    Log.debug (fun l -> l "merge index %d" i);
     let offset = ref 0L in
     let get_index_entry = function
       | Some e -> Some e
@@ -283,6 +299,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     (go [@tailcall]) None log
 
   let merge t =
+    Log.debug (fun l -> l "merge \"%s\"" t.root);
     let log = fan_out_cache t t.config.fan_out_size in
     let tmp_path = t.root // "tmp" // "index" in
     Array.iteri
@@ -296,6 +313,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Tbl.clear t.log_mem
 
   let replace t key value =
+    Log.debug (fun l -> l "replace \"%s\" %a %a" t.root K.pp key V.pp value);
     if t.config.read_only then raise RO_Not_Allowed;
     let entry = { key; value } in
     append_entry t.log entry;
