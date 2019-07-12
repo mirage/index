@@ -7,6 +7,8 @@ module type S = sig
 
   val offset : t -> int64
 
+  val force_offset : t -> int64
+
   val read : t -> off:int64 -> bytes -> int
 
   val clear : t -> unit

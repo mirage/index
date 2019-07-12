@@ -113,10 +113,10 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let index_path root = root // "index" // "index"
 
-  let iter_io f io =
-    let max_offset = IO.offset io in
+  let iter_io ?(min = 0L) ?max f io =
+    let max = match max with None -> IO.offset io | Some m -> m in
     let rec aux offset =
-      if offset >= max_offset then ()
+      if offset >= max then ()
       else
         let raw = Bytes.create (entry_size * 1_000) in
         let n = IO.read io ~off:offset raw in
@@ -130,7 +130,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         read_page raw 0;
         (aux [@tailcall]) Int64.(add offset (of_int (entry_size * 1_000)))
     in
-    (aux [@tailcall]) 0L
+    (aux [@tailcall]) min
 
   let v ?(fresh = false) ?(read_only = false) ~log_size ~fan_out_size root =
     Log.debug (fun l ->
@@ -214,8 +214,26 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     if high < 0. then None else (search [@tailcall]) low high None None
 
+  let sync_log t =
+    let former_log_offset = IO.offset t.log in
+    let log_offset = IO.force_offset t.log in
+    let log_length = Int64.(div log_offset entry_sizeL) in
+    let log_mem_length = Int64.of_int (Tbl.length t.log_mem) in
+    let add_log_entry e =
+      Tbl.add t.log_mem e.key e;
+      Bloomf.add t.entries e.key
+    in
+    (* Appends have happened on disk *)
+    if log_length > log_mem_length then
+      iter_io add_log_entry t.log ~min:former_log_offset ~max:log_length
+      (* A merge has happened on disk *)
+    else if log_length > log_mem_length then (
+      Tbl.clear t.log_mem;
+      iter_io add_log_entry t.log ~min:0L ~max:log_length )
+
   let find t key =
     Log.debug (fun l -> l "find \"%s\" %a" t.root K.pp key);
+    if t.config.read_only then sync_log t;
     if not (Bloomf.mem t.entries key) then None
     else
       match Tbl.find t.log_mem key with
