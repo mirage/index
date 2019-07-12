@@ -119,6 +119,10 @@ module IO : Index.IO = struct
 
   let offset t = t.offset
 
+  let force_offset t =
+    t.offset <- Raw.unsafe_get_offset t.raw;
+    t.offset
+
   let name t = t.file
 
   let protect_unix_exn = function
