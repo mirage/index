@@ -1,7 +1,7 @@
 module type S = sig
   type t
 
-  val v : ?read_only:bool -> string -> t
+  val v : readonly:bool -> fresh:bool -> generation:int64 -> string -> t
 
   val name : t -> string
 
@@ -9,11 +9,19 @@ module type S = sig
 
   val force_offset : t -> int64
 
+  val readonly : t -> bool
+
   val read : t -> off:int64 -> bytes -> int
 
   val clear : t -> unit
 
-  val flush : t -> unit
+  val sync : t -> unit
+
+  val version : t -> string
+
+  val set_generation : t -> int64 -> unit
+
+  val get_generation : t -> int64
 
   val rename : src:t -> dst:t -> unit
 

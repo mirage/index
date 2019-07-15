@@ -72,7 +72,7 @@ module type S = sig
 
   val v :
     ?fresh:bool ->
-    ?read_only:bool ->
+    ?readonly:bool ->
     log_size:int ->
     fan_out_size:int ->
     string ->

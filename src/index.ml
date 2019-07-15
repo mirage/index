@@ -37,7 +37,7 @@ module type S = sig
 
   val v :
     ?fresh:bool ->
-    ?read_only:bool ->
+    ?readonly:bool ->
     log_size:int ->
     fan_out_size:int ->
     string ->
@@ -87,11 +87,12 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   module Tbl = Hashtbl.Make (K)
 
-  type config = { log_size : int; fan_out_size : int; read_only : bool }
+  type config = { log_size : int; fan_out_size : int; readonly : bool }
 
   type t = {
     config : config;
     root : string;
+    mutable generation : int64;
     index : IO.t array;
     log : IO.t;
     log_mem : entry Tbl.t;
@@ -104,8 +105,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Bloomf.clear t.entries;
     Tbl.clear t.log_mem;
     Array.iter (fun io -> IO.clear io) t.index
-
-  let files = Hashtbl.create 0
 
   let ( // ) = Filename.concat
 
@@ -132,42 +131,32 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     (aux [@tailcall]) min
 
-  let v ?(fresh = false) ?(read_only = false) ~log_size ~fan_out_size root =
+  let v ?(fresh = false) ?(readonly = false) ~log_size ~fan_out_size root =
     Log.debug (fun l ->
-        l "v \"%s\" fresh=%b read_only=%b log_size=%d fan_out_size=%d" root
-          fresh read_only log_size fan_out_size);
+        l "v \"%s\" fresh=%b readonly=%b log_size=%d fan_out_size=%d" root
+          fresh readonly log_size fan_out_size);
     let config =
-      { log_size = log_size * entry_size; fan_out_size; read_only }
+      { log_size = log_size * entry_size; fan_out_size; readonly }
     in
     let log_path = log_path root in
     let index_path = index_path root in
-    try
-      let t = Hashtbl.find files root in
-      if fresh then if read_only then raise RO_Not_Allowed else clear t;
-      t
-    with Not_found ->
-      let entries = Bloomf.create ~error_rate:0.01 100_000_000 in
-      let log_mem = Tbl.create 1024 in
-      let log = IO.v log_path in
-      let index =
-        Array.init config.fan_out_size (fun i ->
-            let index_path = Printf.sprintf "%s.%d" index_path i in
-            let index = IO.v index_path in
-            if fresh then
-              if read_only then raise RO_Not_Allowed else IO.clear index
-            else iter_io (fun e -> Bloomf.add entries e.key) index;
-            index)
-      in
-      if fresh then IO.clear log
-      else
-        iter_io
-          (fun e ->
-            Tbl.add log_mem e.key e;
-            Bloomf.add entries e.key)
-          log;
-      let t = { config; log_mem; root; log; index; entries } in
-      Hashtbl.add files root t;
-      t
+    let entries = Bloomf.create ~error_rate:0.01 100_000_000 in
+    let log_mem = Tbl.create 1024 in
+    let log = IO.v ~fresh ~readonly ~generation:0L log_path in
+    let index =
+      Array.init config.fan_out_size (fun i ->
+          let index_path = Printf.sprintf "%s.%d" index_path i in
+          let index = IO.v ~fresh ~readonly ~generation:0L index_path in
+          iter_io (fun e -> Bloomf.add entries e.key) index;
+          index)
+    in
+    let generation = IO.get_generation index.(0) in
+    iter_io
+      (fun e ->
+        Tbl.add log_mem e.key e;
+        Bloomf.add entries e.key)
+      log;
+    { config; generation; log_mem; root; log; index; entries }
 
   let get_entry t i off =
     let buf = Bytes.create entry_size in
@@ -215,25 +204,32 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     if high < 0. then None else (search [@tailcall]) low high None None
 
   let sync_log t =
-    let former_log_offset = IO.offset t.log in
-    let log_offset = IO.force_offset t.log in
-    let log_length = Int64.(div log_offset entry_sizeL) in
-    let log_mem_length = Int64.of_int (Tbl.length t.log_mem) in
+    let generation = IO.get_generation t.log in
+    let log_offset = IO.offset t.log in
+    let new_log_offset = IO.force_offset t.log in
     let add_log_entry e =
-      Tbl.add t.log_mem e.key e;
+      Tbl.replace t.log_mem e.key e;
       Bloomf.add t.entries e.key
     in
-    (* Appends have happened on disk *)
-    if log_length > log_mem_length then
-      iter_io add_log_entry t.log ~min:former_log_offset ~max:log_length
-      (* A merge has happened on disk *)
-    else if log_length > log_mem_length then (
+    if t.generation <> generation then (
       Tbl.clear t.log_mem;
-      iter_io add_log_entry t.log ~min:0L ~max:log_length )
+      iter_io add_log_entry t.log;
+      Array.iteri
+        (fun i index ->
+          let path = IO.name index in
+          let index = IO.v ~fresh:false ~readonly:true ~generation path in
+          let _ = IO.force_offset index in
+          iter_io (fun e -> Bloomf.add t.entries e.key) index;
+          t.index.(i) <- index)
+        t.index;
+      t.generation <- generation )
+    else if log_offset < new_log_offset then
+      iter_io add_log_entry t.log ~min:log_offset
+    else if log_offset > new_log_offset then assert false
 
   let find t key =
     Log.debug (fun l -> l "find \"%s\" %a" t.root K.pp key);
-    if t.config.read_only then sync_log t;
+    if t.config.readonly then sync_log t;
     if not (Bloomf.mem t.entries key) then None
     else
       match Tbl.find t.log_mem key with
@@ -320,19 +316,22 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.debug (fun l -> l "merge \"%s\"" t.root);
     let log = fan_out_cache t t.config.fan_out_size in
     let tmp_path = t.root // "tmp" // "index" in
+    let generation = Int64.succ t.generation in
     Array.iteri
       (fun i index ->
         let tmp_path = Format.sprintf "%s.%d" tmp_path i in
-        let tmp = IO.v tmp_path in
+        let tmp = IO.v ~readonly:false ~fresh:true ~generation tmp_path in
         merge_with log.(i) t i tmp;
         IO.rename ~src:tmp ~dst:index)
       t.index;
     IO.clear t.log;
-    Tbl.clear t.log_mem
+    Tbl.clear t.log_mem;
+    IO.set_generation t.log generation;
+    t.generation <- generation
 
   let replace t key value =
     Log.debug (fun l -> l "replace \"%s\" %a %a" t.root K.pp key V.pp value);
-    if t.config.read_only then raise RO_Not_Allowed;
+    if t.config.readonly then raise RO_Not_Allowed;
     let entry = { key; value } in
     append_entry t.log entry;
     Tbl.replace t.log_mem key entry;
@@ -345,5 +344,5 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Tbl.iter (fun _ e -> f e.key e.value) t.log_mem;
     Array.iter (iter_io (fun e -> f e.key e.value)) t.index
 
-  let flush t = IO.flush t.log
+  let flush t = IO.sync t.log
 end

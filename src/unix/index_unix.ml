@@ -1,3 +1,7 @@
+exception RO_Not_Allowed
+
+let current_version = "00000001"
+
 module IO : Index.IO = struct
   let ( ++ ) = Int64.add
 
@@ -35,13 +39,14 @@ module IO : Index.IO = struct
       in
       (aux [@tailcall]) 0 (Bytes.length buf)
 
-    let really_read fd buf =
+    let really_read fd len buf =
       let rec aux off len =
         let r = Unix.read fd buf off len in
-        if r = 0 || r = len then off + r
+        if r = 0 then off (* end of file *)
+        else if r = len then off + r
         else (aux [@tailcall]) (off + r) (len - r)
       in
-      (aux [@tailcall]) 0 (Bytes.length buf)
+      (aux [@tailcall]) 0 len
 
     let lseek t off =
       if off = t.cursor then ()
@@ -55,9 +60,9 @@ module IO : Index.IO = struct
       really_write t.fd buf;
       t.cursor <- off ++ Int64.of_int (Bytes.length buf)
 
-    let unsafe_read t ~off buf =
+    let unsafe_read t ~off ~len buf =
       lseek t off;
-      let n = really_read t.fd buf in
+      let n = really_read t.fd len buf in
       t.cursor <- off ++ Int64.of_int n;
       n
 
@@ -65,11 +70,32 @@ module IO : Index.IO = struct
       let buf = encode_int64 n in
       unsafe_write t ~off:0L buf
 
+    let int64_buf = Bytes.create 8
+
     let unsafe_get_offset t =
-      let buf = Bytes.create 8 in
-      let n = unsafe_read t ~off:0L buf in
+      let n = unsafe_read t ~off:0L ~len:8 int64_buf in
       assert (n = 8);
-      decode_int64 (Bytes.unsafe_to_string buf)
+      decode_int64 (Bytes.unsafe_to_string int64_buf)
+
+    let version_buf = Bytes.create 8
+
+    let generation_buf = Bytes.create 8
+
+    let unsafe_get_version t =
+      let n = unsafe_read t ~off:8L ~len:8 version_buf in
+      assert (n = 8);
+      Bytes.to_string version_buf
+
+    let unsafe_set_version t = unsafe_write t ~off:8L current_version
+
+    let unsafe_get_generation t =
+      let n = unsafe_read t ~off:16L ~len:8 generation_buf in
+      assert (n = 8);
+      decode_int64 (Bytes.unsafe_to_string generation_buf)
+
+    let unsafe_set_generation t gen =
+      let buf = encode_int64 gen in
+      unsafe_write t ~off:16L buf
   end
 
   type t = {
@@ -77,12 +103,15 @@ module IO : Index.IO = struct
     mutable raw : Raw.t;
     mutable offset : int64;
     mutable flushed : int64;
+    readonly : bool;
+    version : string;
     buf : Buffer.t;
   }
 
-  let header = 8L
+  let header = 24L (* offset + version + generation*)
 
-  let flush t =
+  let sync t =
+    if t.readonly then raise RO_Not_Allowed;
     let buf = Buffer.contents t.buf in
     let offset = t.offset in
     Buffer.clear t.buf;
@@ -90,15 +119,19 @@ module IO : Index.IO = struct
     else (
       Raw.unsafe_write t.raw ~off:t.flushed buf;
       Raw.unsafe_set_offset t.raw offset;
+
+      (* concurrent append might happen so here t.offset might differ
+         from offset *)
       if not (t.flushed ++ Int64.of_int (String.length buf) = header ++ offset)
       then
-        failwith
-          (Printf.sprintf "sync error: %s flushed=%Ld offset+header=%Ld\n%!"
-             t.file t.flushed (offset ++ header));
+        Fmt.failwith "sync error: %s flushed=%Ld offset+header=%Ld\n%!" t.file
+          t.flushed (offset ++ header);
       t.flushed <- offset ++ header )
 
+  let name t = t.file
+
   let rename ~src ~dst =
-    flush src;
+    sync src;
     Unix.close dst.raw.fd;
     Unix.rename src.file dst.file;
     dst.offset <- src.offset;
@@ -108,14 +141,15 @@ module IO : Index.IO = struct
   let auto_flush_limit = 1_000_000L
 
   let append t buf =
+    if t.readonly then raise RO_Not_Allowed;
     Buffer.add_string t.buf buf;
     let len = Int64.of_int (String.length buf) in
     t.offset <- t.offset ++ len;
-    if t.offset -- t.flushed > auto_flush_limit then flush t
+    if t.offset -- t.flushed > auto_flush_limit then sync t
 
   let read t ~off buf =
-    assert (header ++ off <= t.flushed);
-    Raw.unsafe_read t.raw ~off:(header ++ off) buf
+    if not t.readonly then assert (header ++ off <= t.flushed);
+    Raw.unsafe_read t.raw ~off:(header ++ off) ~len:(Bytes.length buf) buf
 
   let offset t = t.offset
 
@@ -123,7 +157,13 @@ module IO : Index.IO = struct
     t.offset <- Raw.unsafe_get_offset t.raw;
     t.offset
 
-  let name t = t.file
+  let version t = t.version
+
+  let get_generation t = Raw.unsafe_get_generation t.raw
+
+  let set_generation t gen = Raw.unsafe_set_generation t.raw gen
+
+  let readonly t = t.readonly
 
   let protect_unix_exn = function
     | Unix.Unix_error _ as e -> failwith (Printexc.to_string e)
@@ -165,24 +205,45 @@ module IO : Index.IO = struct
       Hashtbl.add buffers file buf;
       buf
 
-  let v ?(read_only = false) file =
-    let v ~offset raw =
-      { file; offset; raw; buf = buffer file; flushed = header ++ offset }
+  let () = assert (String.length current_version = 8)
+
+  let v ~readonly ~fresh ~generation file =
+    let v ~offset ~version raw =
+      {
+        version;
+        file;
+        offset;
+        raw;
+        readonly;
+        buf = buffer file;
+        flushed = header ++ offset;
+      }
     in
-    let mode = Unix.(if read_only then O_RDONLY else O_RDWR) in
+    let mode = Unix.(if readonly then O_RDONLY else O_RDWR) in
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
     | false ->
-        if read_only then raise Index.RO_Not_Allowed;
+        if readonly then raise RO_Not_Allowed;
         let x = Unix.openfile file Unix.[ O_CREAT; mode ] 0o644 in
         let raw = Raw.v x in
         Raw.unsafe_set_offset raw 0L;
-        v ~offset:0L raw
+        Raw.unsafe_set_version raw;
+        Raw.unsafe_set_generation raw generation;
+        v ~offset:0L ~version:current_version raw
     | true ->
         let x = Unix.openfile file Unix.[ O_EXCL; mode ] 0o644 in
         let raw = Raw.v x in
-        let offset = Raw.unsafe_get_offset raw in
-        v ~offset raw
+        if readonly && fresh then
+          Fmt.failwith "IO.v: cannot reset a readonly file"
+        else if fresh then (
+          Raw.unsafe_set_offset raw 0L;
+          Raw.unsafe_set_version raw;
+          Raw.unsafe_set_generation raw generation;
+          v ~offset:0L ~version:current_version raw )
+        else
+          let offset = Raw.unsafe_get_offset raw in
+          let version = Raw.unsafe_get_version raw in
+          v ~offset ~version raw
 end
 
 module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO)
