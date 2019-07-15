@@ -1,10 +1,10 @@
 let string_size = 20
 
-let index_size = 100
+let index_size = 103
 
 let () = Random.self_init ()
 
-let random_char () = char_of_int (Random.int 256)
+let random_char () = char_of_int (33 + Random.int 94)
 
 let random_string () = String.init string_size (fun _i -> random_char ())
 
@@ -44,7 +44,7 @@ module Index = Index_unix.Make (Key) (Value)
 
 let index_name = "hello"
 
-let log_size = 5
+let log_size = 4
 
 let page_size = 2
 
@@ -56,7 +56,9 @@ let t = Index.v ~fresh:true ~log_size ~fan_out_size index_name
 
 let l = List.init index_size (fun _ -> (Key.v (), Value.v ()))
 
-let () = List.iter (fun (k, v) -> Index.replace t k v) l
+let () =
+  let () = List.iter (fun (k, v) -> Index.replace t k v) l in
+  Index.flush t
 
 let rec random_new_key () =
   let r = Key.v () in
@@ -117,6 +119,27 @@ let replace_live () = test_replace t
 let replace_restart () =
   test_replace (Index.v ~fresh:false ~log_size ~fan_out_size index_name)
 
+let readonly () =
+  let w =
+    Index.v ~fresh:true ~readonly:false ~log_size ~fan_out_size index_name
+  in
+  let r =
+    Index.v ~fresh:false ~readonly:true ~log_size ~fan_out_size index_name
+  in
+  List.iter (fun (k, v) -> Index.replace w k v) l;
+  Index.flush w;
+  List.iter
+    (fun (k, v') ->
+      match Index.find r k with
+      | None ->
+          Alcotest.fail
+            (Printf.sprintf "Inserted value is not present anymore: %s." k)
+      | Some v ->
+          if v <> v' then
+            Alcotest.fail
+              (Printf.sprintf "Wrong replacement: got %s, expected %s." v v'))
+    l
+
 let live_tests =
   [ ("find (present)", `Quick, find_present_live);
     ("find (absent)", `Quick, find_absent_live);
@@ -129,5 +152,11 @@ let restart_tests =
     ("replace", `Quick, replace_restart)
   ]
 
+let readonly_tests = [ ("replace", `Quick, readonly) ]
+
 let () =
-  Alcotest.run "index" [ ("live", live_tests); ("on restart", restart_tests) ]
+  Alcotest.run "index"
+    [ ("live", live_tests);
+      ("on restart", restart_tests);
+      ("readonly", readonly_tests)
+    ]
