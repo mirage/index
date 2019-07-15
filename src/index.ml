@@ -160,7 +160,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           Hashtbl.add roots root t;
           t
 
-  let v_no_cache ~log_size ~fan_out_size ~fresh ~readonly root=
+  let v_no_cache ~log_size ~fan_out_size ~fresh ~readonly root =
     let config =
       { log_size = log_size * entry_size; fan_out_size; readonly }
     in
@@ -179,15 +179,16 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let generation = IO.get_generation log in
     iter_io
       (fun e ->
-         Tbl.add log_mem e.key e;
-         Bloomf.add entries e.key)
+        Tbl.add log_mem e.key e;
+        Bloomf.add entries e.key)
       log;
     { config; generation; log_mem; root; log; index; entries }
 
   let v ?(fresh = false) ?(readonly = false) ?(shared = true) ~log_size
       ~fan_out_size root =
-    with_cache ~v:(v_no_cache ~log_size ~fan_out_size) ~clear ~fresh ~shared
-      ~readonly root
+    with_cache
+      ~v:(v_no_cache ~log_size ~fan_out_size)
+      ~clear ~fresh ~shared ~readonly root
 
   let get_entry t i off =
     let buf = Bytes.create entry_size in

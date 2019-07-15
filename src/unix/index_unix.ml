@@ -124,8 +124,10 @@ module IO : Index.IO = struct
          from offset *)
       if not (t.flushed ++ Int64.of_int (String.length buf) = header ++ offset)
       then
-        Fmt.failwith "sync error: %s flushed=%Ld buf=%Ld offset+header=%Ld\n%!" t.file
-          t.flushed (Int64.of_int (String.length buf)) (offset ++ header);
+        Fmt.failwith "sync error: %s flushed=%Ld buf=%Ld offset+header=%Ld\n%!"
+          t.file t.flushed
+          (Int64.of_int (String.length buf))
+          (offset ++ header);
       t.flushed <- offset ++ header )
 
   let name t = t.file
