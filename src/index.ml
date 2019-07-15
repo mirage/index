@@ -38,6 +38,7 @@ module type S = sig
   val v :
     ?fresh:bool ->
     ?readonly:bool ->
+    ?shared:bool ->
     log_size:int ->
     fan_out_size:int ->
     string ->
@@ -131,32 +132,62 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     (aux [@tailcall]) min
 
-  let v ?(fresh = false) ?(readonly = false) ~log_size ~fan_out_size root =
-    Log.debug (fun l ->
-        l "v \"%s\" fresh=%b readonly=%b log_size=%d fan_out_size=%d" root
-          fresh readonly log_size fan_out_size);
-    let config =
-      { log_size = log_size * entry_size; fan_out_size; readonly }
+
+  let with_cache ~(v : fresh:bool -> readonly:bool -> t) ~clear root =
+    let files = Hashtbl.create 0 in
+    fun ~fresh ~shared ~readonly ->
+      if not shared then (
+        Log.debug (fun l ->
+            l "[%s] v fresh=%b shared=%b readonly=%b" (Filename.basename root)
+              fresh shared readonly);
+        v ~fresh ~readonly )
+      else
+        try
+          if not (Sys.file_exists root) then (
+            Log.debug (fun l ->
+                l "[%s] does not exist anymore, cleaning up the fd cache"
+                  (Filename.basename root));
+            Hashtbl.remove files root;
+            raise Not_found );
+          let t = Hashtbl.find files root in
+          Log.debug (fun l -> l "%s found in cache" root);
+          if fresh then clear t;
+          t
+        with Not_found ->
+          Log.debug (fun l ->
+              l "[%s] v fresh=%b shared=%b readonly=%b"
+                (Filename.basename root) fresh shared readonly);
+          let t = v ~fresh ~readonly in
+          Hashtbl.add files root t;
+          t
+
+  let v ?(fresh = false) ?(readonly = false) ?(shared = true) ~log_size
+      ~fan_out_size root =
+    let v ~fresh ~readonly =
+      let config =
+        { log_size = log_size * entry_size; fan_out_size; readonly }
+      in
+      let log_path = log_path root in
+      let index_path = index_path root in
+      let entries = Bloomf.create ~error_rate:0.01 100_000_000 in
+      let log_mem = Tbl.create 1024 in
+      let log = IO.v ~fresh ~readonly ~generation:0L log_path in
+      let index =
+        Array.init config.fan_out_size (fun i ->
+            let index_path = Printf.sprintf "%s.%d" index_path i in
+            let index = IO.v ~fresh ~readonly ~generation:0L index_path in
+            iter_io (fun e -> Bloomf.add entries e.key) index;
+            index)
+      in
+      let generation = IO.get_generation log in
+      iter_io
+        (fun e ->
+          Tbl.add log_mem e.key e;
+          Bloomf.add entries e.key)
+        log;
+      { config; generation; log_mem; root; log; index; entries }
     in
-    let log_path = log_path root in
-    let index_path = index_path root in
-    let entries = Bloomf.create ~error_rate:0.01 100_000_000 in
-    let log_mem = Tbl.create 1024 in
-    let log = IO.v ~fresh ~readonly ~generation:0L log_path in
-    let index =
-      Array.init config.fan_out_size (fun i ->
-          let index_path = Printf.sprintf "%s.%d" index_path i in
-          let index = IO.v ~fresh ~readonly ~generation:0L index_path in
-          iter_io (fun e -> Bloomf.add entries e.key) index;
-          index)
-    in
-    let generation = IO.get_generation index.(0) in
-    iter_io
-      (fun e ->
-        Tbl.add log_mem e.key e;
-        Bloomf.add entries e.key)
-      log;
-    { config; generation; log_mem; root; log; index; entries }
+    with_cache ~v ~clear ~fresh ~shared ~readonly root
 
   let get_entry t i off =
     let buf = Bytes.create entry_size in

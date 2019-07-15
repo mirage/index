@@ -108,7 +108,7 @@ module IO : Index.IO = struct
     buf : Buffer.t;
   }
 
-  let header = 24L (* offset + version + generation*)
+  let header = 24L (* offset + version + generation *)
 
   let sync t =
     if t.readonly then raise RO_Not_Allowed;
@@ -124,8 +124,8 @@ module IO : Index.IO = struct
          from offset *)
       if not (t.flushed ++ Int64.of_int (String.length buf) = header ++ offset)
       then
-        Fmt.failwith "sync error: %s flushed=%Ld offset+header=%Ld\n%!" t.file
-          t.flushed (offset ++ header);
+        Fmt.failwith "sync error: %s flushed=%Ld buf=%Ld offset+header=%Ld\n%!" t.file
+          t.flushed (Int64.of_int (String.length buf)) (offset ++ header);
       t.flushed <- offset ++ header )
 
   let name t = t.file
@@ -191,6 +191,7 @@ module IO : Index.IO = struct
   let clear t =
     t.offset <- 0L;
     t.flushed <- header;
+    Raw.unsafe_set_offset t.raw t.offset;
     Buffer.clear t.buf
 
   let buffers = Hashtbl.create 256
