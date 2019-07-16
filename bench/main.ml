@@ -73,10 +73,12 @@ let () =
   Fmt.epr "Finding %d bindings.\n%!" index_size;
   let rec loop count = function
     | [] -> ()
-    | (k, _) :: tl ->
+    | (k, v) :: tl ->
         if count mod 1_000 = 0 then
           Fmt.epr "\r%a%!" pp_stats (count, index_size);
-        let _ = Index.find t k in
+        match Index.find t k with
+        | None -> assert false
+        | Some v' -> assert (v = v');
         loop (count + 1) tl
   in
   loop 0 bindings;
