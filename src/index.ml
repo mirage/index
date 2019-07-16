@@ -5,6 +5,8 @@ module type Key = sig
 
   val hash : t -> int
 
+  val hash_size : int
+
   val encode : t -> string
 
   val decode : string -> int -> t
@@ -88,13 +90,19 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   module Tbl = Hashtbl.Make (K)
 
-  type config = { log_size : int; fan_out_size : int; readonly : bool }
+  type config = {
+    log_size : int;
+    fan_out_size : int;
+    fan_out_bits : int;
+    readonly : bool;
+  }
 
   type t = {
     config : config;
     root : string;
     mutable generation : int64;
-    fan_out_table : (int64 * int) array;
+    fan_out_table : int64 array;
+    fan_out_mask : int;
     mutable index : IO.t;
     log : IO.t;
     log_mem : entry Tbl.t;
@@ -106,7 +114,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     IO.clear t.log;
     Bloomf.clear t.entries;
     Tbl.clear t.log_mem;
-    Array.fill t.fan_out_table 0 t.config.fan_out_size (0L, 0);
+    Array.fill t.fan_out_table 0 t.config.fan_out_size 0L;
     IO.clear t.index
 
   let ( // ) = Filename.concat
@@ -115,7 +123,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let index_path root = root // "index" // "index"
 
-  let iter_io ?(min = 0L) ?max f io =
+  let iter_io_off ?(min = 0L) ?max f io =
     let max = match max with None -> IO.offset io | Some m -> m in
     let rec aux offset =
       if offset >= max then ()
@@ -126,7 +134,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           if off = n then ()
           else
             let entry = decode_entry page off in
-            f entry;
+            f Int64.(add (of_int off) offset) entry;
             (read_page [@tailcall]) page (off + entry_size)
         in
         read_page raw 0;
@@ -134,27 +142,14 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     (aux [@tailcall]) min
 
+  let iter_io ?min ?max f io = iter_io_off ?min ?max (fun _ e -> f e) io
+
   let get_entry t off =
     let buf = Bytes.create entry_size in
     let _ = IO.read t.index ~off buf in
     decode_entry buf 0
 
-  let update_fan_out_table t =
-    let index_off = IO.offset t.index in
-    let fan_out_size = t.config.fan_out_size in
-    let doff = Int64.(div index_off (of_int fan_out_size)) in
-    let doff = Int64.(mul (div doff entry_sizeL) entry_sizeL) in
-    let rec loop i =
-      if i = fan_out_size then ()
-      else
-        let off = Int64.(mul doff (of_int i)) in
-        let e = get_entry t off in
-        t.fan_out_table.(i) <- (off, K.hash e.key);
-        loop (i + 1)
-    in
-    loop 0
-
-  let with_cache ~(v: fresh:bool -> readonly:bool -> string -> t) ~clear =
+  let with_cache ~(v : fresh:bool -> readonly:bool -> string -> t) ~clear =
     let roots = Hashtbl.create 0 in
     fun ~fresh ~shared ~readonly root ->
       if not shared then (
@@ -182,26 +177,64 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           Hashtbl.add roots root t;
           t
 
+  let flatten_table t =
+    let rec loop curr i =
+      if i = Array.length t then ()
+      else (
+        if t.(i) = 0L then t.(i) <- curr else if t.(i) < curr then assert false;
+        loop t.(i) (i + 1) )
+    in
+    loop 0L 0
+
+  let fan t h =
+    (h land t.fan_out_mask) lsr (K.hash_size - t.config.fan_out_bits)
+
   let v_no_cache ~log_size ~fan_out_size ~fresh ~readonly root =
     let config =
-      { log_size = log_size * entry_size; fan_out_size; readonly }
+      {
+        log_size = log_size * entry_size;
+        fan_out_bits = fan_out_size;
+        fan_out_size = 1 lsl fan_out_size;
+        readonly;
+      }
     in
     let log_path = log_path root in
     let index_path = index_path root in
     let entries = Bloomf.create ~error_rate:0.01 100_000_000 in
     let log_mem = Tbl.create 1024 in
     let log = IO.v ~fresh ~readonly ~generation:0L log_path in
-    let fan_out_table = Array.make fan_out_size (0L, 0) in
+    let fan_out_table = Array.make config.fan_out_size 0L in
     let index = IO.v ~fresh ~readonly ~generation:0L index_path in
     let generation = IO.get_generation log in
-    let t = { config; generation; log_mem; root; log; fan_out_table; index; entries } in
+    let fan_out_mask =
+      (config.fan_out_size - 1) lsl (K.hash_size - fan_out_size)
+    in
+    let t =
+      {
+        config;
+        generation;
+        log_mem;
+        root;
+        log;
+        fan_out_mask;
+        fan_out_table;
+        index;
+        entries;
+      }
+    in
     iter_io
       (fun e ->
         Tbl.add t.log_mem e.key e;
         Bloomf.add t.entries e.key)
       t.log;
-      iter_io (fun e -> Bloomf.add t.entries e.key) t.index;
-      update_fan_out_table t;
+    iter_io_off
+      (fun off e ->
+        let hash = K.hash e.key in
+        let fan = fan t hash in
+        t.fan_out_table.(fan) <- off;
+        Bloomf.add t.entries e.key)
+      t.index;
+    flatten_table t.fan_out_table;
     t
 
   let v ?(fresh = false) ?(readonly = false) ?(shared = true) ~log_size
@@ -226,19 +259,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     match search Int64.add off with None -> search Int64.sub off | o -> o
 
   let get_fan t h =
-    let rec loop i =
-      if i = t.config.fan_out_size then
-        let low = fst t.fan_out_table.(i - 1) in
-        let high = Int64.sub (IO.offset t.index) entry_sizeL in
-        (low, high)
-      else
-        let off, hash = t.fan_out_table.(i) in
-        if hash < h then loop (i + 1)
-        else
-          let low = if i = 0 then 0L else fst t.fan_out_table.(i - 1) in
-          (low, off)
-    in
-    loop 0
+    let fan = fan t h in
+    let low = if fan = 0 then 0L else t.fan_out_table.(fan - 1) in
+    (low, t.fan_out_table.(fan))
 
   let interpolation_search t key =
     let hashed_key = K.hash key in
@@ -297,9 +320,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       let index_path = index_path t.root in
       let index = IO.v ~fresh:false ~readonly:true ~generation index_path in
       let _ = IO.force_offset index in
-      iter_io (fun e -> Bloomf.add t.entries e.key) index;
+      Array.fill t.fan_out_table 0 (Array.length t.fan_out_table) 0L;
+      iter_io_off
+        (fun off e ->
+          let hash = K.hash e.key in
+          let fan = fan t hash in
+          t.fan_out_table.(fan) <- off;
+          Bloomf.add t.entries e.key)
+        index;
+      flatten_table t.fan_out_table;
       t.index <- index;
-      t.generation <- generation)
+      t.generation <- generation )
     else if log_offset < new_log_offset then
       iter_io add_log_entry t.log ~min:log_offset
     else if log_offset > new_log_offset then assert false
@@ -317,7 +348,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.debug (fun l -> l "mem \"%s\" %a" t.root K.pp key);
     match find t key with None -> false | Some _ -> true
 
+  let append_entry_fanout t h io e =
+    let fan = fan t h in
+    t.fan_out_table.(fan) <- IO.offset io;
+    append_entry io e
+
   let merge_with log t tmp =
+    Array.fill t.fan_out_table 0 (Array.length t.fan_out_table) 0L;
     let offset = ref 0L in
     let get_index_entry = function
       | Some e -> Some e
@@ -330,50 +367,46 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     let rec go last_read l =
       match get_index_entry last_read with
-      | None -> List.iter (fun (_, e) -> append_entry tmp e) l
+      | None ->
+          List.iter
+            (fun (_, e) ->
+              let hashed_e = K.hash e.key in
+              append_entry_fanout t hashed_e tmp e)
+            l
       | Some e -> (
+          let hashed_e = K.hash e.key in
           match l with
           | (k, v) :: r ->
               let last, rst =
                 if K.equal e.key k then (
-                  append_entry tmp v;
+                  append_entry_fanout t hashed_e tmp v;
                   (None, r) )
                 else
-                  let hashed_e = K.hash e.key in
                   let hashed_k = K.hash k in
                   if hashed_e = hashed_k then (
-                    append_entry tmp e;
-                    append_entry tmp v;
+                    append_entry_fanout t hashed_e tmp e;
+                    append_entry_fanout t hashed_k tmp v;
                     (None, r) )
                   else if hashed_e < hashed_k then (
-                    append_entry tmp e;
+                    append_entry_fanout t hashed_e tmp e;
                     (None, l) )
                   else (
-                    append_entry tmp v;
+                    append_entry_fanout t hashed_k tmp v;
                     (Some e, r) )
               in
               if !offset >= IO.offset t.index && last = None then
-                List.iter (fun (_, e) -> append_entry tmp e) rst
+                List.iter
+                  (fun (_, e) ->
+                    let hashed_e = K.hash e.key in
+                    append_entry_fanout t hashed_e tmp e)
+                  rst
               else (go [@tailcall]) last rst
           | [] ->
-              append_entry tmp e;
-              if !offset >= IO.offset t.index then ()
-              else
-                let len = Int64.sub (IO.offset t.index) !offset in
-                let buf = Bytes.create (min (Int64.to_int len) 4096) in
-                let rec refill () =
-                  let n = IO.read t.index ~off:!offset buf in
-                  let buf =
-                    if n = Bytes.length buf then Bytes.unsafe_to_string buf
-                    else Bytes.sub_string buf 0 n
-                  in
-                  IO.append tmp buf;
-                  (offset := Int64.(add !offset (of_int n)));
-                  if !offset < IO.offset t.index then refill ()
-                in
-                refill () )
+              append_entry_fanout t hashed_e tmp e;
+              (go [@tailcall]) None l )
     in
-    (go [@tailcall]) None log
+    go None log;
+    flatten_table t.fan_out_table
 
   module EntryMap = Map.Make (struct
     type t = K.t
@@ -394,7 +427,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     IO.rename ~src:tmp ~dst:t.index;
     IO.clear t.log;
     Tbl.clear t.log_mem;
-    update_fan_out_table t;
     IO.set_generation t.log generation;
     t.generation <- generation
 
