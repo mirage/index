@@ -50,7 +50,7 @@ let index_name = "hello"
 
 let log_size = 500_000
 
-let fan_out_size = 12
+let fan_out_size = 13
 
 let t = Index.v ~fresh:true ~log_size ~fan_out_size index_name
 
@@ -75,13 +75,12 @@ let () =
   Fmt.epr "Finding %d bindings.\n%!" index_size;
   let rec loop count = function
     | [] -> ()
-    | (k, v) :: tl ->
+    | (k, _) :: tl -> (
         if count mod 1_000 = 0 then
           Fmt.epr "\r%a%!" pp_stats (count, index_size);
         match Index.find t k with
         | None -> assert false
-        | Some v' -> assert (v = v');
-        loop (count + 1) tl
+        | Some _ -> loop (count + 1) tl )
   in
   loop 0 bindings;
   let t2 = Sys.time () -. t1 in
