@@ -6,7 +6,7 @@ let index_size = 3_000_000
 
 let () = Random.self_init ()
 
-let random_char () = char_of_int (Random.int 256)
+let random_char () = char_of_int (33 + Random.int 94)
 
 let random_string size = String.init size (fun _i -> random_char ())
 
