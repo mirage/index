@@ -15,6 +15,8 @@ module Key = struct
 
   let hash = Hashtbl.hash
 
+  let hash_size = 30
+
   let encode s = s
 
   let decode s off = String.sub s off string_size
@@ -50,7 +52,7 @@ let page_size = 2
 
 let pool_size = 2
 
-let fan_out_size = 16
+let fan_out_size = 1
 
 let t = Index.v ~fresh:true ~log_size ~fan_out_size index_name
 

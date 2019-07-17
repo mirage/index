@@ -24,6 +24,10 @@ module type Key = sig
   (** Note: Unevenly distributed hash functions may result in performance
       drops. *)
 
+  val hash_size : int
+  (** The maximum number of bits used to encode hashes. `Hashtbl.hash` uses 30
+      bits. *)
+
   val encode : t -> string
   (** [encode] is an encoding function. The encoded resulting values must be of
       fixed size. *)
@@ -82,7 +86,7 @@ module type S = sig
       @param fresh
       @param read_only whether read-only mode is enabled for this index.
       @param log_size  the maximum number of bindings in the `log` IO.
-      @param fan_out_size the size of the fan out for index IOs. Has to be a pozer of 2.
+      @param fan_out_size the number of bits of the fan out for index IO.
       *)
 
   val clear : t -> unit
