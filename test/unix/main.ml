@@ -150,16 +150,16 @@ let readonly () =
 let live_tests =
   [ ("find (present)", `Quick, find_present_live);
     ("find (absent)", `Quick, find_absent_live);
-    ("replace", `Quick, replace_live)
+    ("add", `Quick, replace_live)
   ]
 
 let restart_tests =
   [ ("find (present)", `Quick, find_present_restart);
     ("find (absent)", `Quick, find_absent_restart);
-    ("replace", `Quick, replace_restart)
+    ("add", `Quick, replace_restart)
   ]
 
-let readonly_tests = [ ("replace", `Quick, readonly) ]
+let readonly_tests = [ ("add", `Quick, readonly) ]
 
 let () =
   Alcotest.run "index"
