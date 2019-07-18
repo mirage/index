@@ -66,7 +66,7 @@ let () =
       let count = index_size - i in
       if count mod 1_000 = 0 then Fmt.epr "\r%a%!" pp_stats (count, index_size);
       let k, v = (Key.v (), Value.v ()) in
-      Index.replace t k v;
+      Index.add t k v;
       loop ((k, v) :: bindings) (i - 1)
   in
   let bindings = loop [] index_size in
@@ -75,12 +75,14 @@ let () =
   Fmt.epr "Finding %d bindings.\n%!" index_size;
   let rec loop count = function
     | [] -> ()
-    | (k, _) :: tl -> (
+    | (k, v) :: tl -> (
         if count mod 1_000 = 0 then
           Fmt.epr "\r%a%!" pp_stats (count, index_size);
-        match Index.find t k with
-        | None -> assert false
-        | Some _ -> loop (count + 1) tl )
+        match Index.find_all t k with
+        | [] -> assert false
+        | l ->
+            assert (List.mem v l);
+            loop (count + 1) tl )
   in
   loop 0 bindings;
   let t2 = Sys.time () -. t1 in
