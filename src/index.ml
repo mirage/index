@@ -349,48 +349,47 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             offset := Int64.add !offset entry_sizeL;
             Some e
     in
-    let fan_out = index.fan_out in
-    let rec go last_read l =
+    let append_remaining i =
+      for i = i to Array.length log - 1 do
+        let v = log.(i) in
+        let hashed_v = K.hash v.key in
+        append_entry_fanout index.fan_out hashed_v tmp v
+      done
+    in
+    let rec go last_read log_i =
       match get_index_entry last_read with
-      | None ->
-          List.iter
-            (fun v ->
-              let hashed_v = K.hash v.key in
-              append_entry_fanout fan_out hashed_v tmp v)
-            l
+      | None -> append_remaining log_i
       | Some e -> (
+          let fan_out = index.fan_out in
           let hashed_e = K.hash e.key in
-          match l with
-          | v :: r ->
+          if log_i < Array.length log then (
+              let v = log.(log_i) in
               let last, rst =
                 let hashed_v = K.hash v.key in
                 if hashed_e = hashed_v then (
                   append_entry_fanout fan_out hashed_e tmp e;
                   append_entry_fanout fan_out hashed_v tmp v;
-                  (None, r) )
+                  (None, log_i + 1) )
                 else if hashed_e < hashed_v then (
                   append_entry_fanout fan_out hashed_e tmp e;
-                  (None, l) )
+                  (None, log_i) )
                 else (
                   append_entry_fanout fan_out hashed_v tmp v;
-                  (Some e, r) )
+                  (Some e, log_i + 1) )
               in
               if !offset >= IO.offset index.io && last = None then
-                List.iter
-                  (fun v ->
-                    let hashed_v = K.hash v.key in
-                    append_entry_fanout fan_out hashed_v tmp v)
-                  rst
+                append_remaining rst
               else (go [@tailcall]) last rst
-          | [] ->
+          ) else (
               append_entry_fanout fan_out hashed_e tmp e;
               iter_io
                 (fun e ->
                   let hashed_e = K.hash e.key in
                   append_entry_fanout fan_out hashed_e tmp e)
                 index.io ~min:!offset )
+      )
     in
-    (go [@tailcall]) None log
+    (go [@tailcall]) None 0
 
   let merge t =
     Log.debug (fun l -> l "merge %S" t.root);
@@ -401,8 +400,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       let compare_entry e e' =
         compare (K.hash e.key) (K.hash e'.key)
       in
-      Tbl.fold (fun _ e acc -> e :: acc) t.log_mem []
-      |> List.fast_sort compare_entry
+      let b = Array.make (Tbl.length t.log_mem) (Obj.magic 0) in
+      Tbl.fold (fun _ e i -> b.(i) <- e; i + 1) t.log_mem 0
+      |> ignore;
+      Array.fast_sort compare_entry b;
+      b
     in
     ( match t.index with
     | None ->
@@ -411,7 +413,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         let io =
           IO.v ~fresh:true ~readonly:false ~generation:0L (index_path t.root)
         in
-        List.iter
+        Array.iter
           (fun v ->
             let hashed_v = K.hash v.key in
             append_entry_fanout fan_out hashed_v tmp v)
