@@ -392,22 +392,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     (go [@tailcall]) None log
 
-  module EntrySet = Set.Make (struct
-    type t = entry
-
-    let compare e e' =
-      let c = compare (K.hash e.key) (K.hash e'.key) in
-      if c = 0 then 1 else c
-  end)
-
   let merge t =
     Log.debug (fun l -> l "merge %S" t.root);
     let tmp_path = t.root // "tmp" // "index" in
     let generation = Int64.succ t.generation in
     let tmp = IO.v ~readonly:false ~fresh:true ~generation tmp_path in
     let log =
-      Tbl.fold (fun _ e acc -> EntrySet.add e acc) t.log_mem EntrySet.empty
-      |> EntrySet.elements
+      let compare_entry e e' =
+        compare (K.hash e.key) (K.hash e'.key)
+      in
+      Tbl.fold (fun _ e acc -> e :: acc) t.log_mem []
+      |> List.fast_sort compare_entry
     in
     ( match t.index with
     | None ->
