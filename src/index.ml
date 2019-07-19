@@ -71,7 +71,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   type value = V.t
 
-  type entry = { key : key; value : value }
+  type entry = { key : key; key_hash : int; value : value }
 
   let entry_size = K.encoded_size + V.encoded_size
 
@@ -87,7 +87,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let string = Bytes.unsafe_to_string bytes in
     let key = K.decode string off in
     let value = V.decode string (off + K.encoded_size) in
-    { key; value }
+    { key; key_hash = K.hash key; value }
 
   module Tbl = Hashtbl.Make (K)
 
@@ -226,7 +226,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       if off < 0L || off >= IO.offset io then acc
       else
         let e = get_entry io off in
-        let h_e = K.hash e.key in
+        let h_e = e.key_hash in
         if h_e <> h_key then acc
         else
           let new_acc = if K.equal e.key key then e.value :: acc else acc in
@@ -245,13 +245,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         if high = low then
           if K.equal lowest_entry.key key then [ lowest_entry.value ] else []
         else
-          let lowest_hash = K.hash lowest_entry.key in
+          let lowest_hash = lowest_entry.key_hash in
           if lowest_hash > hashed_key then []
           else
             let highest_entry =
               get_entry_iff_needed index.io high highest_entry
             in
-            let highest_hash = K.hash highest_entry.key in
+            let highest_hash = highest_entry.key_hash in
             if highest_hash < hashed_key then []
             else
               let lowest_hashf = float_of_int lowest_hash in
@@ -268,7 +268,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               let off = lowf +. doff -. mod_float doff entry_sizef in
               let offL = Int64.of_float off in
               let e = get_entry index.io offL in
-              let hashed_e = K.hash e.key in
+              let hashed_e = e.key_hash in
               if hashed_key = hashed_e then
                 let init = if K.equal key e.key then [ e.value ] else [] in
                 look_around index.io init key hashed_key offL
@@ -304,7 +304,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_out_size in
       iter_io_off
         (fun off e ->
-          let hash = K.hash e.key in
+          let hash = e.key_hash in
           Fan.update fan_out hash off)
         io;
       Fan.finalize fan_out;
@@ -349,45 +349,44 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             offset := Int64.add !offset entry_sizeL;
             Some e
     in
+    let fan_out = index.fan_out in
     let append_remaining i =
       for i = i to Array.length log - 1 do
         let v = log.(i) in
-        let hashed_v = K.hash v.key in
-        append_entry_fanout index.fan_out hashed_v tmp v
+        let hashed_v = v.key_hash in
+        append_entry_fanout fan_out hashed_v tmp v
       done
     in
     let rec go last_read log_i =
       match get_index_entry last_read with
       | None -> append_remaining log_i
-      | Some e -> (
-          let fan_out = index.fan_out in
-          let hashed_e = K.hash e.key in
-          if log_i < Array.length log then (
-              let v = log.(log_i) in
-              let last, rst =
-                let hashed_v = K.hash v.key in
-                if hashed_e = hashed_v then (
-                  append_entry_fanout fan_out hashed_e tmp e;
-                  append_entry_fanout fan_out hashed_v tmp v;
-                  (None, log_i + 1) )
-                else if hashed_e < hashed_v then (
-                  append_entry_fanout fan_out hashed_e tmp e;
-                  (None, log_i) )
-                else (
-                  append_entry_fanout fan_out hashed_v tmp v;
-                  (Some e, log_i + 1) )
-              in
-              if !offset >= IO.offset index.io && last = None then
-                append_remaining rst
-              else (go [@tailcall]) last rst
-          ) else (
-              append_entry_fanout fan_out hashed_e tmp e;
-              iter_io
-                (fun e ->
-                  let hashed_e = K.hash e.key in
-                  append_entry_fanout fan_out hashed_e tmp e)
-                index.io ~min:!offset )
-      )
+      | Some e ->
+          let hashed_e = e.key_hash in
+          if log_i < Array.length log then
+            let v = log.(log_i) in
+            let last, rst =
+              let hashed_v = v.key_hash in
+              if hashed_e = hashed_v then (
+                append_entry_fanout fan_out hashed_e tmp e;
+                append_entry_fanout fan_out hashed_v tmp v;
+                (None, log_i + 1) )
+              else if hashed_e < hashed_v then (
+                append_entry_fanout fan_out hashed_e tmp e;
+                (None, log_i) )
+              else (
+                append_entry_fanout fan_out hashed_v tmp v;
+                (Some e, log_i + 1) )
+            in
+            if !offset >= IO.offset index.io && last = None then
+              append_remaining rst
+            else (go [@tailcall]) last rst
+          else (
+            append_entry_fanout fan_out hashed_e tmp e;
+            iter_io
+              (fun e ->
+                let hashed_e = e.key_hash in
+                append_entry_fanout fan_out hashed_e tmp e)
+              index.io ~min:!offset )
     in
     (go [@tailcall]) None 0
 
@@ -397,11 +396,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let generation = Int64.succ t.generation in
     let tmp = IO.v ~readonly:false ~fresh:true ~generation tmp_path in
     let log =
-      let compare_entry e e' =
-        compare (K.hash e.key) (K.hash e'.key)
-      in
+      let compare_entry e e' = compare e.key_hash e'.key_hash in
       let b = Array.make (Tbl.length t.log_mem) (Obj.magic 0) in
-      Tbl.fold (fun _ e i -> b.(i) <- e; i + 1) t.log_mem 0
+      Tbl.fold
+        (fun _ e i ->
+          b.(i) <- e;
+          i + 1)
+        t.log_mem 0
       |> ignore;
       Array.fast_sort compare_entry b;
       b
@@ -441,7 +442,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let add t key value =
     Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
     if t.config.readonly then raise RO_Not_Allowed;
-    let entry = { key; value } in
+    let entry = { key; key_hash = K.hash key; value } in
     append_entry t.log entry;
     Tbl.add t.log_mem key entry;
     may (fun bf -> Bloomf.add bf key) t.entries;
