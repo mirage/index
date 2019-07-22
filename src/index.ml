@@ -149,14 +149,15 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let _ = IO.read t.index ~off buf in
     decode_entry buf 0
 
-  let with_cache ~(v : fresh:bool -> readonly:bool -> string -> t) ~clear =
+  let with_cache ~v ~clear =
     let roots = Hashtbl.create 0 in
-    fun ~fresh ~shared ~readonly root ->
+    let f ?(fresh = false) ?(readonly = false) ?(shared = true) ~log_size
+        ~fan_out_size root =
       if not shared then (
         Log.debug (fun l ->
             l "[%s] v fresh=%b shared=%b readonly=%b" (Filename.basename root)
               fresh shared readonly);
-        v ~fresh ~readonly root )
+        v ~fresh ~readonly ~log_size ~fan_out_size root )
       else
         try
           if not (Sys.file_exists root) then (
@@ -173,9 +174,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           Log.debug (fun l ->
               l "[%s] v fresh=%b shared=%b readonly=%b"
                 (Filename.basename root) fresh shared readonly);
-          let t = v ~fresh ~readonly root in
+          let t = v ~fresh ~readonly ~log_size ~fan_out_size root in
           Hashtbl.add roots root t;
           t
+    in
+    `Staged f
 
   let flatten_table t =
     let rec loop curr i =
@@ -190,7 +193,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let mask, shift = t.fan_out_masks in
     (h land mask) lsr shift
 
-  let v_no_cache ~log_size ~fan_out_size ~fresh ~readonly root =
+  let v_no_cache ~fresh ~readonly ~log_size ~fan_out_size root =
     let config =
       {
         log_size = log_size * entry_size;
@@ -239,11 +242,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     flatten_table t.fan_out_table;
     t
 
-  let v ?(fresh = false) ?(readonly = false) ?(shared = true) ~log_size
-      ~fan_out_size root =
-    with_cache
-      ~v:(v_no_cache ~log_size ~fan_out_size)
-      ~clear ~fresh ~shared ~readonly root
+  let (`Staged v) = with_cache ~v:v_no_cache ~clear
 
   let get_entry_iff_needed t off = function
     | Some e -> e
