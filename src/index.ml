@@ -114,7 +114,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     IO.clear t.log;
     Bloomf.clear t.entries;
     Tbl.clear t.log_mem;
-    Array.fill t.fan_out_table 0 t.config.fan_out_size 0L;
+    Array.fill t.fan_out_table 0 t.config.fan_out_size (-1L);
     IO.clear t.index
 
   let ( // ) = Filename.concat
@@ -184,10 +184,10 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let rec loop curr i =
       if i = Array.length t then ()
       else (
-        if t.(i) = 0L then t.(i) <- curr else if t.(i) < curr then assert false;
+        if t.(i) = -1L then t.(i) <- curr;
         loop t.(i) (i + 1) )
     in
-    loop 0L 0
+    loop (-1L) 0
 
   let fan t h =
     let mask, shift = t.fan_out_masks in
@@ -207,7 +207,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let entries = Bloomf.create ~error_rate:0.01 100_000_000 in
     let log_mem = Tbl.create 1024 in
     let log = IO.v ~fresh ~readonly ~generation:0L log_path in
-    let fan_out_table = Array.make config.fan_out_size 0L in
+    let fan_out_table = Array.make config.fan_out_size (-1L) in
     let index = IO.v ~fresh ~readonly ~generation:0L index_path in
     let generation = IO.get_generation log in
     let fan_out_masks =
@@ -271,7 +271,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let interpolation_search t key : value list =
     let hashed_key = K.hash key in
     let low, high = get_fan t hashed_key in
-    let rec search low high lowest_entry highest_entry : value list =
+    let rec search low high lowest_entry highest_entry =
       if high < low then []
       else
         let lowest_entry = get_entry_iff_needed t low lowest_entry in
@@ -328,7 +328,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       let index_path = index_path t.root in
       let index = IO.v ~fresh:false ~readonly:true ~generation index_path in
       let _ = IO.force_offset index in
-      Array.fill t.fan_out_table 0 (Array.length t.fan_out_table) 0L;
+      Array.fill t.fan_out_table 0 (Array.length t.fan_out_table) (-1L);
       iter_io_off
         (fun off e ->
           let hash = K.hash e.key in
@@ -362,7 +362,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     append_entry io e
 
   let merge_with log t tmp =
-    Array.fill t.fan_out_table 0 (Array.length t.fan_out_table) 0L;
+    Array.fill t.fan_out_table 0 (Array.length t.fan_out_table) (-1L);
     let offset = ref 0L in
     let get_index_entry = function
       | Some e -> Some e
@@ -441,7 +441,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     t.generation <- generation
 
   let add t key value =
-    Log.debug (fun l -> l "replace \"%s\" %a %a" t.root K.pp key V.pp value);
+    Log.debug (fun l -> l "add \"%s\" %a %a" t.root K.pp key V.pp value);
     if t.config.readonly then raise RO_Not_Allowed;
     let entry = { key; value } in
     append_entry t.log entry;

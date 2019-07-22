@@ -56,16 +56,16 @@ let fan_out_size = 1
 
 let t = Index.v ~fresh:true ~log_size ~fan_out_size index_name
 
-let l = List.init index_size (fun _ -> (Key.v (), Value.v ()))
+let l = ref (List.init index_size (fun _ -> (Key.v (), Value.v ())))
 
 let () =
-  let () = List.iter (fun (k, v) -> Index.add t k v) l in
+  let () = List.iter (fun (k, v) -> Index.add t k v) !l in
   Index.flush t
 
 let rec random_new_key () =
   let r = Key.v () in
   try
-    let _ = List.assoc r l in
+    let _ = List.assoc r !l in
     random_new_key ()
   with Not_found -> r
 
@@ -75,13 +75,12 @@ let test_find_present t =
       match Index.find_all t k with
       | [] ->
           Alcotest.fail
-            (Printf.sprintf "Inserted value is not present anymore: %s." k)
-      | [ s ] -> Alcotest.(check bool) "" true (String.equal s v)
-      | _ ->
-          Alcotest.fail
-            (Printf.sprintf
-               "Multiple bindings were returned, only one was expected."))
-    (List.rev l)
+            (Printf.sprintf "Wrong insertion: %s key is missing." k)
+      | l ->
+          if not (List.mem v l) then
+            Alcotest.fail
+              (Printf.sprintf "Wrong insertion: %s value is missing." v))
+    (List.rev !l)
 
 let test_find_absent t =
   let rec loop i =
@@ -95,15 +94,16 @@ let test_find_absent t =
   in
   loop index_size
 
-let test_replace t =
-  let k, v = List.hd l in
+let test_add t =
+  let k, v = List.hd !l in
   let v' = Value.v () in
   Index.add t k v';
+  l := (k, v') :: !l;
   match Index.find_all t k with
   | [] ->
       Alcotest.fail
         (Printf.sprintf "Inserted value is not present anymore: %s." k)
-  | _ as l ->
+  | l ->
       if not (List.mem v l && List.mem v' l) then
         Alcotest.fail (Printf.sprintf "Adding duplicate values failed.")
 
@@ -117,10 +117,10 @@ let find_present_restart () =
 let find_absent_restart () =
   test_find_absent (Index.v ~fresh:false ~log_size ~fan_out_size index_name)
 
-let replace_live () = test_replace t
+let replace_live () = test_add t
 
 let replace_restart () =
-  test_replace (Index.v ~fresh:false ~log_size ~fan_out_size index_name)
+  test_add (Index.v ~fresh:false ~log_size ~fan_out_size index_name)
 
 let readonly () =
   let w =
@@ -129,23 +129,19 @@ let readonly () =
   let r =
     Index.v ~fresh:false ~readonly:true ~log_size ~fan_out_size index_name
   in
-  List.iter (fun (k, v) -> Index.add w k v) l;
+  List.iter (fun (k, v) -> Index.add w k v) !l;
   Index.flush w;
   List.iter
-    (fun (k, v') ->
+    (fun (k, v) ->
       match Index.find_all r k with
       | [] ->
           Alcotest.fail
-            (Printf.sprintf "Inserted value is not present anymore: %s." k)
-      | [ v ] ->
-          if v <> v' then
+            (Printf.sprintf "Wrong insertion: %s key is missing." k)
+      | l ->
+          if not (List.mem v l) then
             Alcotest.fail
-              (Printf.sprintf "Wrong replacement: got %s, expected %s." v v')
-      | _ ->
-          Alcotest.fail
-            (Printf.sprintf
-               "Multiple bindings were returned, only one was expected."))
-    l
+              (Printf.sprintf "Wrong insertion: %s value is missing." v))
+    !l
 
 let live_tests =
   [ ("find (present)", `Quick, find_present_live);
