@@ -334,61 +334,48 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.debug (fun l -> l "mem %a" K.pp key);
     match find_all t key with [] -> false | _ -> true
 
-  let append_entry_fanout fan_out h io e =
-    Fan.update fan_out h (IO.offset io);
-    append_entry io e
+  let append_buf_fanout fan_out hash buf_str dst_io =
+    Fan.update fan_out hash (IO.offset dst_io);
+    IO.append dst_io buf_str
 
-  let merge_with log index tmp =
-    let offset = ref 0L in
-    let get_index_entry = function
-      | Some e -> Some e
-      | None ->
-          if !offset >= IO.offset index.io then None
-          else
-            let e = get_entry index.io !offset in
-            offset := Int64.add !offset entry_sizeL;
-            Some e
-    in
+  let append_entry_fanout fan_out entry dst_io =
+    Fan.update fan_out entry.key_hash (IO.offset dst_io);
+    append_entry dst_io entry
+
+  let rec merge_from_log fan_out log log_i hash_e dst_io =
+    if log_i >= Array.length log then log_i
+    else
+      let v = log.(log_i) in
+      if v.key_hash > hash_e then log_i
+      else (
+        append_entry_fanout fan_out v dst_io;
+        merge_from_log fan_out log (log_i + 1) hash_e dst_io )
+
+  let append_remaining_log fan_out log log_i dst_io =
+    for log_i = log_i to Array.length log - 1 do
+      append_entry_fanout fan_out log.(log_i) dst_io
+    done
+
+  (** Merge [log] with [t] into [dst_io].
+      [log] must be sorted by key hashes. *)
+  let merge_with log index dst_io =
+    let buf = Bytes.create entry_size in
+    let index_end = IO.offset index.io in
     let fan_out = index.fan_out in
-    let append_remaining i =
-      for i = i to Array.length log - 1 do
-        let v = log.(i) in
-        let hashed_v = v.key_hash in
-        append_entry_fanout fan_out hashed_v tmp v
-      done
+    let rec go index_offset log_i =
+      if index_offset >= index_end then
+        append_remaining_log fan_out log log_i dst_io
+      else (
+        ignore (IO.read index.io ~off:index_offset buf);
+        let buf_str = Bytes.unsafe_to_string buf in
+        let index_offset = Int64.add index_offset entry_sizeL in
+        let key_e = K.decode buf_str 0 in
+        let hash_e = K.hash key_e in
+        let log_i = merge_from_log fan_out log log_i hash_e dst_io in
+        append_buf_fanout fan_out hash_e buf_str dst_io;
+        go index_offset log_i )
     in
-    let rec go last_read log_i =
-      match get_index_entry last_read with
-      | None -> append_remaining log_i
-      | Some e ->
-          let hashed_e = e.key_hash in
-          if log_i < Array.length log then
-            let v = log.(log_i) in
-            let last, rst =
-              let hashed_v = v.key_hash in
-              if hashed_e = hashed_v then (
-                append_entry_fanout fan_out hashed_e tmp e;
-                append_entry_fanout fan_out hashed_v tmp v;
-                (None, log_i + 1) )
-              else if hashed_e < hashed_v then (
-                append_entry_fanout fan_out hashed_e tmp e;
-                (None, log_i) )
-              else (
-                append_entry_fanout fan_out hashed_v tmp v;
-                (Some e, log_i + 1) )
-            in
-            if !offset >= IO.offset index.io && last = None then
-              append_remaining rst
-            else (go [@tailcall]) last rst
-          else (
-            append_entry_fanout fan_out hashed_e tmp e;
-            iter_io
-              (fun e ->
-                let hashed_e = e.key_hash in
-                append_entry_fanout fan_out hashed_e tmp e)
-              index.io ~min:!offset )
-    in
-    (go [@tailcall]) None 0
+    go 0L 0
 
   let merge t =
     Log.debug (fun l -> l "merge %S" t.root);
@@ -414,11 +401,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         let io =
           IO.v ~fresh:true ~readonly:false ~generation:0L (index_path t.root)
         in
-        Array.iter
-          (fun v ->
-            let hashed_v = K.hash v.key in
-            append_entry_fanout fan_out hashed_v tmp v)
-          log;
+        append_remaining_log fan_out log 0 tmp;
         t.index <- Some { io; fan_out }
     | Some index ->
         let fan_out_size =
