@@ -56,55 +56,56 @@ let fan_out_size = 1
 
 let t = Index.v ~fresh:true ~log_size ~fan_out_size index_name
 
-let l = List.init index_size (fun _ -> (Key.v (), Value.v ()))
+let l = ref (List.init index_size (fun _ -> (Key.v (), Value.v ())))
 
 let () =
-  let () = List.iter (fun (k, v) -> Index.replace t k v) l in
+  let () = List.iter (fun (k, v) -> Index.add t k v) !l in
   Index.flush t
 
 let rec random_new_key () =
   let r = Key.v () in
   try
-    let _ = List.assoc r l in
+    let _ = List.assoc r !l in
     random_new_key ()
   with Not_found -> r
 
 let test_find_present t =
   List.iter
     (fun (k, v) ->
-      match Index.find t k with
-      | None ->
+      match Index.find_all t k with
+      | [] ->
           Alcotest.fail
-            (Printf.sprintf "Inserted value is not present anymore: %s." k)
-      | Some s -> Alcotest.(check bool) "" true (String.equal s v))
-    (List.rev l)
+            (Printf.sprintf "Wrong insertion: %s key is missing." k)
+      | l ->
+          if not (List.mem v l) then
+            Alcotest.fail
+              (Printf.sprintf "Wrong insertion: %s value is missing." v))
+    (List.rev !l)
 
 let test_find_absent t =
   let rec loop i =
     if i = 0 then ()
     else
       let k = random_new_key () in
-      ( match Index.find t k with
-      | None -> ()
-      | Some _ ->
-          Alcotest.fail (Printf.sprintf "Absent value was found: %s." k) );
+      ( match Index.find_all t k with
+      | [] -> ()
+      | _ -> Alcotest.fail (Printf.sprintf "Absent value was found: %s." k) );
       loop (i - 1)
   in
   loop index_size
 
-let test_replace t =
-  let k, v = List.hd l in
+let test_add t =
+  let k, v = List.hd !l in
   let v' = Value.v () in
-  Index.replace t k v';
-  ( match Index.find t k with
-  | None ->
+  Index.add t k v';
+  l := (k, v') :: !l;
+  match Index.find_all t k with
+  | [] ->
       Alcotest.fail
         (Printf.sprintf "Inserted value is not present anymore: %s." k)
-  | Some v ->
-      if v <> v' then
-        Alcotest.fail
-          (Printf.sprintf "Wrong replacement: got %s, expected %s." v v') );
-  Index.replace t k v
+  | l ->
+      if not (List.mem v l && List.mem v' l) then
+        Alcotest.fail (Printf.sprintf "Adding duplicate values failed.")
 
 let find_present_live () = test_find_present t
 
@@ -116,10 +117,10 @@ let find_present_restart () =
 let find_absent_restart () =
   test_find_absent (Index.v ~fresh:false ~log_size ~fan_out_size index_name)
 
-let replace_live () = test_replace t
+let replace_live () = test_add t
 
 let replace_restart () =
-  test_replace (Index.v ~fresh:false ~log_size ~fan_out_size index_name)
+  test_add (Index.v ~fresh:false ~log_size ~fan_out_size index_name)
 
 let readonly () =
   let w =
@@ -128,33 +129,33 @@ let readonly () =
   let r =
     Index.v ~fresh:false ~readonly:true ~log_size ~fan_out_size index_name
   in
-  List.iter (fun (k, v) -> Index.replace w k v) l;
+  List.iter (fun (k, v) -> Index.add w k v) !l;
   Index.flush w;
   List.iter
-    (fun (k, v') ->
-      match Index.find r k with
-      | None ->
+    (fun (k, v) ->
+      match Index.find_all r k with
+      | [] ->
           Alcotest.fail
-            (Printf.sprintf "Inserted value is not present anymore: %s." k)
-      | Some v ->
-          if v <> v' then
+            (Printf.sprintf "Wrong insertion: %s key is missing." k)
+      | l ->
+          if not (List.mem v l) then
             Alcotest.fail
-              (Printf.sprintf "Wrong replacement: got %s, expected %s." v v'))
-    l
+              (Printf.sprintf "Wrong insertion: %s value is missing." v))
+    !l
 
 let live_tests =
   [ ("find (present)", `Quick, find_present_live);
     ("find (absent)", `Quick, find_absent_live);
-    ("replace", `Quick, replace_live)
+    ("add", `Quick, replace_live)
   ]
 
 let restart_tests =
   [ ("find (present)", `Quick, find_present_restart);
     ("find (absent)", `Quick, find_absent_restart);
-    ("replace", `Quick, replace_restart)
+    ("add", `Quick, replace_restart)
   ]
 
-let readonly_tests = [ ("replace", `Quick, readonly) ]
+let readonly_tests = [ ("add", `Quick, readonly) ]
 
 let () =
   Alcotest.run "index"
