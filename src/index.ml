@@ -59,6 +59,8 @@ module type S = sig
   val flush : t -> unit
 end
 
+let may f = function None -> () | Some bf -> f bf
+
 exception RO_Not_Allowed
 
 let src = Logs.Src.create "index" ~doc:"Index"
@@ -106,13 +108,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     mutable index : IO.t;
     log : IO.t;
     log_mem : entry Tbl.t;
-    entries : key Bloomf.t;
+    entries : key Bloomf.t option;
   }
 
   let clear t =
     Log.debug (fun l -> l "clear \"%s\"" t.root);
     IO.clear t.log;
-    Bloomf.clear t.entries;
+    may Bloomf.clear t.entries;
     Tbl.clear t.log_mem;
     Array.fill t.fan_out_table 0 t.config.fan_out_size (-1L);
     IO.clear t.index
@@ -204,7 +206,10 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     let log_path = log_path root in
     let index_path = index_path root in
-    let entries = Bloomf.create ~error_rate:0.01 100_000_000 in
+    let entries =
+      if readonly then None
+      else Some (Bloomf.create ~error_rate:0.01 100_000_000)
+    in
     let log_mem = Tbl.create 1024 in
     let log = IO.v ~fresh ~readonly ~generation:0L log_path in
     let fan_out_table = Array.make config.fan_out_size (-1L) in
@@ -230,14 +235,14 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     iter_io
       (fun e ->
         Tbl.add t.log_mem e.key e;
-        Bloomf.add t.entries e.key)
+        may (fun bf -> Bloomf.add bf e.key) t.entries)
       t.log;
     iter_io_off
       (fun off e ->
         let hash = K.hash e.key in
         let fan = fan t hash in
         t.fan_out_table.(fan) <- off;
-        Bloomf.add t.entries e.key)
+        may (fun bf -> Bloomf.add bf e.key) t.entries)
       t.index;
     flatten_table t.fan_out_table;
     t
@@ -320,7 +325,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let new_log_offset = IO.force_offset t.log in
     let add_log_entry e =
       Tbl.replace t.log_mem e.key e;
-      Bloomf.add t.entries e.key
+      may (fun bf -> Bloomf.add bf e.key) t.entries
     in
     if t.generation <> generation then (
       Tbl.clear t.log_mem;
@@ -333,8 +338,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         (fun off e ->
           let hash = K.hash e.key in
           let fan = fan t hash in
-          t.fan_out_table.(fan) <- off;
-          Bloomf.add t.entries e.key)
+          t.fan_out_table.(fan) <- off)
         index;
       flatten_table t.fan_out_table;
       t.index <- index;
@@ -346,11 +350,14 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let find_all t key =
     Log.debug (fun l -> l "find \"%s\" %a" t.root K.pp key);
     if t.config.readonly then sync_log t;
-    if not (Bloomf.mem t.entries key) then []
-    else
+    let look_on_disk () =
       let in_index = interpolation_search t key in
       let in_log = List.map (fun e -> e.value) (Tbl.find_all t.log_mem key) in
       in_index @ in_log
+    in
+    match t.entries with
+    | None -> look_on_disk ()
+    | Some bf -> if not (Bloomf.mem bf key) then [] else look_on_disk ()
 
   let mem t key =
     Log.debug (fun l -> l "mem \"%s\" %a" t.root K.pp key);
@@ -446,7 +453,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let entry = { key; value } in
     append_entry t.log entry;
     Tbl.add t.log_mem key entry;
-    Bloomf.add t.entries key;
+    may (fun bf -> Bloomf.add bf key) t.entries;
     if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
     then merge t
 
