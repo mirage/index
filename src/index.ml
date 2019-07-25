@@ -112,6 +112,57 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           loop t.fans.(i) (i + 1) )
       in
       loop (-1L) 0
+
+    external set_64 : Bytes.t -> int -> int64 -> unit = "%caml_string_set64u"
+
+    external get_64 : string -> int -> int64 = "%caml_string_get64"
+
+    external swap64 : int64 -> int64 = "%bswap_int64"
+
+    let encode_int64 i =
+      let set_uint64 s off v =
+        if not Sys.big_endian then set_64 s off (swap64 v) else set_64 s off v
+      in
+      let b = Bytes.create 8 in
+      set_uint64 b 0 i;
+      Bytes.to_string b
+
+    let decode_int64 buf =
+      let get_uint64 s off =
+        if not Sys.big_endian then swap64 (get_64 s off) else get_64 s off
+      in
+      get_uint64 buf 0
+
+    let export t io =
+      IO.append io (encode_int64 (Int64.of_int t.size));
+      let rec loop i =
+        if i = -1 then ()
+        else (
+          IO.append io (encode_int64 t.fans.(i));
+          loop (i - 1) )
+      in
+      loop (Array.length t.fans - 1);
+      IO.sync io
+
+    let import io =
+      let buf = Bytes.create 8 in
+      let n = IO.read io ~off:0L buf in
+      assert (n = 8);
+      let buf = Bytes.unsafe_to_string buf in
+      let size = Int64.to_int (decode_int64 buf) in
+      let buf = Bytes.create (size * 8) in
+      let n = IO.read io ~off:0L buf in
+      let buf = Bytes.unsafe_to_string buf in
+      assert (n = 8 * size);
+      let fans =
+        Array.init size (fun i ->
+            let sub = String.sub buf (i * size) 8 in
+            decode_int64 sub)
+      in
+      let nb_fans = 1 lsl size in
+      let shift = K.hash_size - size in
+      let mask = (nb_fans - 1) lsl shift in
+      { size; fans; mask; shift }
   end
 
   let append_entry io e =
@@ -132,7 +183,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     config : config;
     root : string;
     mutable generation : int64;
-    fan_out : Fan.t;
+    mutable fan_out : Fan.t;
     mutable index : IO.t;
     log : IO.t;
     log_mem : entry Tbl.t;
@@ -222,7 +273,14 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let log = IO.v ~fresh ~readonly ~generation:0L log_path in
     let index = IO.v ~fresh ~readonly ~generation:0L index_path in
     let generation = IO.get_generation log in
-    let fan_out = Fan.v fan_out_size in
+    let fan_out =
+      if generation = 0L then Fan.v fan_out_size
+      else
+        let io =
+          IO.v ~fresh:false ~readonly:true ~generation:0L (root // "fan")
+        in
+        Fan.import io
+    in
     let t =
       { config; generation; fan_out; log_mem; root; log; index; entries }
     in
@@ -231,12 +289,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Tbl.add t.log_mem e.key e;
         may (fun bf -> Bloomf.add bf e.key) t.entries)
       t.log;
-    iter_io_off
-      (fun off e ->
-        let hash = K.hash e.key in
-        Fan.update t.fan_out hash off;
-        may (fun bf -> Bloomf.add bf e.key) t.entries)
-      t.index;
+    iter_io (fun e -> may (fun bf -> Bloomf.add bf e.key) t.entries) t.index;
     Fan.flatten t.fan_out;
     t
 
@@ -311,24 +364,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let generation = IO.get_generation t.log in
     let log_offset = IO.offset t.log in
     let new_log_offset = IO.force_offset t.log in
-    let add_log_entry e =
-      Tbl.add t.log_mem e.key e;
-      may (fun bf -> Bloomf.add bf e.key) t.entries
-    in
+    let add_log_entry e = Tbl.add t.log_mem e.key e in
     if t.generation <> generation then (
       Tbl.clear t.log_mem;
       iter_io add_log_entry t.log;
-      let index_path = index_path t.root in
-      let index = IO.v ~fresh:false ~readonly:true ~generation index_path in
-      let _ = IO.force_offset index in
-      Fan.clear t.fan_out;
-      iter_io_off
-        (fun off e ->
-          let hash = K.hash e.key in
-          Fan.update t.fan_out hash off)
-        index;
-      Fan.flatten t.fan_out;
-      t.index <- index;
+      let fan_path = t.root // "fan" in
+      let fan = IO.v ~fresh:false ~readonly:true ~generation fan_path in
+      t.fan_out <- Fan.import fan;
       t.generation <- generation )
     else if log_offset < new_log_offset then
       iter_io add_log_entry t.log ~min:log_offset
@@ -426,7 +468,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       |> EntrySet.elements
     in
     merge_with log t tmp;
+    let tmp_fan_path = t.root // "tmp" // "fan" in
+    let fan_path = t.root // "fan" in
+    let tmp_fan = IO.v ~fresh:true ~readonly:false ~generation tmp_fan_path in
+    Fan.export t.fan_out tmp_fan;
+    let fan = IO.v ~fresh:true ~readonly:false ~generation fan_path in
     IO.rename ~src:tmp ~dst:t.index;
+    IO.rename ~src:tmp_fan ~dst:fan;
     Fan.flatten t.fan_out;
     IO.clear t.log;
     Tbl.clear t.log_mem;
