@@ -80,6 +80,40 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let entry_sizeL = Int64.of_int entry_size
 
+  module Fan = struct
+    type t = { size : int; fans : int64 array; mask : int; shift : int }
+
+    let v n =
+      let size = n in
+      let nb_fans = 1 lsl size in
+      let fans = Array.make nb_fans (-1L) in
+      let shift = K.hash_size - size in
+      let mask = (nb_fans - 1) lsl shift in
+      { size; fans; mask; shift }
+
+    let fan t h = (h land t.mask) lsr t.shift
+
+    let clear t = Array.fill t.fans 0 (Array.length t.fans) (-1L)
+
+    let search t h =
+      let fan = fan t h in
+      let low = if fan = 0 then 0L else t.fans.(fan - 1) in
+      (low, t.fans.(fan))
+
+    let update t hash off =
+      let fan = fan t hash in
+      t.fans.(fan) <- off
+
+    let flatten t =
+      let rec loop curr i =
+        if i = Array.length t.fans then ()
+        else (
+          if t.fans.(i) = -1L then t.fans.(i) <- curr;
+          loop t.fans.(i) (i + 1) )
+      in
+      loop (-1L) 0
+  end
+
   let append_entry io e =
     IO.append io (K.encode e.key);
     IO.append io (V.encode e.value)
@@ -92,19 +126,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   module Tbl = Hashtbl.Make (K)
 
-  type config = {
-    log_size : int;
-    fan_out_size : int;
-    fan_out_bits : int;
-    readonly : bool;
-  }
+  type config = { log_size : int; readonly : bool }
 
   type t = {
     config : config;
     root : string;
     mutable generation : int64;
-    fan_out_table : int64 array;
-    fan_out_masks : int * int;
+    fan_out : Fan.t;
     mutable index : IO.t;
     log : IO.t;
     log_mem : entry Tbl.t;
@@ -116,7 +144,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     IO.clear t.log;
     may Bloomf.clear t.entries;
     Tbl.clear t.log_mem;
-    Array.fill t.fan_out_table 0 t.config.fan_out_size (-1L);
+    Fan.clear t.fan_out;
     IO.clear t.index
 
   let ( // ) = Filename.concat
@@ -182,28 +210,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     `Staged f
 
-  let flatten_table t =
-    let rec loop curr i =
-      if i = Array.length t then ()
-      else (
-        if t.(i) = -1L then t.(i) <- curr;
-        loop t.(i) (i + 1) )
-    in
-    loop (-1L) 0
-
-  let fan t h =
-    let mask, shift = t.fan_out_masks in
-    (h land mask) lsr shift
-
   let v_no_cache ~fresh ~readonly ~log_size ~fan_out_size root =
-    let config =
-      {
-        log_size = log_size * entry_size;
-        fan_out_bits = fan_out_size;
-        fan_out_size = 1 lsl fan_out_size;
-        readonly;
-      }
-    in
+    let config = { log_size = log_size * entry_size; readonly } in
     let log_path = log_path root in
     let index_path = index_path root in
     let entries =
@@ -212,25 +220,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     let log_mem = Tbl.create 1024 in
     let log = IO.v ~fresh ~readonly ~generation:0L log_path in
-    let fan_out_table = Array.make config.fan_out_size (-1L) in
     let index = IO.v ~fresh ~readonly ~generation:0L index_path in
     let generation = IO.get_generation log in
-    let fan_out_masks =
-      ( (config.fan_out_size - 1) lsl (K.hash_size - config.fan_out_bits),
-        K.hash_size - config.fan_out_bits )
-    in
+    let fan_out = Fan.v fan_out_size in
     let t =
-      {
-        config;
-        generation;
-        log_mem;
-        root;
-        log;
-        fan_out_masks;
-        fan_out_table;
-        index;
-        entries;
-      }
+      { config; generation; fan_out; log_mem; root; log; index; entries }
     in
     iter_io
       (fun e ->
@@ -240,11 +234,10 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     iter_io_off
       (fun off e ->
         let hash = K.hash e.key in
-        let fan = fan t hash in
-        t.fan_out_table.(fan) <- off;
+        Fan.update t.fan_out hash off;
         may (fun bf -> Bloomf.add bf e.key) t.entries)
       t.index;
-    flatten_table t.fan_out_table;
+    Fan.flatten t.fan_out;
     t
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
@@ -268,14 +261,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let before = search init Int64.add off in
     search before Int64.sub off
 
-  let get_fan t h =
-    let fan = fan t h in
-    let low = if fan = 0 then 0L else t.fan_out_table.(fan - 1) in
-    (low, t.fan_out_table.(fan))
-
-  let interpolation_search t key : value list =
+  let interpolation_search t key =
     let hashed_key = K.hash key in
-    let low, high = get_fan t hashed_key in
+    let low, high = Fan.search t.fan_out hashed_key in
     let rec search low high lowest_entry highest_entry =
       if high < low then []
       else
@@ -333,14 +321,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       let index_path = index_path t.root in
       let index = IO.v ~fresh:false ~readonly:true ~generation index_path in
       let _ = IO.force_offset index in
-      Array.fill t.fan_out_table 0 (Array.length t.fan_out_table) (-1L);
+      Fan.clear t.fan_out;
       iter_io_off
         (fun off e ->
           let hash = K.hash e.key in
-          let fan = fan t hash in
-          t.fan_out_table.(fan) <- off)
+          Fan.update t.fan_out hash off)
         index;
-      flatten_table t.fan_out_table;
+      Fan.flatten t.fan_out;
       t.index <- index;
       t.generation <- generation )
     else if log_offset < new_log_offset then
@@ -364,12 +351,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     match find_all t key with [] -> false | _ -> true
 
   let append_entry_fanout t h io e =
-    let fan = fan t h in
-    t.fan_out_table.(fan) <- IO.offset io;
+    Fan.update t.fan_out h (IO.offset io);
     append_entry io e
 
   let merge_with log t tmp =
-    Array.fill t.fan_out_table 0 (Array.length t.fan_out_table) (-1L);
+    Fan.clear t.fan_out;
     let offset = ref 0L in
     let get_index_entry = function
       | Some e -> Some e
@@ -441,7 +427,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     merge_with log t tmp;
     IO.rename ~src:tmp ~dst:t.index;
-    flatten_table t.fan_out_table;
+    Fan.flatten t.fan_out;
     IO.clear t.log;
     Tbl.clear t.log_mem;
     IO.set_generation t.log generation;
