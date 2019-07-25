@@ -324,7 +324,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let log_offset = IO.offset t.log in
     let new_log_offset = IO.force_offset t.log in
     let add_log_entry e =
-      Tbl.replace t.log_mem e.key e;
+      Tbl.add t.log_mem e.key e;
       may (fun bf -> Bloomf.add bf e.key) t.entries
     in
     if t.generation <> generation then (
