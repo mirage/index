@@ -19,7 +19,7 @@ module IO : Index.IO = struct
     in
     let b = Bytes.create 8 in
     set_uint64 b 0 i;
-    Bytes.to_string b
+    Bytes.unsafe_to_string b
 
   let decode_int64 buf =
     let get_uint64 s off =
@@ -70,28 +70,25 @@ module IO : Index.IO = struct
       let buf = encode_int64 n in
       unsafe_write t ~off:0L buf
 
-    let int64_buf = Bytes.create 8
-
     let unsafe_get_offset t =
-      let n = unsafe_read t ~off:0L ~len:8 int64_buf in
+      let buf = Bytes.create 8 in
+      let n = unsafe_read t ~off:0L ~len:8 buf in
       assert (n = 8);
-      decode_int64 (Bytes.unsafe_to_string int64_buf)
-
-    let version_buf = Bytes.create 8
-
-    let generation_buf = Bytes.create 8
+      decode_int64 (Bytes.unsafe_to_string buf)
 
     let unsafe_get_version t =
-      let n = unsafe_read t ~off:8L ~len:8 version_buf in
+      let buf = Bytes.create 8 in
+      let n = unsafe_read t ~off:8L ~len:8 buf in
       assert (n = 8);
-      Bytes.to_string version_buf
+      Bytes.unsafe_to_string buf
 
     let unsafe_set_version t = unsafe_write t ~off:8L current_version
 
     let unsafe_get_generation t =
-      let n = unsafe_read t ~off:16L ~len:8 generation_buf in
+      let buf = Bytes.create 8 in
+      let n = unsafe_read t ~off:16L ~len:8 buf in
       assert (n = 8);
-      decode_int64 (Bytes.unsafe_to_string generation_buf)
+      decode_int64 (Bytes.unsafe_to_string buf)
 
     let unsafe_set_generation t gen =
       let buf = encode_int64 gen in
