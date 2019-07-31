@@ -140,7 +140,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   }
 
   let clear t =
-    Log.debug (fun l -> l "clear \"%s\"" t.root);
+    Log.debug (fun l -> l "clear %S" t.root);
     IO.clear t.log;
     may Bloomf.clear t.entries;
     Tbl.clear t.log_mem;
@@ -335,7 +335,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     else if log_offset > new_log_offset then assert false
 
   let find_all t key =
-    Log.debug (fun l -> l "find \"%s\" %a" t.root K.pp key);
+    Log.debug (fun l -> l "find %a" K.pp key);
     if t.config.readonly then sync_log t;
     let look_on_disk () =
       let in_index = interpolation_search t key in
@@ -347,7 +347,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     | Some bf -> if not (Bloomf.mem bf key) then [] else look_on_disk ()
 
   let mem t key =
-    Log.debug (fun l -> l "mem \"%s\" %a" t.root K.pp key);
+    Log.debug (fun l -> l "mem %a" K.pp key);
     match find_all t key with [] -> false | _ -> true
 
   let append_entry_fanout t h io e =
@@ -417,7 +417,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   end)
 
   let merge t =
-    Log.debug (fun l -> l "merge \"%s\"" t.root);
+    Log.debug (fun l -> l "merge %S" t.root);
     let tmp_path = t.root // "tmp" // "index" in
     let generation = Int64.succ t.generation in
     let tmp = IO.v ~readonly:false ~fresh:true ~generation tmp_path in
@@ -434,7 +434,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     t.generation <- generation
 
   let add t key value =
-    Log.debug (fun l -> l "add \"%s\" %a %a" t.root K.pp key V.pp value);
+    Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
     if t.config.readonly then raise RO_Not_Allowed;
     let entry = { key; value } in
     append_entry t.log entry;
