@@ -50,9 +50,7 @@ let index_name = "hello"
 
 let log_size = 500_000
 
-let fan_out_size = 13
-
-let t = Index.v ~fresh:true ~log_size ~fan_out_size index_name
+let t = Index.v ~fresh:true ~log_size index_name
 
 let pp_stats ppf (count, max) =
   Fmt.pf ppf "\t%4dk/%dk" (count / 1000) (max / 1000)

@@ -1,6 +1,6 @@
 type t
 
-val v : int -> int -> t
+val v : hash_size:int -> entry_size:int -> int -> t
 
 val clear : t -> unit
 

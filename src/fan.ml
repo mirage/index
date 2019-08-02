@@ -1,12 +1,29 @@
-type t = { size : int; fans : int64 array; mask : int; shift : int }
+type t = {
+  hash_size : int;
+  entry_size : int;
+  size : int;
+  fans : int64 array;
+  mask : int;
+  shift : int;
+}
 
-let v hash_size n =
-  let size = n in
+let log2 a = log a /. log 2.
+
+let v ~hash_size ~entry_size n =
+  let entry_sizef = float_of_int entry_size in
+  let entries_per_page = 4096. /. entry_sizef in
+  let entries_fan = float_of_int n /. (entries_per_page *. entries_per_page) in
+  let size = max 0 (int_of_float (ceil (log2 entries_fan))) in
   let nb_fans = 1 lsl size in
-  let fans = Array.make nb_fans (-1L) in
   let shift = hash_size - size in
-  let mask = (nb_fans - 1) lsl shift in
-  { size; fans; mask; shift }
+  {
+    hash_size;
+    entry_size;
+    size;
+    fans = Array.make nb_fans 0L;
+    mask = (nb_fans - 1) lsl shift;
+    shift;
+  }
 
 let fan t h = (h land t.mask) lsr t.shift
 
@@ -25,7 +42,7 @@ let flatten t =
   let rec loop curr i =
     if i = Array.length t.fans then ()
     else (
-      if t.fans.(i) = -1L then t.fans.(i) <- curr;
+      if t.fans.(i) = 0L then t.fans.(i) <- curr;
       loop t.fans.(i) (i + 1) )
   in
-  loop (-1L) 0
+  loop 0L 0
