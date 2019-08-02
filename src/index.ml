@@ -80,40 +80,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let entry_sizeL = Int64.of_int entry_size
 
-  module Fan = struct
-    type t = { size : int; fans : int64 array; mask : int; shift : int }
-
-    let v n =
-      let size = n in
-      let nb_fans = 1 lsl size in
-      let fans = Array.make nb_fans (-1L) in
-      let shift = K.hash_size - size in
-      let mask = (nb_fans - 1) lsl shift in
-      { size; fans; mask; shift }
-
-    let fan t h = (h land t.mask) lsr t.shift
-
-    let clear t = Array.fill t.fans 0 (Array.length t.fans) (-1L)
-
-    let search t h =
-      let fan = fan t h in
-      let low = if fan = 0 then 0L else t.fans.(fan - 1) in
-      (low, t.fans.(fan))
-
-    let update t hash off =
-      let fan = fan t hash in
-      t.fans.(fan) <- off
-
-    let flatten t =
-      let rec loop curr i =
-        if i = Array.length t.fans then ()
-        else (
-          if t.fans.(i) = -1L then t.fans.(i) <- curr;
-          loop t.fans.(i) (i + 1) )
-      in
-      loop 0L 0
-  end
-
   let append_entry io e =
     IO.append io (K.encode e.key);
     IO.append io (V.encode e.value)
@@ -234,7 +200,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let generation = IO.get_generation log in
     let index =
       if Sys.file_exists index_path then (
-        let fan_out = Fan.v fan_out_size in
+        let fan_out = Fan.v K.hash_size fan_out_size in
         let io = IO.v ~fresh ~readonly ~generation:0L index_path in
         iter_io_off
           (fun off e ->
@@ -336,7 +302,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       let index_path = index_path t.root in
       let io = IO.v ~fresh:false ~readonly:true ~generation index_path in
       let _ = IO.force_offset io in
+<<<<<<< HEAD
       let fan_out = Fan.v t.config.fan_out_size in
+=======
+      let fan_out = Fan.v K.hash_size t.config.log_size in
+>>>>>>> Move fanout to a different file
       iter_io_off
         (fun off e ->
           let hash = K.hash e.key in
@@ -447,7 +417,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     ( match t.index with
     | None ->
-        let fan_out = Fan.v t.config.fan_out_size in
+        let fan_out = Fan.v K.hash_size t.config.fan_out_size in
         let io =
           IO.v ~fresh:true ~readonly:false ~generation:0L (index_path t.root)
         in
