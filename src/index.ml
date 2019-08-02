@@ -141,6 +141,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let clear t =
     Log.debug (fun l -> l "clear %S" t.root);
+    t.generation <- 0L;
     IO.clear t.log;
     may Bloomf.clear t.entries;
     Tbl.clear t.log_mem;

@@ -190,6 +190,7 @@ module IO : Index.IO = struct
   let clear t =
     t.offset <- 0L;
     t.flushed <- header;
+    Raw.unsafe_set_generation t.raw 0L;
     Raw.unsafe_set_offset t.raw t.offset;
     Buffer.clear t.buf
 
