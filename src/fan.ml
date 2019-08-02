@@ -27,8 +27,6 @@ let v ~hash_size ~entry_size n =
 
 let fan t h = (h land t.mask) lsr t.shift
 
-let clear t = Array.fill t.fans 0 (Array.length t.fans) (-1L)
-
 let search t h =
   let fan = fan t h in
   let low = if fan = 0 then 0L else t.fans.(fan - 1) in
