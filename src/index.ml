@@ -153,12 +153,16 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let index_path root = root // "index" // "index"
 
+  let page_size = Int64.mul entry_sizeL 1_000L
+
   let iter_io_off ?(min = 0L) ?max f io =
     let max = match max with None -> IO.offset io | Some m -> m in
     let rec aux offset =
-      if offset >= max then ()
+      let remaining = Int64.sub max offset in
+      if remaining <= 0L then ()
       else
-        let raw = Bytes.create (entry_size * 1_000) in
+        let size = Stdlib.min remaining page_size in
+        let raw = Bytes.create (Int64.to_int size) in
         let n = IO.read io ~off:offset raw in
         let rec read_page page off =
           if off = n then ()
@@ -168,7 +172,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             (read_page [@tailcall]) page (off + entry_size)
         in
         read_page raw 0;
-        (aux [@tailcall]) Int64.(add offset (of_int (entry_size * 1_000)))
+        (aux [@tailcall]) Int64.(add offset page_size)
     in
     (aux [@tailcall]) min
 
