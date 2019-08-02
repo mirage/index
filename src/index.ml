@@ -203,7 +203,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             Fan.update fan_out hash off;
             may (fun bf -> Bloomf.add bf e.key) entries)
           io;
-        Fan.flatten fan_out;
+        Fan.finalize fan_out;
         Some { fan_out; io } )
       else None
     in
@@ -307,7 +307,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           let hash = K.hash e.key in
           Fan.update fan_out hash off)
         io;
-      Fan.flatten fan_out;
+      Fan.finalize fan_out;
       t.index <- Some { fan_out; io };
       t.generation <- generation )
     else if log_offset < new_log_offset then
@@ -435,7 +435,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     | None -> assert false
     | Some index ->
         IO.rename ~src:tmp ~dst:index.io;
-        Fan.flatten index.fan_out;
+        Fan.finalize index.fan_out;
         IO.clear t.log;
         Tbl.clear t.log_mem;
         IO.set_generation t.log generation;

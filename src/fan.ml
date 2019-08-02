@@ -38,7 +38,7 @@ let update t hash off =
   let fan = fan t hash in
   t.fans.(fan) <- off
 
-let flatten t =
+let finalize t =
   let rec loop curr i =
     if i = Array.length t.fans then ()
     else (

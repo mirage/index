@@ -8,4 +8,4 @@ val search : t -> int -> int64 * int64
 
 val update : t -> int -> int64 -> unit
 
-val flatten : t -> unit
+val finalize : t -> unit
