@@ -6,3 +6,7 @@
  (name bench)
  (action
   (run ./main.exe)))
+
+(alias
+ (name runtest)
+ (deps main.exe))
