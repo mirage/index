@@ -28,6 +28,9 @@ end) : sig
     clone : readonly:bool -> Index.t;
   }
 
+  val fresh_name : string -> string
+  (** A fresh name for either an "empty_index" or a "full_index". *)
+
   val empty_index : unit -> t
   (** Fresh, empty index. *)
 
