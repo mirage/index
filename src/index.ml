@@ -111,7 +111,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           if t.fans.(i) = -1L then t.fans.(i) <- curr;
           loop t.fans.(i) (i + 1) )
       in
-      loop (-1L) 0
+      loop 0L 0
   end
 
   let append_entry io e =
@@ -231,18 +231,19 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let t =
       { config; generation; fan_out; log_mem; root; log; index; entries }
     in
-    iter_io
-      (fun e ->
-        Tbl.add t.log_mem e.key e;
-        may (fun bf -> Bloomf.add bf e.key) t.entries)
-      t.log;
-    iter_io_off
-      (fun off e ->
-        let hash = K.hash e.key in
-        Fan.update t.fan_out hash off;
-        may (fun bf -> Bloomf.add bf e.key) t.entries)
-      t.index;
-    Fan.flatten t.fan_out;
+    if not fresh then (
+      iter_io
+        (fun e ->
+          Tbl.add t.log_mem e.key e;
+          may (fun bf -> Bloomf.add bf e.key) t.entries)
+        t.log;
+      iter_io_off
+        (fun off e ->
+          let hash = K.hash e.key in
+          Fan.update t.fan_out hash off;
+          may (fun bf -> Bloomf.add bf e.key) t.entries)
+        t.index;
+      Fan.flatten t.fan_out );
     t
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
