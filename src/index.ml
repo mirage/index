@@ -336,7 +336,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       let index_path = index_path t.root in
       let io = IO.v ~fresh:false ~readonly:true ~generation index_path in
       let _ = IO.force_offset io in
-      let fan_out = Fan.v t.config.log_size in
+      let fan_out = Fan.v t.config.fan_out_size in
       iter_io_off
         (fun off e ->
           let hash = K.hash e.key in
