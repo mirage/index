@@ -377,14 +377,14 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     go 0L 0
 
-  let merge t =
+  let merge ~witness t =
     Log.debug (fun l -> l "merge %S" t.root);
     let tmp_path = t.root // "tmp" // "index" in
     let generation = Int64.succ t.generation in
     let tmp = IO.v ~readonly:false ~fresh:true ~generation tmp_path in
     let log =
       let compare_entry e e' = compare e.key_hash e'.key_hash in
-      let b = Array.make (Tbl.length t.log_mem) (Obj.magic 0) in
+      let b = Array.make (Tbl.length t.log_mem) witness in
       Tbl.fold
         (fun _ e i ->
           b.(i) <- e;
@@ -430,7 +430,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Tbl.add t.log_mem key entry;
     may (fun bf -> Bloomf.add bf key) t.entries;
     if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
-    then merge t
+    then merge ~witness:entry t
 
   (* XXX: Perform a merge beforehands to ensure duplicates are not hit twice. *)
   let iter f t =
