@@ -1,3 +1,5 @@
+open Index
+
 let string_size = 20
 
 let index_size = 103
@@ -105,6 +107,22 @@ let test_add t =
       if not (List.mem v l && List.mem v' l) then
         Alcotest.fail (Printf.sprintf "Adding duplicate values failed.")
 
+let different_size_for_key () =
+  let exn = Different_Sizes_Not_Allowed in
+  let k = String.init 2 (fun _i -> random_char ()) in
+  let v = Value.v () in
+  Alcotest.check_raises
+    "Cannot add a key of a different size than string_size." exn (fun () ->
+      Index.add t k v)
+
+let different_size_for_value () =
+  let exn = Different_Sizes_Not_Allowed in
+  let k = Key.v () in
+  let v = String.init 200 (fun _i -> random_char ()) in
+  Alcotest.check_raises
+    "Cannot add a value of a different size than string_size." exn (fun () ->
+      Index.add t k v)
+
 let find_present_live () = test_find_present t
 
 let find_absent_live () = test_find_absent t
@@ -139,7 +157,9 @@ let readonly () =
 let live_tests =
   [ ("find (present)", `Quick, find_present_live);
     ("find (absent)", `Quick, find_absent_live);
-    ("add", `Quick, replace_live)
+    ("add", `Quick, replace_live);
+    ("fail add (key)", `Quick, different_size_for_key);
+    ("fail add (value)", `Quick, different_size_for_value)
   ]
 
 let restart_tests =

@@ -56,6 +56,8 @@ let may f = function None -> () | Some bf -> f bf
 
 exception RO_Not_Allowed
 
+exception Different_Sizes_Not_Allowed
+
 let src = Logs.Src.create "index" ~doc:"Index"
 
 module Log = (val Logs.src_log src : Logs.LOG)
@@ -74,8 +76,14 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let entry_sizeL = Int64.of_int entry_size
 
   let append_entry io e =
-    IO.append io (K.encode e.key);
-    IO.append io (V.encode e.value)
+    let encoded_key = K.encode e.key in
+    let encoded_value = V.encode e.value in
+    if String.length encoded_key != K.encoded_size then
+      raise Different_Sizes_Not_Allowed;
+    if String.length encoded_value != V.encoded_size then
+      raise Different_Sizes_Not_Allowed;
+    IO.append io encoded_key;
+    IO.append io encoded_value
 
   let decode_entry bytes off =
     let string = Bytes.unsafe_to_string bytes in
