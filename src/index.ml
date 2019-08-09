@@ -349,7 +349,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       if v.key_hash > hash_e then log_i
       else (
         append_entry_fanout fan_out v dst_io;
-        merge_from_log fan_out log (log_i + 1) hash_e dst_io )
+        (merge_from_log [@tailcall]) fan_out log (log_i + 1) hash_e dst_io )
 
   let append_remaining_log fan_out log log_i dst_io =
     for log_i = log_i to Array.length log - 1 do
@@ -373,9 +373,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         let hash_e = K.hash key_e in
         let log_i = merge_from_log fan_out log log_i hash_e dst_io in
         append_buf_fanout fan_out hash_e buf_str dst_io;
-        go index_offset log_i )
+        (go [@tailcall]) index_offset log_i )
     in
-    go 0L 0
+    (go [@tailcall]) 0L 0
 
   let merge ~witness t =
     Log.debug (fun l -> l "merge %S" t.root);
