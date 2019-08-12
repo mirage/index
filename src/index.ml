@@ -106,6 +106,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     may Bloomf.clear t.entries;
     Tbl.clear t.log_mem;
     may (fun i -> IO.clear i.io) t.index;
+    (match t.index with None -> () | Some index -> IO.close index.io);
     t.index <- None
 
   let ( // ) = Filename.concat
@@ -283,6 +284,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       Tbl.clear t.log_mem;
       iter_io add_log_entry t.log;
       let index_path = index_path t.root in
+      (match t.index with None -> () | Some index -> IO.close index.io);
       let io = IO.v ~fresh:false ~readonly:true ~generation index_path in
       let _ = IO.force_offset io in
       let io_off = IO.force_offset io in

@@ -26,4 +26,6 @@ module type S = sig
   val rename : src:t -> dst:t -> unit
 
   val append : t -> string -> unit
+
+  val close : t -> unit
 end
