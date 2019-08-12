@@ -7,7 +7,6 @@ test:
 	dune runtest
 
 fuzz:
-	dune build fuzz/main.exe
 	dune build @fuzz --no-buffer
 
 simple-crowbar:

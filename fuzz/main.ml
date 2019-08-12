@@ -1,5 +1,4 @@
 open Crowbar
-open Lwt.Infix
 
 let index_name = "hello"
 
@@ -43,110 +42,56 @@ module Index = Index_unix.Make (Key) (Value)
 
 let t = Index.v ~fresh:true ~log_size index_name
 
+(* use Crowbar.bytes_fixed at the next Crowbar release *)
 let string_gen size =
   map [ bytes ] (fun s ->
       try String.sub s 0 size with Invalid_argument _ -> bad_test ())
 
-let list_gen =
-  fix (fun list_gen ->
-      choose
-        [ const [];
-          map [ string_gen key_size; string_gen value_size; list_gen ]
-            (fun k v l ->
-              Index.add t k v;
-              (k, v) :: l)
-        ])
+let list1_gen =
+  list1
+    (map [ string_gen key_size; string_gen value_size ] (fun k v -> (k, v)))
+
+let add l = List.iter (fun (k, v) -> Index.add t k v) l
 
 let find_present l t =
-  let ok = List.for_all (fun (k, v) -> List.mem v (Index.find_all t k)) l in
-  Index.clear t;
-  ok
-
-let no_extra_values_added l t =
-  Index.iter
-    (fun k v ->
-      if not (List.exists (fun (k', v') -> k = k' && v = v') l) then
-        fail "extra value added")
-    t;
-  Index.clear t;
-  true
+  add l;
+  List.for_all (fun (k, v) -> List.mem v (Index.find_all t k)) l
 
 let test_mem l t =
-  let ok = List.for_all (fun (k, _) -> Index.mem t k) l in
-  Index.clear t;
-  ok
+  add l;
+  List.for_all (fun (k, _) -> Index.mem t k) l
 
 let test_add l v t =
+  add l;
   let k, v' = List.hd l in
   Index.add t k v;
   let l' = Index.find_all t k in
-  let ok = List.mem v l' && List.mem v' l' in
-  Index.clear t;
-  ok
-
-let find_present_lwt l t =
-  let ok =
-    Lwt_list.for_all_p
-      (fun (k, v) -> Lwt.return (List.mem v (Index.find_all t k)))
-      l
-  in
-  Index.clear t;
-  ok
+  List.mem v l' && List.mem v' l'
 
 let readonly l r =
+  add l;
   Index.flush t;
-  let ok = List.for_all (fun (k, v) -> List.mem v (Index.find_all r k)) l in
-  Index.clear t;
-  ok
-
-let lwt_list_gen : ((string * string) list * unit Lwt.t list) gen =
-  fix (fun lwt_list_gen ->
-      choose
-        [ const ([], []);
-          map [ string_gen key_size; string_gen value_size; lwt_list_gen ]
-            (fun k v (l, lp) ->
-              let p = Lwt.return (Index.add t k v) in
-              ((k, v) :: l, p :: lp))
-        ])
-
-let readonly_lwt (l : (string * string) list) (wp : unit Lwt.t list) r =
-  ( Lwt.join wp >|= fun _ ->
-    Index.flush t )
-  >>= fun _ ->
-  find_present_lwt l r
+  List.for_all (fun (k, v) -> List.mem v (Index.find_all r k)) l
 
 let live_tests () =
-  add_test ~name:"find_present" [ list_gen ] (fun l ->
+  add_test ~name:"find_present" [ list1_gen ] (fun l ->
       check (find_present l t));
-  add_test ~name:"no extra values" [ list_gen ] (fun l ->
-      check (no_extra_values_added l t));
-  add_test ~name:"test index.mem" [ list_gen ] (fun l -> check (test_mem l t));
+  add_test ~name:"test index.mem" [ list1_gen ] (fun l -> check (test_mem l t));
   add_test ~name:"add value and duplicate key"
-    [ list_gen; string_gen value_size ] (fun l v ->
-      guard (l != []);
-      check (test_add l v t));
-  add_test ~name:"find_present_lwt" [ list_gen ] (fun l ->
-      check (Lwt_main.run (find_present_lwt l t)))
+    [ list1_gen; string_gen value_size ] (fun l v -> check (test_add l v t))
 
 let restart_tests () =
   let w = Index.v ~fresh:false ~log_size index_name in
-  add_test ~name:"on restart: find_present" [ list_gen ] (fun l ->
+  add_test ~name:"on restart: find_present" [ list1_gen ] (fun l ->
       check (find_present l w));
-  add_test ~name:"on restart: no_extra_values" [ list_gen ] (fun l ->
-      check (no_extra_values_added l w));
-  add_test ~name:"on restart:add value and duplicate key"
-    [ list_gen; string_gen value_size ] (fun l v ->
-      guard (l != []);
-      check (test_add l v w))
+  add_test ~name:"on restart: add value and duplicate key"
+    [ list1_gen; string_gen value_size ] (fun l v -> check (test_add l v w))
 
+(* this test fails, it need PR #37 to succeed *)
 let readonly_test () =
-  let r =
-    Index.v ~shared:true ~fresh:false ~readonly:true ~log_size index_name
-  in
-  add_test ~name:"readonly: find_present" [ list_gen ] (fun l ->
-      check (readonly l r));
-  add_test ~name:"readonly: find_present_lwt" [ lwt_list_gen ] (fun (l, wp) ->
-      check (Lwt_main.run (readonly_lwt l wp r)))
+  let r = Index.v ~fresh:false ~readonly:true ~log_size index_name in
+  add_test ~name:"readonly: find_present" [ list1_gen ] (fun l ->
+      check (readonly l r))
 
 let () =
   live_tests ();

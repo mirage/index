@@ -1,11 +1,13 @@
 (executable
  (name main)
- (ocamlopt_flags (:standard -afl-instrument))
- (libraries index.unix lwt.unix fmt logs logs.fmt crowbar))
+ (ocamlopt_flags
+  (:standard -afl-instrument))
+ (libraries index.unix fmt logs logs.fmt crowbar))
 
 (alias
  (name fuzz)
  (deps
+  main.exe
   (source_tree ./input))
  (action
-  (run afl-fuzz -i ./input -o output ./main.exe @@)))
+  (run afl-fuzz -m 1024 -i ./input -o output ./main.exe)))
