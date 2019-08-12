@@ -1,10 +1,18 @@
-.PHONY: all clean test doc examples
+.PHONY: all clean test fuzz doc examples
 
 all:
 	dune build
 
 test:
 	dune runtest
+
+fuzz:
+	dune build fuzz/main.exe
+	dune build @fuzz --no-buffer
+
+simple-crowbar:
+	dune build fuzz/main.exe
+	dune exec fuzz/main.exe
 
 examples:
 	dune build @examples
