@@ -74,13 +74,7 @@ module type S = sig
   type value
   (** The type for values. *)
 
-  val v :
-    ?fresh:bool ->
-    ?readonly:bool ->
-    ?shared:bool ->
-    log_size:int ->
-    string ->
-    t
+  val v : ?fresh:bool -> ?readonly:bool -> log_size:int -> string -> t
   (** The constructor for indexes.
       @param fresh
       @param read_only whether read-only mode is enabled for this index.

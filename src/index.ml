@@ -37,13 +37,7 @@ module type S = sig
 
   type value
 
-  val v :
-    ?fresh:bool ->
-    ?readonly:bool ->
-    ?shared:bool ->
-    log_size:int ->
-    string ->
-    t
+  val v : ?fresh:bool -> ?readonly:bool -> log_size:int -> string -> t
 
   val clear : t -> unit
 
@@ -152,32 +146,26 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let with_cache ~v ~clear =
     let roots = Hashtbl.create 0 in
-    let f ?(fresh = false) ?(readonly = false) ?(shared = true) ~log_size root
-        =
-      if not shared then (
-        Log.debug (fun l ->
-            l "[%s] v fresh=%b shared=%b readonly=%b" (Filename.basename root)
-              fresh shared readonly);
-        v ~fresh ~readonly ~log_size root )
-      else
-        try
-          if not (Sys.file_exists root) then (
-            Log.debug (fun l ->
-                l "[%s] does not exist anymore, cleaning up the fd cache"
-                  (Filename.basename root));
-            Hashtbl.remove roots root;
-            raise Not_found );
-          let t = Hashtbl.find roots root in
-          Log.debug (fun l -> l "%s found in cache" root);
-          if fresh then clear t;
-          t
-        with Not_found ->
+    let f ?(fresh = false) ?(readonly = false) ~log_size root =
+      try
+        if not (Sys.file_exists root) then (
           Log.debug (fun l ->
-              l "[%s] v fresh=%b shared=%b readonly=%b"
-                (Filename.basename root) fresh shared readonly);
-          let t = v ~fresh ~readonly ~log_size root in
-          Hashtbl.add roots root t;
-          t
+              l "[%s] does not exist anymore, cleaning up the fd cache"
+                (Filename.basename root));
+          Hashtbl.remove roots (root, true);
+          Hashtbl.remove roots (root, false);
+          raise Not_found );
+        let t = Hashtbl.find roots (root, readonly) in
+        Log.debug (fun l -> l "%s found in cache" root);
+        if fresh then clear t;
+        t
+      with Not_found ->
+        Log.debug (fun l ->
+            l "[%s] v fresh=%b readonly=%b" (Filename.basename root) fresh
+              readonly);
+        let t = v ~fresh ~readonly ~log_size root in
+        Hashtbl.add roots (root, readonly) t;
+        t
     in
     `Staged f
 
