@@ -45,6 +45,10 @@ module type S = sig
 
   val mem : t -> key -> bool
 
+  exception Invalid_Key_Size of key
+
+  exception Invalid_Value_Size of value
+
   val add : t -> key -> value -> unit
 
   val iter : (key -> value -> unit) -> t -> unit
@@ -55,8 +59,6 @@ end
 let may f = function None -> () | Some bf -> f bf
 
 exception RO_Not_Allowed
-
-exception Different_Sizes_Not_Allowed
 
 let src = Logs.Src.create "index" ~doc:"Index"
 
@@ -75,13 +77,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let entry_sizeL = Int64.of_int entry_size
 
+  exception Invalid_Key_Size of key
+
+  exception Invalid_Value_Size of value
+
   let append_entry io e =
     let encoded_key = K.encode e.key in
     let encoded_value = V.encode e.value in
-    if String.length encoded_key != K.encoded_size then
-      raise Different_Sizes_Not_Allowed;
-    if String.length encoded_value != V.encoded_size then
-      raise Different_Sizes_Not_Allowed;
+    if String.length encoded_key <> K.encoded_size then
+      raise (Invalid_Key_Size e.key);
+    if String.length encoded_value <> V.encoded_size then
+      raise (Invalid_Value_Size e.value);
     IO.append io encoded_key;
     IO.append io encoded_value
 
