@@ -137,6 +137,8 @@ module IO : Index.IO = struct
     dst.flushed <- src.flushed;
     dst.raw <- src.raw
 
+  let close t = Unix.close t.raw.fd
+
   let auto_flush_limit = 1_000_000L
 
   let append t buf =
