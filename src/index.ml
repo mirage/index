@@ -157,10 +157,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let iter_io ?min ?max f io = iter_io_off ?min ?max (fun _ e -> f e) io
 
-  let get_entry io off =
-    let buf = Bytes.create entry_size in
-    let _ = IO.read io ~off buf in
-    decode_entry buf 0
+  type window = { buf: bytes; off: int64 }
+
+  let get_entry io ~window off =
+    match window with
+    | None ->
+      let buf = Bytes.create entry_size in
+      let _ = IO.read io ~off buf in
+      decode_entry buf 0
+    | Some w ->
+      let off = Int64.(to_int @@ sub off w.off) in
+      decode_entry w.buf off
 
   let with_cache ~v ~clear =
     let roots = Hashtbl.create 0 in
@@ -222,16 +229,16 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
 
-  let get_entry_iff_needed io off = function
+  let get_entry_iff_needed ~window io off = function
     | Some e -> e
-    | None -> get_entry io off
+    | None -> get_entry ~window io off
 
-  let look_around io init key h_key off =
+  let look_around ~window io init ~low ~high key h_key off =
     let rec search acc op curr =
       let off = op curr entry_sizeL in
-      if off < 0L || off >= IO.offset io then acc
+      if off < 0L || off >= IO.offset io || off < low || off > high then acc
       else
-        let e = get_entry io off in
+        let e = get_entry ~window io off in
         let h_e = e.key_hash in
         if h_e <> h_key then acc
         else
@@ -244,10 +251,22 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let interpolation_search index key =
     let hashed_key = K.hash key in
     let low, high = Fan.search index.fan_out hashed_key in
-    let rec search low high lowest_entry highest_entry =
+    let rec search steps ~window low high lowest_entry highest_entry =
       if high < low then []
       else
-        let lowest_entry = get_entry_iff_needed index.io low lowest_entry in
+        let window = match window with
+          | Some _ as w -> w
+          | None ->
+            let len = Int64.(add (sub high low) entry_sizeL) in
+            if  len <= 4_096L then (
+              let buf = Bytes.create (Int64.to_int len) in
+              let _ = IO.read index.io ~off:low buf in
+              Some { buf; off = low }
+            ) else None
+        in
+        let lowest_entry =
+          get_entry_iff_needed ~window index.io low lowest_entry
+        in
         if high = low then
           if K.equal lowest_entry.key key then [ lowest_entry.value ] else []
         else
@@ -255,7 +274,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           if lowest_hash > hashed_key then []
           else
             let highest_entry =
-              get_entry_iff_needed index.io high highest_entry
+              get_entry_iff_needed ~window index.io high highest_entry
             in
             let highest_hash = highest_entry.key_hash in
             if highest_hash < hashed_key then []
@@ -273,21 +292,22 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               in
               let off = lowf +. doff -. mod_float doff entry_sizef in
               let offL = Int64.of_float off in
-              let e = get_entry index.io offL in
+              let e = get_entry ~window index.io offL in
               let hashed_e = e.key_hash in
               if hashed_key = hashed_e then
                 let init = if K.equal key e.key then [ e.value ] else [] in
-                look_around index.io init key hashed_key offL
+                look_around ~window ~low ~high index.io init key hashed_key offL
               else if hashed_e < hashed_key then
-                (search [@tailcall])
+                (search [@tailcall]) (steps + 1) ~window
                   (Int64.add offL entry_sizeL)
                   high None (Some highest_entry)
               else
-                (search [@tailcall]) low
+                (search [@tailcall]) (steps + 1) ~window low
                   (Int64.sub offL entry_sizeL)
                   (Some lowest_entry) None
     in
-    if high < 0L then [] else (search [@tailcall]) low high None None
+    if high < 0L then [] else
+      (search [@tailcall]) ~window:None 0 low high None None
 
   let sync_log t =
     let generation = IO.get_generation t.log in
