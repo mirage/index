@@ -222,7 +222,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let look_around ~window io init ~low ~high key h_key off =
     let rec search acc op curr =
       let off = op curr entry_sizeL in
-      if off < 0L || off >= IO.offset io || off < low || off >= high then acc
+      if off < 0L || off >= IO.offset io || off < low || off > high then acc
       else
         let e = get_entry ~window io off in
         let h_e = e.key_hash in
