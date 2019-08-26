@@ -92,6 +92,12 @@ module type S = sig
   val mem : t -> key -> bool
   (** [mem t k] is [true] iff [k] is bound in [t]. *)
 
+  exception Invalid_Key_Size of key
+
+  exception Invalid_Value_Size of value
+  (** The exceptions raised when trying to add a key or a value of different
+      size than encoded_size *)
+
   val add : t -> key -> value -> unit
   (** [add t k v] binds [k] to [v] in [t]. *)
 

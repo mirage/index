@@ -45,6 +45,10 @@ module type S = sig
 
   val mem : t -> key -> bool
 
+  exception Invalid_Key_Size of key
+
+  exception Invalid_Value_Size of value
+
   val add : t -> key -> value -> unit
 
   val iter : (key -> value -> unit) -> t -> unit
@@ -73,9 +77,19 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let entry_sizeL = Int64.of_int entry_size
 
+  exception Invalid_Key_Size of key
+
+  exception Invalid_Value_Size of value
+
   let append_entry io e =
-    IO.append io (K.encode e.key);
-    IO.append io (V.encode e.value)
+    let encoded_key = K.encode e.key in
+    let encoded_value = V.encode e.value in
+    if String.length encoded_key <> K.encoded_size then
+      raise (Invalid_Key_Size e.key);
+    if String.length encoded_value <> V.encoded_size then
+      raise (Invalid_Value_Size e.value);
+    IO.append io encoded_key;
+    IO.append io encoded_value
 
   let decode_entry bytes off =
     let string = Bytes.unsafe_to_string bytes in
