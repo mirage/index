@@ -352,23 +352,32 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   (** Merge [log] with [t] into [dst_io].
       [log] must be sorted by key hashes. *)
   let merge_with log index dst_io =
-    let buf = Bytes.create entry_size in
+    let entries = 10_000 in
+    let buf = Bytes.create (entries * entry_size) in
+    let refill off = ignore (IO.read index.io ~off buf) in
     let index_end = IO.offset index.io in
     let fan_out = index.fan_out in
-    let rec go index_offset log_i =
+    refill 0L;
+    let rec go index_offset buf_offset log_i =
       if index_offset >= index_end then
         append_remaining_log fan_out log log_i dst_io
       else (
-        ignore (IO.read index.io ~off:index_offset buf);
-        let buf_str = Bytes.unsafe_to_string buf in
+        let buf_str = Bytes.sub_string buf buf_offset entry_size in
         let index_offset = Int64.add index_offset entry_sizeL in
         let key_e = K.decode buf_str 0 in
         let hash_e = K.hash key_e in
         let log_i = merge_from_log fan_out log log_i hash_e dst_io in
         append_buf_fanout fan_out hash_e buf_str dst_io;
-        (go [@tailcall]) index_offset log_i )
+        let buf_offset =
+          let n = buf_offset + entry_size in
+          if n >= Bytes.length buf then (
+            refill index_offset;
+            0
+          ) else n
+        in
+        (go [@tailcall]) index_offset buf_offset log_i )
     in
-    (go [@tailcall]) 0L 0
+    (go [@tailcall]) 0L 0 0
 
   let merge ~witness t =
     Log.debug (fun l -> l "merge %S" t.root);
