@@ -24,6 +24,8 @@ module EltArray = struct
   let get t i = t.(Int64.to_int i)
 
   let length t = Array.length t |> Int64.of_int
+
+  let pre_fetch _ ~low:_ ~high:_ = ()
 end
 
 module Metric = struct
@@ -63,30 +65,12 @@ let interpolation_unique () =
       Search.interpolation_search array i
         ~low:Int64.(zero)
         ~high:Int64.(pred length)
-      |> Alcotest.(check (list string)) "" [ v ])
-    array
-
-let interpolation_duplicates () =
-  let array =
-    List.init 10_000 (fun i -> (i / 2, string_of_int i)) |> Array.of_list
-  in
-  let length = EltArray.length array in
-  let _ = Array.iter (fun (i, s) -> Printf.printf "%d, %s\n" i s) array in
-  Array.iter
-    (fun (i, _) ->
-      Search.interpolation_search array
-        ~low:Int64.(zero)
-        ~high:Int64.(pred length)
-        i
-      |> Alcotest.(check (slist string String.compare))
-           ""
-           [ string_of_int (2 * i); string_of_int ((2 * i) + 1) ])
+      |> Alcotest.(check string) "" v)
     array
 
 let () =
   Alcotest.run "search"
-    [ ( "interpolation",
-        [ Alcotest.test_case "unique" `Quick interpolation_unique;
-          Alcotest.test_case "duplicates" `Quick interpolation_duplicates
-        ] )
+    [
+      ( "interpolation",
+        [ Alcotest.test_case "unique" `Quick interpolation_unique ] );
     ]

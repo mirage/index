@@ -6,6 +6,8 @@ module type ARRAY = sig
   val get : t -> int64 -> elt
 
   val length : t -> int64
+
+  val pre_fetch : t -> low:int64 -> high:int64 -> unit
 end
 
 module type ENTRY = sig
@@ -46,7 +48,7 @@ module type S = sig
   module Array : ARRAY with type elt = Entry.t
 
   val interpolation_search :
-    Array.t -> Entry.Key.t -> low:int64 -> high:int64 -> Entry.Value.t list
+    Array.t -> Entry.Key.t -> low:int64 -> high:int64 -> Entry.Value.t
 end
 
 module Make

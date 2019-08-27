@@ -166,19 +166,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let iter_io ?min ?max f io = iter_io_off ?min ?max (fun _ e -> f e) io
 
-  type window = { buf : bytes; off : int64 }
-
-  let get_entry io ~window off =
-    match window with
-    | None ->
-        let buf = Bytes.create entry_size in
-        let n = IO.read io ~off buf in
-        assert (n = entry_size);
-        decode_entry buf 0
-    | Some w ->
-        let off = Int64.(to_int @@ sub off w.off) in
-        decode_entry w.buf off
-
   module Entry = struct
     type t = entry
 
@@ -191,13 +178,45 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   end
 
   module IOArray = struct
-    type t = IO.t
+    type buffer = { buf : bytes; io_off : int64 }
+
+    type t = { io : IO.t; mutable buffer : buffer option }
+
+    let v io = { io; buffer = None }
+
+    let get_entry_from_io io off =
+      let buf = Bytes.create entry_size in
+      let n = IO.read io ~off buf in
+      assert (n = entry_size);
+      decode_entry buf 0
+
+    let ( -- ) = Int64.sub
+
+    let get_entry_from_buffer buf off =
+      let buf_off = Int64.(to_int @@ (off -- buf.io_off)) in
+      assert (buf_off <= Bytes.length buf.buf);
+      decode_entry buf.buf buf_off
 
     type elt = entry
 
-    let get t i = get_entry t Int64.(mul i entry_sizeL)
+    let get t i =
+      let off = Int64.(mul i entry_sizeL) in
+      match t.buffer with
+      | None -> get_entry_from_io t.io off
+      | Some b -> get_entry_from_buffer b off
 
-    let length t = Int64.(div (IO.offset t) entry_sizeL)
+    let length t = Int64.(div (IO.offset t.io) entry_sizeL)
+
+    let pre_fetch t ~low ~high =
+      match t.buffer with
+      | Some _ -> ()
+      | None ->
+          let range = entry_size * (1 + Int64.to_int (high -- low)) in
+          if range <= 4096 then (
+            let buf = Bytes.create range in
+            let n = IO.read t.io ~off:low buf in
+            assert (n = range);
+            t.buffer <- Some { buf; io_off = Int64.mul low entry_sizeL } )
   end
 
   module Search =
@@ -286,7 +305,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let low, high =
       Int64.(div low_bytes entry_sizeL, div high_bytes entry_sizeL)
     in
-    Search.interpolation_search index.io key ~low ~high
+    Search.interpolation_search (IOArray.v index.io) key ~low ~high
 
   let sync_log t =
     let generation = IO.get_generation t.log in

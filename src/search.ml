@@ -6,6 +6,8 @@ module type ARRAY = sig
   val get : t -> int64 -> elt
 
   val length : t -> int64
+
+  val pre_fetch : t -> low:int64 -> high:int64 -> unit
 end
 
 module type ENTRY = sig
@@ -50,7 +52,7 @@ module type S = sig
   module Array : ARRAY with type elt = Entry.t
 
   val interpolation_search :
-    Array.t -> Entry.Key.t -> low:int64 -> high:int64 -> Entry.Value.t list
+    Array.t -> Entry.Key.t -> low:int64 -> high:int64 -> Entry.Value.t
 end
 
 module Make
@@ -63,23 +65,20 @@ module Make
   module Key = Entry.Key
   module Value = Entry.Value
 
-  let look_around array (init : Value.t list) key key_metric index =
-    let rec search (op : int64 -> int64) curr acc =
+  let look_around array key key_metric index =
+    let rec search (op : int64 -> int64) curr =
       let i = op curr in
-      if i < 0L || i >= Array.length array then acc
+      if i < 0L || i >= Array.length array then raise Not_found
       else
         let e = array.(i) in
         let e_metric = Metric.of_entry e in
-        if not (Metric.compare key_metric e_metric = 0) then acc
-        else
-          let new_acc =
-            if Key.equal (Entry.to_key e) key then Entry.to_value e :: acc
-            else acc
-          in
-          (search [@tailcall]) op i new_acc
+        if not (Metric.compare key_metric e_metric = 0) then raise Not_found
+        else if Key.equal (Entry.to_key e) key then Entry.to_value e
+        else (search [@tailcall]) op i
     in
-    let before = search Int64.succ index init in
-    (search [@tailcall]) Int64.pred index before
+    match search Int64.succ index with
+    | e -> e
+    | exception Not_found -> (search [@tailcall]) Int64.pred index
 
   (** Improves over binary search in cases where the values in some array are
       uniformly distributed according to some metric (such as a hash). *)
@@ -87,20 +86,22 @@ module Make
     let key_metric = Metric.of_key key in
     (* The core of the search *)
     let rec search low high lowest_entry highest_entry =
-      if high < low then []
+      Array.pre_fetch array ~low ~high;
+      if high < low then raise Not_found
       else
         let lowest_entry = Lazy.force lowest_entry in
         if high = low then
           if Key.equal (Entry.to_key lowest_entry) key then
-            [ Entry.to_value lowest_entry ]
-          else []
+            Entry.to_value lowest_entry
+          else raise Not_found
         else
           let lowest_metric = Metric.of_entry lowest_entry in
-          if Metric.compare lowest_metric key_metric > 0 then []
+          if Metric.compare lowest_metric key_metric > 0 then raise Not_found
           else
             let highest_entry = Lazy.force highest_entry in
             let highest_metric = Metric.of_entry highest_entry in
-            if Metric.compare highest_metric key_metric < 0 then []
+            if Metric.compare highest_metric key_metric < 0 then
+              raise Not_found
             else
               let next_index =
                 Metric.linear_interpolate ~low:(low, lowest_metric)
@@ -109,12 +110,8 @@ module Make
               let e = array.(next_index) in
               let e_metric = Metric.of_entry e in
               if Metric.compare key_metric e_metric = 0 then
-                (* We have found at least one entry with the correct metric *)
-                let init =
-                  if Key.equal key (Entry.to_key e) then [ Entry.to_value e ]
-                  else []
-                in
-                look_around array init key key_metric next_index
+                if Key.equal key (Entry.to_key e) then Entry.to_value e
+                else look_around array key key_metric next_index
               else if Metric.compare key_metric e_metric > 0 then
                 (search [@tailcall])
                   Int64.(succ next_index)
@@ -126,6 +123,6 @@ module Make
                   (Lazy.from_val lowest_entry)
                   (lazy array.(Int64.(pred next_index)))
     in
-    if high < 0L then []
+    if high < 0L then raise Not_found
     else (search [@tailcall]) low high (lazy array.(low)) (lazy array.(high))
 end
