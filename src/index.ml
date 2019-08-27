@@ -113,6 +113,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     log : IO.t;
     log_mem : entry Tbl.t;
     entries : key Bloomf.t option;
+    mutable counter : int;
   }
 
   let clear t =
@@ -186,6 +187,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         let t = Hashtbl.find roots (root, readonly) in
         if IO.valid_fd t.log then (
           Log.debug (fun l -> l "%s found in cache" root);
+          t.counter <- t.counter + 1;
           if fresh then clear t;
           t )
         else (
@@ -232,7 +234,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Tbl.add log_mem e.key e;
         may (fun bf -> Bloomf.add bf e.key) entries)
       log;
-    { config; generation; log_mem; root; log; index; entries }
+    { config; generation; log_mem; root; log; index; entries; counter = 1 }
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
 
@@ -482,11 +484,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let flush t = IO.sync t.log
 
   let close t =
-    Log.debug (fun l -> l "close %S" t.root);
-    flush t;
-    IO.close t.log;
-    may (fun i -> IO.close i.io) t.index;
-    t.index <- None;
-    may Bloomf.clear t.entries;
-    Tbl.reset t.log_mem
+    t.counter <- t.counter - 1;
+    if t.counter = 0 then (
+      Log.debug (fun l -> l "close %S" t.root);
+      if not t.config.readonly then flush t;
+      IO.close t.log;
+      may (fun i -> IO.close i.io) t.index;
+      t.index <- None;
+      may Bloomf.clear t.entries;
+      Tbl.reset t.log_mem )
 end
