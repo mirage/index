@@ -127,7 +127,7 @@ let test_add t =
 let different_size_for_key () =
   let k = String.init 2 (fun _i -> random_char ()) in
   let v = Value.v () in
-  let exn = Index.Invalid_Key_Size k in
+  let exn = Index.Invalid_key_size k in
   Alcotest.check_raises
     "Cannot add a key of a different size than string_size." exn (fun () ->
       Index.add t k v)
@@ -135,7 +135,7 @@ let different_size_for_key () =
 let different_size_for_value () =
   let k = Key.v () in
   let v = String.init 200 (fun _i -> random_char ()) in
-  let exn = Index.Invalid_Value_Size v in
+  let exn = Index.Invalid_value_size v in
   Alcotest.check_raises
     "Cannot add a value of a different size than string_size." exn (fun () ->
       Index.add t k v)

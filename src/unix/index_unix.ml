@@ -1,4 +1,4 @@
-exception RO_Not_Allowed
+exception RO_not_allowed
 
 let current_version = "00000001"
 
@@ -109,7 +109,7 @@ module IO : Index.IO = struct
   let header = 24L (* offset + version + generation *)
 
   let sync t =
-    if t.readonly then raise RO_Not_Allowed;
+    if t.readonly then raise RO_not_allowed;
     let buf = Buffer.contents t.buf in
     let offset = t.offset in
     Buffer.clear t.buf;
@@ -143,7 +143,7 @@ module IO : Index.IO = struct
   let auto_flush_limit = 1_000_000L
 
   let append t buf =
-    if t.readonly then raise RO_Not_Allowed;
+    if t.readonly then raise RO_not_allowed;
     Buffer.add_string t.buf buf;
     let len = Int64.of_int (String.length buf) in
     t.offset <- t.offset ++ len;
@@ -227,7 +227,7 @@ module IO : Index.IO = struct
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
     | false ->
-        if readonly then raise RO_Not_Allowed;
+        if readonly then raise RO_not_allowed;
         let x = Unix.openfile file Unix.[ O_CREAT; mode ] 0o644 in
         let raw = Raw.v x in
         Raw.unsafe_set_offset raw 0L;

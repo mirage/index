@@ -59,7 +59,7 @@ end
 
 module type IO = Io.S
 
-exception RO_Not_Allowed
+exception RO_not_allowed
 (** The exception raised when illegal operation is attempted on a read_only
     index. *)
 
@@ -92,9 +92,9 @@ module type S = sig
   val mem : t -> key -> bool
   (** [mem t k] is [true] iff [k] is bound in [t]. *)
 
-  exception Invalid_Key_Size of key
+  exception Invalid_key_size of key
 
-  exception Invalid_Value_Size of value
+  exception Invalid_value_size of value
   (** The exceptions raised when trying to add a key or a value of different
       size than encoded_size *)
 
