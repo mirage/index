@@ -85,7 +85,7 @@ module type S = sig
   val clear : t -> unit
   (** [clear t] clears [t] so that there are no more bindings in it. *)
 
-  val find_all : t -> key -> value list
+  val find : t -> key -> value
   (** [find t k] are all the bindings of [k] in [t]. The order is not
       specified *)
 
@@ -98,8 +98,9 @@ module type S = sig
   (** The exceptions raised when trying to add a key or a value of different
       size than encoded_size *)
 
-  val add : t -> key -> value -> unit
-  (** [add t k v] binds [k] to [v] in [t]. *)
+  val replace : t -> key -> value -> unit
+  (** [replace t k v] binds [k] to [v] in [t], replacing any exising binding
+      of [k]. *)
 
   val iter : (key -> value -> unit) -> t -> unit
   (** Iterates over the index bindings. Order is not specified.
