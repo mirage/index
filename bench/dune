@@ -1,6 +1,6 @@
 (executable
  (name main)
- (libraries fmt index.unix))
+ (libraries fmt metrics-unix metrics-catapult index.unix))
 
 (alias
  (name bench)

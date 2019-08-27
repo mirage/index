@@ -71,6 +71,8 @@ let may f = function None -> () | Some bf -> f bf
 exception RO_not_allowed
 
 module Make (K : Key) (V : Value) (IO : IO) = struct
+  module IO = Index_metrics.Instrument_IO (IO)
+
   type key = K.t
 
   type value = V.t
@@ -85,21 +87,29 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   exception Invalid_value_size of value
 
+  let append_entry_src = Index_metrics.duration_src "append_entry"
+
   let append_entry io e =
-    let encoded_key = K.encode e.key in
-    let encoded_value = V.encode e.value in
-    if String.length encoded_key <> K.encoded_size then
-      raise (Invalid_key_size e.key);
-    if String.length encoded_value <> V.encoded_size then
-      raise (Invalid_value_size e.value);
-    IO.append io encoded_key;
-    IO.append io encoded_value
+    (fun () ->
+      let encoded_key = K.encode e.key in
+      let encoded_value = V.encode e.value in
+      if String.length encoded_key <> K.encoded_size then
+        raise (Invalid_key_size e.key);
+      if String.length encoded_value <> V.encoded_size then
+        raise (Invalid_value_size e.value);
+      IO.append io encoded_key;
+      IO.append io encoded_value)
+    |> Metrics.run append_entry_src (fun f -> f)
+
+  let decode_entry_src = Index_metrics.duration_src "decode_entry"
 
   let decode_entry bytes off =
-    let string = Bytes.unsafe_to_string bytes in
-    let key = K.decode string off in
-    let value = V.decode string (off + K.encoded_size) in
-    { key; key_hash = K.hash key; value }
+    (fun () ->
+      let string = Bytes.unsafe_to_string bytes in
+      let key = K.decode string off in
+      let value = V.decode string (off + K.encoded_size) in
+      { key; key_hash = K.hash key; value })
+    |> Metrics.run decode_entry_src (fun f -> f)
 
   module Tbl = Hashtbl.Make (K)
 
@@ -118,17 +128,21 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     lock : IO.lock option;
   }
 
+  let clear_src = Index_metrics.duration_src "clear"
+
   let clear t =
-    Log.debug (fun l -> l "clear %S" t.root);
-    t.generation <- 0L;
-    IO.clear t.log;
-    Tbl.clear t.log_mem;
-    may
-      (fun i ->
-        IO.clear i.io;
-        IO.close i.io)
-      t.index;
-    t.index <- None
+    (fun () ->
+      Log.debug (fun l -> l "clear %S" t.root);
+      t.generation <- 0L;
+      IO.clear t.log;
+      Tbl.clear t.log_mem;
+      may
+        (fun i ->
+          IO.clear i.io;
+          IO.close i.io)
+        t.index;
+      t.index <- None)
+    |> Metrics.run clear_src (fun f -> f)
 
   let ( // ) = Filename.concat
 
@@ -298,18 +312,22 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       iter_io add_log_entry t.log ~min:log_offset
     else if log_offset > new_log_offset then assert false
 
+  let find_src = Index_metrics.duration_src "find_src"
+
   let find t key =
-    Log.debug (fun l -> l "find %a" K.pp key);
-    if t.config.readonly then sync_log t;
-    let look_on_disk () =
-      match Tbl.find t.log_mem key with
-      | e -> e.value
-      | exception Not_found -> (
-          match t.index with
-          | Some index -> interpolation_search index key
-          | None -> raise Not_found )
-    in
-    look_on_disk ()
+    (fun () ->
+      Log.debug (fun l -> l "find %a" K.pp key);
+      if t.config.readonly then sync_log t;
+      let look_on_disk () =
+        match Tbl.find t.log_mem key with
+        | e -> e.value
+        | exception Not_found -> (
+            match t.index with
+            | Some index -> interpolation_search index key
+            | None -> raise Not_found )
+      in
+      look_on_disk ())
+    |> Metrics.run find_src (fun f -> f)
 
   let mem t key =
     Log.debug (fun l -> l "mem %a" K.pp key);
@@ -372,75 +390,87 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     (go [@tailcall]) 0L 0 0
 
+  let merge_src = Index_metrics.duration_src "merge_src"
+
   let merge ~witness t =
-    Log.debug (fun l -> l "unforced merge %S\n" t.root);
-    let merge_path = merge_path t.root in
-    let generation = Int64.succ t.generation in
-    let log =
-      let compare_entry e e' = compare e.key_hash e'.key_hash in
-      let b = Array.make (Tbl.length t.log_mem) witness in
-      Tbl.fold
-        (fun _ e i ->
-          b.(i) <- e;
-          i + 1)
-        t.log_mem 0
-      |> ignore;
-      Array.fast_sort compare_entry b;
-      b
-    in
-    let fan_size =
-      match t.index with
-      | None -> Tbl.length t.log_mem
+    (fun () ->
+      Log.debug (fun l -> l "unforced merge %S\n" t.root);
+      let merge_path = merge_path t.root in
+      let generation = Int64.succ t.generation in
+      let log =
+        let compare_entry e e' = compare e.key_hash e'.key_hash in
+        let b = Array.make (Tbl.length t.log_mem) witness in
+        Tbl.fold
+          (fun _ e i ->
+            b.(i) <- e;
+            i + 1)
+          t.log_mem 0
+        |> ignore;
+        Array.fast_sort compare_entry b;
+        b
+      in
+      let fan_size =
+        match t.index with
+        | None -> Tbl.length t.log_mem
+        | Some index ->
+            (Int64.to_int (IO.offset index.io) / entry_size)
+            + Tbl.length t.log_mem
+      in
+      let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
+      let merge =
+        IO.v ~readonly:false ~fresh:true ~generation
+          ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
+          merge_path
+      in
+      ( match t.index with
+      | None ->
+          let io =
+            IO.v ~fresh:true ~readonly:false ~generation:0L ~fan_size:0L
+              (index_path t.root)
+          in
+          append_remaining_log fan_out log 0 merge;
+          t.index <- Some { io; fan_out }
       | Some index ->
-          (Int64.to_int (IO.offset index.io) / entry_size)
-          + Tbl.length t.log_mem
-    in
-    let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
-    let merge =
-      IO.v ~readonly:false ~fresh:true ~generation
-        ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
-        merge_path
-    in
-    ( match t.index with
-    | None ->
-        let io =
-          IO.v ~fresh:true ~readonly:false ~generation:0L ~fan_size:0L
-            (index_path t.root)
-        in
-        append_remaining_log fan_out log 0 merge;
-        t.index <- Some { io; fan_out }
-    | Some index ->
-        let index = { index with fan_out } in
-        merge_with log index merge;
-        t.index <- Some index );
-    match t.index with
-    | None -> assert false
-    | Some index ->
-        Fan.finalize index.fan_out;
-        IO.set_fanout merge (Fan.export index.fan_out);
-        IO.rename ~src:merge ~dst:index.io;
-        IO.clear t.log;
-        Tbl.clear t.log_mem;
-        IO.set_generation t.log generation;
-        t.generation <- generation
+          let index = { index with fan_out } in
+          merge_with log index merge;
+          t.index <- Some index );
+      match t.index with
+      | None -> assert false
+      | Some index ->
+          Fan.finalize index.fan_out;
+          IO.set_fanout merge (Fan.export index.fan_out);
+          IO.rename ~src:merge ~dst:index.io;
+          IO.clear t.log;
+          Tbl.clear t.log_mem;
+          IO.set_generation t.log generation;
+          t.generation <- generation)
+    |> Metrics.run merge_src (fun f -> f)
 
   let force_merge t key value =
     Log.debug (fun l -> l "forced merge %S\n" t.root);
     merge ~witness:{ key; key_hash = K.hash key; value } t
 
+  let replace_src = Index_metrics.duration_src "replace"
+
   let replace t key value =
-    Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
-    if t.config.readonly then raise RO_not_allowed;
-    let entry = { key; key_hash = K.hash key; value } in
-    append_entry t.log entry;
-    Tbl.replace t.log_mem key entry;
-    if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
-    then merge ~witness:entry t
+    (fun () ->
+      Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
+      if t.config.readonly then raise RO_not_allowed;
+      let entry = { key; key_hash = K.hash key; value } in
+      append_entry t.log entry;
+      Tbl.replace t.log_mem key entry;
+      if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
+      then merge ~witness:entry t)
+    |> Metrics.run replace_src (fun f -> f)
+
+  let iter_src = Index_metrics.duration_src "iter"
 
   (* XXX: Perform a merge beforehands to ensure duplicates are not hit twice. *)
   let iter f t =
-    Tbl.iter (fun _ e -> f e.key e.value) t.log_mem;
-    may (fun index -> iter_io (fun e -> f e.key e.value) index.io) t.index
+    (fun () ->
+      Tbl.iter (fun _ e -> f e.key e.value) t.log_mem;
+      may (fun index -> iter_io (fun e -> f e.key e.value) index.io) t.index)
+    |> Metrics.run iter_src (fun f -> f)
 
   let flush t = IO.sync t.log
 

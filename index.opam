@@ -17,6 +17,8 @@ depends: [
   "dune"    {build & >= "1.7.0"}
   "fmt"
   "logs"
+  "metrics"
+  "metrics-unix"
   "alcotest" {with-test}
   "re" {with-test}
 ]
