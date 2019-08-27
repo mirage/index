@@ -47,7 +47,8 @@ module Metric = struct
     let proportion = (target_in -. low_in) /. (high_in -. low_in) in
     (* Convert fractional position to position in output space *)
     let position = low_out +. (proportion *. (high_out -. low_out)) in
-    Int64.of_float (Float.round position)
+    let rounded = ceil (position -. 0.5) +. 0.5 in
+    Int64.of_float rounded
 end
 
 module Search = Index.Private.Search.Make (Entry) (EltArray) (Metric)
@@ -84,10 +85,8 @@ let interpolation_duplicates () =
 
 let () =
   Alcotest.run "search"
-    [
-      ( "interpolation",
-        [
-          Alcotest.test_case "unique" `Quick interpolation_unique;
-          Alcotest.test_case "duplicates" `Quick interpolation_duplicates;
-        ] );
+    [ ( "interpolation",
+        [ Alcotest.test_case "unique" `Quick interpolation_unique;
+          Alcotest.test_case "duplicates" `Quick interpolation_duplicates
+        ] )
     ]

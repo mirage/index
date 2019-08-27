@@ -224,7 +224,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           let proportion = (target_in -. low_in) /. (high_in -. low_in) in
           (* Convert fractional position to position in output space *)
           let position = low_out +. (proportion *. (high_out -. low_out)) in
-          Int64.of_float (Float.floor position)
+          let rounded = ceil (position -. 0.5) +. 0.5 in
+          Int64.of_float rounded
       end)
 
   let with_cache ~v ~clear =
