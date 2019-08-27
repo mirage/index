@@ -28,4 +28,6 @@ module type S = sig
   val append : t -> string -> unit
 
   val close : t -> unit
+
+  val valid_fd : t -> bool
 end

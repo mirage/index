@@ -248,6 +248,12 @@ module IO : Index.IO = struct
           let offset = Raw.unsafe_get_offset raw in
           let version = Raw.unsafe_get_version raw in
           v ~offset ~version raw
+
+  let valid_fd t =
+    try
+      let _ = Unix.fstat t.raw.fd in
+      true
+    with Unix.Unix_error (Unix.EBADF, _, _) -> false
 end
 
 module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO)

@@ -108,6 +108,9 @@ module type S = sig
 
   val flush : t -> unit
   (** Flushes all buffers to the disk. *)
+
+  val close : t -> unit
+  (** Closes the files and clears the caches of [t].*)
 end
 
 module Make (K : Key) (V : Value) (IO : IO) :

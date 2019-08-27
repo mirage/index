@@ -1,3 +1,22 @@
+let reporter ?(prefix = "") () =
+  let report src level ~over k msgf =
+    let k _ =
+      over ();
+      k ()
+    in
+    let ppf = match level with Logs.App -> Fmt.stdout | _ -> Fmt.stderr in
+    let with_stamp h _tags k fmt =
+      let dt = Unix.gettimeofday () in
+      Fmt.kpf k ppf
+        ("%s%+04.0fus %a %a @[" ^^ fmt ^^ "@]@.")
+        prefix dt
+        Fmt.(styled `Magenta string)
+        (Logs.Src.name src) Logs_fmt.pp_header (level, h)
+    in
+    msgf @@ fun ?header ?tags fmt -> with_stamp header tags k fmt
+  in
+  { Logs.report }
+
 let string_size = 20
 
 let index_size = 103
@@ -152,6 +171,45 @@ let readonly () =
               (Printf.sprintf "Wrong insertion: %s value is missing." v))
     !l
 
+let close_reopen_rw () =
+  let w = Index.v ~fresh:true ~readonly:false ~log_size "test1" in
+  List.iter (fun (k, v) -> Index.add w k v) !l;
+  Index.close w;
+  let w = Index.v ~fresh:false ~readonly:false ~log_size "test1" in
+  test_find_present w
+
+let open_readonly_close_rw () =
+  let w = Index.v ~fresh:true ~readonly:false ~log_size "test2" in
+  let r = Index.v ~fresh:false ~readonly:true ~log_size "test2" in
+  List.iter (fun (k, v) -> Index.add w k v) !l;
+  Index.close w;
+  test_find_present r
+
+let close_reopen_readonly () =
+  let w = Index.v ~fresh:true ~readonly:false ~log_size "test3" in
+  List.iter (fun (k, v) -> Index.add w k v) !l;
+  Index.close w;
+  let r = Index.v ~fresh:false ~readonly:true ~log_size "test3" in
+  test_find_present r
+
+let fail_read_after_close () =
+  let w = Index.v ~fresh:true ~readonly:false ~log_size "test4" in
+  let k, v = (Key.v (), Value.v ()) in
+  Index.add w k v;
+  Index.close w;
+  if Index.find_all w k <> [] then
+    Alcotest.fail "Read after close returns a value."
+
+let fail_write_after_close () =
+  let w = Index.v ~fresh:true ~readonly:false ~log_size "test5" in
+  Index.close w;
+  let k, v = (Key.v (), Value.v ()) in
+  (* a single add does not fail*)
+  Index.add w k v;
+  let exn = Unix.Unix_error (Unix.EBADF, "read", "") in
+  Alcotest.check_raises "Cannot write in index after close." exn (fun () ->
+      List.iter (fun (k, v) -> Index.add w k v) !l)
+
 let live_tests =
   [
     ("find (present)", `Quick, find_present_live);
@@ -170,10 +228,22 @@ let restart_tests =
 
 let readonly_tests = [ ("add", `Quick, readonly) ]
 
+let close_tests =
+  [
+    ("close and reopen", `Quick, close_reopen_rw);
+    ("open two instances, close one", `Quick, open_readonly_close_rw);
+    ("close and reopen on readonly", `Quick, close_reopen_readonly);
+    ("fail to read after close", `Quick, fail_read_after_close);
+    ("fail to write after close", `Quick, fail_write_after_close);
+  ]
+
 let () =
+  Logs.set_level (Some Logs.Debug);
+  Logs.set_reporter (reporter ());
   Alcotest.run "index"
     [
       ("live", live_tests);
       ("on restart", restart_tests);
       ("readonly", readonly_tests);
+      ("close", close_tests);
     ]

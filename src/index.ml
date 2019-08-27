@@ -54,6 +54,8 @@ module type S = sig
   val iter : (key -> value -> unit) -> t -> unit
 
   val flush : t -> unit
+
+  val close : t -> unit
 end
 
 let may f = function None -> () | Some bf -> f bf
@@ -182,9 +184,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           Hashtbl.remove roots (root, false);
           raise Not_found );
         let t = Hashtbl.find roots (root, readonly) in
-        Log.debug (fun l -> l "%s found in cache" root);
-        if fresh then clear t;
-        t
+        if IO.valid_fd t.log then (
+          Log.debug (fun l -> l "%s found in cache" root);
+          if fresh then clear t;
+          t )
+        else (
+          Hashtbl.remove roots (root, readonly);
+          raise Not_found )
       with Not_found ->
         Log.debug (fun l ->
             l "[%s] v fresh=%b readonly=%b" (Filename.basename root) fresh
@@ -474,4 +480,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     may (fun index -> iter_io (fun e -> f e.key e.value) index.io) t.index
 
   let flush t = IO.sync t.log
+
+  let close t =
+    Log.debug (fun l -> l "close %S" t.root);
+    flush t;
+    IO.close t.log;
+    may (fun i -> IO.close i.io) t.index;
+    t.index <- None;
+    may Bloomf.clear t.entries;
+    Tbl.reset t.log_mem
 end
