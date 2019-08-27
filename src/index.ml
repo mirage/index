@@ -163,7 +163,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     match window with
     | None ->
         let buf = Bytes.create entry_size in
-        let _ = IO.read io ~off buf in
+        let n = IO.read io ~off buf in
+        assert (n = entry_size);
         decode_entry buf 0
     | Some w ->
         let off = Int64.(to_int @@ sub off w.off) in
@@ -259,10 +260,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           | Some _ as w -> w
           | None ->
               let len = Int64.(add (sub high low) entry_sizeL) in
-              if len <= 4_096L then
+              if len <= 4_096L then (
                 let buf = Bytes.create (Int64.to_int len) in
-                let _ = IO.read index.io ~off:low buf in
-                Some { buf; off = low }
+                let n = IO.read index.io ~off:low buf in
+                assert (n = Bytes.length buf);
+                Some { buf; off = low } )
               else None
         in
         let lowest_entry =
