@@ -153,24 +153,27 @@ let readonly () =
     !l
 
 let live_tests =
-  [ ("find (present)", `Quick, find_present_live);
+  [
+    ("find (present)", `Quick, find_present_live);
     ("find (absent)", `Quick, find_absent_live);
     ("add", `Quick, replace_live);
     ("fail add (key)", `Quick, different_size_for_key);
-    ("fail add (value)", `Quick, different_size_for_value)
+    ("fail add (value)", `Quick, different_size_for_value);
   ]
 
 let restart_tests =
-  [ ("find (present)", `Quick, find_present_restart);
+  [
+    ("find (present)", `Quick, find_present_restart);
     ("find (absent)", `Quick, find_absent_restart);
-    ("add", `Quick, replace_restart)
+    ("add", `Quick, replace_restart);
   ]
 
 let readonly_tests = [ ("add", `Quick, readonly) ]
 
 let () =
   Alcotest.run "index"
-    [ ("live", live_tests);
+    [
+      ("live", live_tests);
       ("on restart", restart_tests);
-      ("readonly", readonly_tests)
+      ("readonly", readonly_tests);
     ]
