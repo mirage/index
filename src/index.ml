@@ -64,7 +64,49 @@ let src = Logs.Src.create "index" ~doc:"Index"
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
+module IndexMetrics = struct
+  open Metrics
+
+  (* There is currently no way of making metrics sinks cumulative, so here we
+     manually hack around it by incrementing a reference *)
+  let appends =
+    let c = ref 0 in
+    let data i =
+      c := !c + i;
+      Data.v [ int "appends" !c ]
+    in
+    Src.v ~duration:true "test" ~tags:Tags.[] ~data
+
+  let reads =
+    let c = ref 0 in
+    let data i =
+      c := !c + i;
+      Data.v [ int "reads" !c ]
+    in
+    Src.v ~duration:true "IO.reads" ~tags:Tags.[] ~data
+
+  let bytes_read =
+    let c = ref 0 in
+    let data i =
+      c := !c + i;
+      Data.v [ int "bytes read" !c ]
+    in
+    Src.v "IO.bytes_read" ~tags:Tags.[] ~data
+end
+
+module MetricsInstrument (IO : IO) : IO = struct
+  include IO
+
+  let read t ~off s =
+    let bytes_read = read t ~off s in
+    Metrics.add IndexMetrics.reads (fun t -> t) (fun m -> m 1);
+    Metrics.add IndexMetrics.bytes_read (fun t -> t) (fun m -> m bytes_read);
+    bytes_read
+end
+
 module Make (K : Key) (V : Value) (IO : IO) = struct
+  module IO = MetricsInstrument (IO)
+
   type key = K.t
 
   type value = V.t
@@ -82,6 +124,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   exception Invalid_Value_Size of value
 
   let append_entry io e =
+    Metrics.add IndexMetrics.appends (fun t -> t) (fun m -> m 1);
     let encoded_key = K.encode e.key in
     let encoded_value = V.encode e.value in
     if String.length encoded_key <> K.encoded_size then

@@ -18,6 +18,8 @@ depends: [
   "bloomf"
   "fmt"
   "logs"
+  "metrics"
+  "metrics-unix"
   "alcotest" {with-test}
 ]
 synopsis: "Scalable indexes for Ocaml"

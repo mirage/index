@@ -56,6 +56,9 @@ let pp_stats ppf (count, max) =
   Fmt.pf ppf "\t%4dk/%dk" (count / 1000) (max / 1000)
 
 let () =
+  Metrics.enable_all ();
+  Metrics_gnuplot.set_reporter ();
+  Metrics_unix.monitor_gc 0.1;
   let t0 = Sys.time () in
   Fmt.epr "Adding %d bindings.\n%!" index_size;
   let rec loop bindings i =
