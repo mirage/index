@@ -32,37 +32,38 @@ module IO : Index.IO = struct
 
     let v fd = { fd; cursor = 0L }
 
-    let really_write fd buf =
-      let rec aux off len =
-        let w = Unix.write fd buf off len in
-        if w = 0 then () else (aux [@tailcall]) (off + w) (len - w)
-      in
-      (aux [@tailcall]) 0 (Bytes.length buf)
+    external pread : Unix.file_descr -> int64 -> bytes -> int -> int -> int
+      = "caml_pread"
 
-    let really_read fd len buf =
-      let rec aux off len =
-        let r = Unix.read fd buf off len in
-        if r = 0 then off (* end of file *)
-        else if r = len then off + r
-        else (aux [@tailcall]) (off + r) (len - r)
-      in
-      (aux [@tailcall]) 0 len
+    external pwrite : Unix.file_descr -> int64 -> bytes -> int -> int -> int
+      = "caml_pwrite"
 
-    let lseek t off =
-      if off = t.cursor then ()
-      else
-        let _ = Unix.LargeFile.lseek t.fd off Unix.SEEK_SET in
-        t.cursor <- off
+    let really_write fd off buf =
+      let rec aux fd_off buf_off len =
+        let w = pwrite fd fd_off buf buf_off len in
+        if w = 0 then ()
+        else
+          (aux [@tailcall]) (fd_off ++ Int64.of_int w) (buf_off + w) (len - w)
+      in
+      (aux [@tailcall]) off 0 (Bytes.length buf)
+
+    let really_read fd off len buf =
+      let rec aux fd_off buf_off len =
+        let r = pread fd fd_off buf buf_off len in
+        if r = 0 then buf_off (* end of file *)
+        else if r = len then buf_off + r
+        else
+          (aux [@tailcall]) (fd_off ++ Int64.of_int r) (buf_off + r) (len - r)
+      in
+      (aux [@tailcall]) off 0 len
 
     let unsafe_write t ~off buf =
-      lseek t off;
       let buf = Bytes.unsafe_of_string buf in
-      really_write t.fd buf;
+      really_write t.fd off buf;
       t.cursor <- off ++ Int64.of_int (Bytes.length buf)
 
     let unsafe_read t ~off ~len buf =
-      lseek t off;
-      let n = really_read t.fd len buf in
+      let n = really_read t.fd off len buf in
       t.cursor <- off ++ Int64.of_int n;
       n
 
