@@ -1,11 +1,4 @@
-type t = {
-  hash_size : int;
-  entry_size : int;
-  size : int;
-  fans : int64 array;
-  mask : int;
-  shift : int;
-}
+type t = { fans : int64 array; mask : int; shift : int }
 
 let log2 a = log a /. log 2.
 
@@ -16,14 +9,7 @@ let v ~hash_size ~entry_size n =
   let size = max 0 (int_of_float (ceil (log2 entries_fan))) in
   let nb_fans = 1 lsl size in
   let shift = hash_size - size in
-  {
-    hash_size;
-    entry_size;
-    size;
-    fans = Array.make nb_fans 0L;
-    mask = (nb_fans - 1) lsl shift;
-    shift;
-  }
+  { fans = Array.make nb_fans 0L; mask = (nb_fans - 1) lsl shift; shift }
 
 let fan t h = (h land t.mask) lsr t.shift
 
