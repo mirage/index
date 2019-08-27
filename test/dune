@@ -1,0 +1,3 @@
+(test
+ (name search)
+ (libraries index alcotest))

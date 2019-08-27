@@ -1,5 +1,6 @@
 module Private = struct
   module Fan = Fan
+  module Search = Search
 end
 
 module type Key = sig
@@ -80,8 +81,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   type entry = { key : key; key_hash : int; value : value }
 
   let entry_size = K.encoded_size + V.encoded_size
-
-  let entry_sizef = float_of_int entry_size
 
   let entry_sizeL = Int64.of_int entry_size
 
@@ -180,6 +179,54 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         let off = Int64.(to_int @@ sub off w.off) in
         decode_entry w.buf off
 
+  module Entry = struct
+    type t = entry
+
+    module Key = K
+    module Value = V
+
+    let to_key e = e.key
+
+    let to_value e = e.value
+  end
+
+  module IOArray = struct
+    type t = IO.t
+
+    type elt = entry
+
+    let get t i = get_entry t Int64.(mul i entry_sizeL)
+
+    let length t = Int64.(div (IO.offset t) entry_sizeL)
+  end
+
+  module Search =
+    Search.Make (Entry) (IOArray)
+      (struct
+        type t = int
+
+        module Entry = Entry
+
+        let compare : int -> int -> int = compare
+
+        let of_entry e = e.key_hash
+
+        let of_key = K.hash
+
+        let linear_interpolate ~low:(low_index, low_metric)
+            ~high:(high_index, high_metric) key_metric =
+          let low_in = float_of_int low_metric in
+          let high_in = float_of_int high_metric in
+          let target_in = float_of_int key_metric in
+          let low_out = Int64.to_float low_index in
+          let high_out = Int64.to_float high_index in
+          (* Fractional position of [target_in] along the line from [low_in] to [high_in] *)
+          let proportion = (target_in -. low_in) /. (high_in -. low_in) in
+          (* Convert fractional position to position in output space *)
+          let position = low_out +. (proportion *. (high_out -. low_out)) in
+          Int64.of_float (Float.floor position)
+      end)
+
   let with_cache ~v ~clear =
     let roots = Hashtbl.create 0 in
     let f ?(fresh = false) ?(readonly = false) ~log_size root =
@@ -232,89 +279,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
 
-  let get_entry_iff_needed ~window io off = function
-    | Some e -> e
-    | None -> get_entry ~window io off
-
-  let look_around ~window io ~low ~high key h_key off =
-    let rec search op curr =
-      let off = op curr entry_sizeL in
-      if off < low || off > high then raise Not_found
-      else
-        let e = get_entry ~window io off in
-        let h_e = e.key_hash in
-        if h_e <> h_key then raise Not_found
-        else if K.equal e.key key then e.value
-        else search op off
-    in
-    match search Int64.add off with
-    | e -> e
-    | exception Not_found -> search Int64.sub off
-
-  let interpolation_search index key : value =
+  let interpolation_search index key =
     let hashed_key = K.hash key in
-    let low, high = Fan.search index.fan_out hashed_key in
-    let rec search steps ~window low high lowest_entry highest_entry =
-      if high < low then raise Not_found
-      else
-        let window =
-          match window with
-          | Some _ as w -> w
-          | None ->
-              let len = Int64.(add (sub high low) entry_sizeL) in
-              if len <= 4_096L then (
-                let buf = Bytes.create (Int64.to_int len) in
-                let n = IO.read index.io ~off:low buf in
-                assert (n = Bytes.length buf);
-                Some { buf; off = low } )
-              else None
-        in
-        let lowest_entry =
-          get_entry_iff_needed ~window index.io low lowest_entry
-        in
-        if high = low then
-          if K.equal lowest_entry.key key then lowest_entry.value
-          else raise Not_found
-        else
-          let lowest_hash = lowest_entry.key_hash in
-          if lowest_hash > hashed_key then raise Not_found
-          else
-            let highest_entry =
-              get_entry_iff_needed ~window index.io high highest_entry
-            in
-            let highest_hash = highest_entry.key_hash in
-            if highest_hash < hashed_key then raise Not_found
-            else
-              let lowest_hashf = float_of_int lowest_hash in
-              let highest_hashf = float_of_int highest_hash in
-              let hashed_keyf = float_of_int hashed_key in
-              let lowf = Int64.to_float low in
-              let highf = Int64.to_float high in
-              let doff =
-                floor
-                  ( (highf -. lowf)
-                  *. (hashed_keyf -. lowest_hashf)
-                  /. (highest_hashf -. lowest_hashf) )
-              in
-              let off = lowf +. doff -. mod_float doff entry_sizef in
-              let offL = Int64.of_float off in
-              let e = get_entry ~window index.io offL in
-              let hashed_e = e.key_hash in
-              if hashed_key = hashed_e then
-                if K.equal key e.key then e.value
-                else
-                  look_around ~window ~low ~high index.io key hashed_key offL
-              else if hashed_e < hashed_key then
-                (search [@tailcall]) (steps + 1) ~window
-                  (Int64.add offL entry_sizeL)
-                  high None (Some highest_entry)
-              else
-                (search [@tailcall]) (steps + 1) ~window low
-                  (Int64.sub offL entry_sizeL)
-                  (Some lowest_entry) None
+    let low_bytes, high_bytes = Fan.search index.fan_out hashed_key in
+    let low, high =
+      Int64.(div low_bytes entry_sizeL, div high_bytes entry_sizeL)
     in
-    if high < 0L then raise Not_found
-    else (search [@tailcall]) ~window:None 0 low high None None
+    Search.interpolation_search index.io key ~low ~high
 
   let sync_log t =
     let generation = IO.get_generation t.log in
