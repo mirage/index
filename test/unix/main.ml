@@ -84,8 +84,8 @@ let tbl =
     else
       let k = Key.v () in
       let v = Value.v () in
-      Index.add t k v;
-      Hashtbl.add tbl k v;
+      Index.replace t k v;
+      Hashtbl.replace tbl k v;
       loop (i - 1)
   in
   loop index_size
@@ -97,12 +97,12 @@ let rec random_new_key () =
 let test_find_present t =
   Hashtbl.iter
     (fun k v ->
-      match Index.find_all t k with
-      | [] ->
+      match Index.find t k with
+      | exception Not_found ->
           Alcotest.fail
             (Printf.sprintf "Wrong insertion: %s key is missing." k)
-      | l ->
-          if not (List.mem v l) then
+      | v' ->
+          if not (v = v') then
             Alcotest.fail
               (Printf.sprintf "Wrong insertion: %s value is missing." v))
     tbl
@@ -112,28 +112,27 @@ let test_find_absent t =
     if i = 0 then ()
     else
       let k = random_new_key () in
-      ( match Index.find_all t k with
-      | [] -> ()
-      | _ -> Alcotest.fail (Printf.sprintf "Absent value was found: %s." k) );
+      Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k)
+        Not_found (fun () -> ignore (Index.find t k));
       loop (i - 1)
   in
   loop index_size
 
-let test_add t =
+let test_replace t =
   let k = Key.v () in
   let v = Value.v () in
   let v' = Value.v () in
-  Index.add t k v;
-  Hashtbl.add tbl k v;
-  Index.add t k v';
-  Hashtbl.add tbl k v';
-  match Index.find_all t k with
-  | [] ->
+  Index.replace t k v;
+  Hashtbl.replace tbl k v;
+  Index.replace t k v';
+  Hashtbl.replace tbl k v';
+  match Index.find t k with
+  | res ->
+      if not (res = v') then
+        Alcotest.fail (Printf.sprintf "Replacing existing value failed.")
+  | exception Not_found ->
       Alcotest.fail
         (Printf.sprintf "Inserted value is not present anymore: %s." k)
-  | l ->
-      if not (List.mem v l && List.mem v' l) then
-        Alcotest.fail (Printf.sprintf "Adding duplicate values failed.")
 
 let different_size_for_key () =
   let k = String.init 2 (fun _i -> random_char ()) in
@@ -141,7 +140,7 @@ let different_size_for_key () =
   let exn = Index.Invalid_key_size k in
   Alcotest.check_raises
     "Cannot add a key of a different size than string_size." exn (fun () ->
-      Index.add t k v)
+      Index.replace t k v)
 
 let different_size_for_value () =
   let k = Key.v () in
@@ -149,7 +148,7 @@ let different_size_for_value () =
   let exn = Index.Invalid_value_size v in
   Alcotest.check_raises
     "Cannot add a value of a different size than string_size." exn (fun () ->
-      Index.add t k v)
+      Index.replace t k v)
 
 let find_present_live () = test_find_present t
 
@@ -161,25 +160,25 @@ let find_present_restart () =
 let find_absent_restart () =
   test_find_absent (Index.v ~fresh:false ~log_size index_name)
 
-let replace_live () = test_add t
+let replace_live () = test_replace t
 
-let replace_restart () = test_add (Index.v ~fresh:false ~log_size index_name)
+let replace_restart () = test_replace (Index.v ~fresh:false ~log_size index_name)
 
 let readonly () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size index_name in
   let r = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  Hashtbl.iter (fun k v -> Index.add w k v) tbl;
+  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   Index.flush w;
   Hashtbl.iter
     (fun k v ->
-      match Index.find_all r k with
-      | [] ->
-          Alcotest.fail
-            (Printf.sprintf "Wrong insertion: %s key is missing." k)
-      | l ->
-          if not (List.mem v l) then
+      match Index.find r k with
+      | res ->
+          if not (res = v) then
             Alcotest.fail
-              (Printf.sprintf "Wrong insertion: %s value is missing." v))
+              (Printf.sprintf "Wrong insertion: %s value is missing." v)
+      | exception Not_found ->
+          Alcotest.fail
+            (Printf.sprintf "Wrong insertion: %s key is missing." k))
     tbl
 
 let close_reopen_rw () =
@@ -267,7 +266,7 @@ let live_tests =
   [
     ("find (present)", `Quick, find_present_live);
     ("find (absent)", `Quick, find_absent_live);
-    ("add", `Quick, replace_live);
+    ("replace", `Quick, replace_live);
     ("fail add (key)", `Quick, different_size_for_key);
     ("fail add (value)", `Quick, different_size_for_value);
   ]
@@ -276,7 +275,7 @@ let restart_tests =
   [
     ("find (present)", `Quick, find_present_restart);
     ("find (absent)", `Quick, find_absent_restart);
-    ("add", `Quick, replace_restart);
+    ("replace", `Quick, replace_restart);
   ]
 
 let readonly_tests = [ ("add", `Quick, readonly) ]

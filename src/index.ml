@@ -41,7 +41,7 @@ module type S = sig
 
   val clear : t -> unit
 
-  val find_all : t -> key -> value list
+  val find : t -> key -> value
 
   val mem : t -> key -> bool
 
@@ -49,7 +49,7 @@ module type S = sig
 
   exception Invalid_value_size of value
 
-  val add : t -> key -> value -> unit
+  val replace : t -> key -> value -> unit
 
   val iter : (key -> value -> unit) -> t -> unit
 
@@ -231,7 +231,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     iter_io
       (fun e ->
-        Tbl.add log_mem e.key e;
+        Tbl.replace log_mem e.key e;
         may (fun bf -> Bloomf.add bf e.key) entries)
       log;
     { config; generation; log_mem; root; log; index; entries; counter = 1 }
@@ -242,26 +242,26 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     | Some e -> e
     | None -> get_entry ~window io off
 
-  let look_around ~window io init ~low ~high key h_key off =
-    let rec search acc op curr =
+  let look_around ~window io ~low ~high key h_key off =
+    let rec search op curr =
       let off = op curr entry_sizeL in
-      if off < 0L || off >= IO.offset io || off < low || off > high then acc
+      if off < low || off > high then raise Not_found
       else
         let e = get_entry ~window io off in
         let h_e = e.key_hash in
-        if h_e <> h_key then acc
-        else
-          let new_acc = if K.equal e.key key then e.value :: acc else acc in
-          search new_acc op off
+        if h_e <> h_key then raise Not_found
+        else if K.equal e.key key then e.value
+        else search op off
     in
-    let before = search init Int64.add off in
-    search before Int64.sub off
+    match search Int64.add off with
+    | e -> e
+    | exception Not_found -> search Int64.sub off
 
-  let interpolation_search index key =
+  let interpolation_search index key : value =
     let hashed_key = K.hash key in
     let low, high = Fan.search index.fan_out hashed_key in
     let rec search steps ~window low high lowest_entry highest_entry =
-      if high < low then []
+      if high < low then raise Not_found
       else
         let window =
           match window with
@@ -279,16 +279,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           get_entry_iff_needed ~window index.io low lowest_entry
         in
         if high = low then
-          if K.equal lowest_entry.key key then [ lowest_entry.value ] else []
+          if K.equal lowest_entry.key key then lowest_entry.value
+          else raise Not_found
         else
           let lowest_hash = lowest_entry.key_hash in
-          if lowest_hash > hashed_key then []
+          if lowest_hash > hashed_key then raise Not_found
           else
             let highest_entry =
               get_entry_iff_needed ~window index.io high highest_entry
             in
             let highest_hash = highest_entry.key_hash in
-            if highest_hash < hashed_key then []
+            if highest_hash < hashed_key then raise Not_found
             else
               let lowest_hashf = float_of_int lowest_hash in
               let highest_hashf = float_of_int highest_hash in
@@ -306,9 +307,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               let e = get_entry ~window index.io offL in
               let hashed_e = e.key_hash in
               if hashed_key = hashed_e then
-                let init = if K.equal key e.key then [ e.value ] else [] in
-                look_around ~window ~low ~high index.io init key hashed_key
-                  offL
+                if K.equal key e.key then e.value
+                else
+                  look_around ~window ~low ~high index.io key hashed_key offL
               else if hashed_e < hashed_key then
                 (search [@tailcall]) (steps + 1) ~window
                   (Int64.add offL entry_sizeL)
@@ -318,14 +319,14 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
                   (Int64.sub offL entry_sizeL)
                   (Some lowest_entry) None
     in
-    if high < 0L then []
+    if high < 0L then raise Not_found
     else (search [@tailcall]) ~window:None 0 low high None None
 
   let sync_log t =
     let generation = IO.get_generation t.log in
     let log_offset = IO.offset t.log in
     let new_log_offset = IO.force_offset t.log in
-    let add_log_entry e = Tbl.add t.log_mem e.key e in
+    let add_log_entry e = Tbl.replace t.log_mem e.key e in
     if t.generation <> generation then (
       Tbl.clear t.log_mem;
       iter_io add_log_entry t.log;
@@ -349,25 +350,25 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       iter_io add_log_entry t.log ~min:log_offset
     else if log_offset > new_log_offset then assert false
 
-  let find_all t key =
+  let find t key =
     Log.debug (fun l -> l "find %a" K.pp key);
     if t.config.readonly then sync_log t;
     let look_on_disk () =
-      let in_index =
-        match t.index with
-        | None -> []
-        | Some index -> interpolation_search index key
-      in
-      let in_log = List.map (fun e -> e.value) (Tbl.find_all t.log_mem key) in
-      in_index @ in_log
+      match Tbl.find t.log_mem key with
+      | e -> e.value
+      | exception Not_found -> (
+          match t.index with
+          | Some index -> interpolation_search index key
+          | None -> raise Not_found )
     in
     match t.entries with
     | None -> look_on_disk ()
-    | Some bf -> if not (Bloomf.mem bf key) then [] else look_on_disk ()
+    | Some bf ->
+        if not (Bloomf.mem bf key) then raise Not_found else look_on_disk ()
 
   let mem t key =
     Log.debug (fun l -> l "mem %a" K.pp key);
-    match find_all t key with [] -> false | _ -> true
+    match find t key with _ -> true | exception Not_found -> false
 
   let append_buf_fanout fan_out hash buf_str dst_io =
     Fan.update fan_out hash (IO.offset dst_io);
@@ -409,7 +410,12 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         let key_e = K.decode buf_str 0 in
         let hash_e = K.hash key_e in
         let log_i = merge_from_log fan_out log log_i hash_e dst_io in
-        append_buf_fanout fan_out hash_e buf_str dst_io;
+        if
+          log_i >= Array.length log
+          ||
+          let key = log.(log_i).key in
+          not (K.equal key key_e)
+        then append_buf_fanout fan_out hash_e buf_str dst_io;
         let buf_offset =
           let n = buf_offset + entry_size in
           if n >= Bytes.length buf then (
@@ -466,12 +472,12 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         IO.set_generation t.log generation;
         t.generation <- generation
 
-  let add t key value =
+  let replace t key value =
     Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
     let entry = { key; key_hash = K.hash key; value } in
     append_entry t.log entry;
-    Tbl.add t.log_mem key entry;
+    Tbl.replace t.log_mem key entry;
     may (fun bf -> Bloomf.add bf key) t.entries;
     if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
     then merge ~witness:entry t
