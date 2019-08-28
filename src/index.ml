@@ -56,6 +56,8 @@ module type S = sig
   val flush : t -> unit
 
   val close : t -> unit
+
+  val force_merge : t -> key -> value -> unit
 end
 
 let may f = function None -> () | Some bf -> f bf
@@ -428,7 +430,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     (go [@tailcall]) 0L 0 0
 
   let merge ~witness t =
-    Log.debug (fun l -> l "merge %S" t.root);
+    Log.debug (fun l -> l "unforced merge %S\n" t.root);
     let tmp_path = t.root // "tmp" // "index" in
     let generation = Int64.succ t.generation in
     let tmp = IO.v ~readonly:false ~fresh:true ~generation tmp_path in
@@ -471,6 +473,10 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Tbl.clear t.log_mem;
         IO.set_generation t.log generation;
         t.generation <- generation
+
+  let force_merge t key value =
+    Log.debug (fun l -> l "forced merge %S\n" t.root);
+    merge ~witness:{ key; key_hash = K.hash key; value } t
 
   let replace t key value =
     Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
