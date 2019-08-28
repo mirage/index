@@ -45,20 +45,22 @@ module type S = sig
 
   val mem : t -> key -> bool
 
-  exception Invalid_Key_Size of key
+  exception Invalid_key_size of key
 
-  exception Invalid_Value_Size of value
+  exception Invalid_value_size of value
 
   val add : t -> key -> value -> unit
 
   val iter : (key -> value -> unit) -> t -> unit
 
   val flush : t -> unit
+
+  val close : t -> unit
 end
 
 let may f = function None -> () | Some bf -> f bf
 
-exception RO_Not_Allowed
+exception RO_not_allowed
 
 let src = Logs.Src.create "index" ~doc:"Index"
 
@@ -77,17 +79,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let entry_sizeL = Int64.of_int entry_size
 
-  exception Invalid_Key_Size of key
+  exception Invalid_key_size of key
 
-  exception Invalid_Value_Size of value
+  exception Invalid_value_size of value
 
   let append_entry io e =
     let encoded_key = K.encode e.key in
     let encoded_value = V.encode e.value in
     if String.length encoded_key <> K.encoded_size then
-      raise (Invalid_Key_Size e.key);
+      raise (Invalid_key_size e.key);
     if String.length encoded_value <> V.encoded_size then
-      raise (Invalid_Value_Size e.value);
+      raise (Invalid_value_size e.value);
     IO.append io encoded_key;
     IO.append io encoded_value
 
@@ -111,6 +113,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     log : IO.t;
     log_mem : entry Tbl.t;
     entries : key Bloomf.t option;
+    mutable counter : int;
   }
 
   let clear t =
@@ -182,9 +185,14 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           Hashtbl.remove roots (root, false);
           raise Not_found );
         let t = Hashtbl.find roots (root, readonly) in
-        Log.debug (fun l -> l "%s found in cache" root);
-        if fresh then clear t;
-        t
+        if IO.valid_fd t.log then (
+          Log.debug (fun l -> l "%s found in cache" root);
+          t.counter <- t.counter + 1;
+          if fresh then clear t;
+          t )
+        else (
+          Hashtbl.remove roots (root, readonly);
+          raise Not_found )
       with Not_found ->
         Log.debug (fun l ->
             l "[%s] v fresh=%b readonly=%b" (Filename.basename root) fresh
@@ -226,7 +234,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Tbl.add log_mem e.key e;
         may (fun bf -> Bloomf.add bf e.key) entries)
       log;
-    { config; generation; log_mem; root; log; index; entries }
+    { config; generation; log_mem; root; log; index; entries; counter = 1 }
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
 
@@ -460,7 +468,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let add t key value =
     Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
-    if t.config.readonly then raise RO_Not_Allowed;
+    if t.config.readonly then raise RO_not_allowed;
     let entry = { key; key_hash = K.hash key; value } in
     append_entry t.log entry;
     Tbl.add t.log_mem key entry;
@@ -474,4 +482,15 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     may (fun index -> iter_io (fun e -> f e.key e.value) index.io) t.index
 
   let flush t = IO.sync t.log
+
+  let close t =
+    t.counter <- t.counter - 1;
+    if t.counter = 0 then (
+      Log.debug (fun l -> l "close %S" t.root);
+      if not t.config.readonly then flush t;
+      IO.close t.log;
+      may (fun i -> IO.close i.io) t.index;
+      t.index <- None;
+      may Bloomf.clear t.entries;
+      Tbl.reset t.log_mem )
 end
