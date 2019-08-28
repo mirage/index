@@ -162,7 +162,8 @@ let find_absent_restart () =
 
 let replace_live () = test_replace t
 
-let replace_restart () = test_replace (Index.v ~fresh:false ~log_size index_name)
+let replace_restart () =
+  test_replace (Index.v ~fresh:false ~log_size index_name)
 
 let readonly () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size index_name in
@@ -183,7 +184,7 @@ let readonly () =
 
 let close_reopen_rw () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size "test1" in
-  Hashtbl.iter (fun k v -> Index.add w k v) tbl;
+  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   Index.close w;
   let w = Index.v ~fresh:false ~readonly:false ~log_size "test1" in
   test_find_present w;
@@ -192,14 +193,14 @@ let close_reopen_rw () =
 let open_readonly_close_rw () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size "test2" in
   let r = Index.v ~fresh:false ~readonly:true ~log_size "test2" in
-  Hashtbl.iter (fun k v -> Index.add w k v) tbl;
+  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   Index.close w;
   test_find_present r;
   Index.close r
 
 let close_reopen_readonly () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size "test3" in
-  Hashtbl.iter (fun k v -> Index.add w k v) tbl;
+  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   Index.close w;
   let r = Index.v ~fresh:false ~readonly:true ~log_size "test3" in
   test_find_present r;
@@ -208,22 +209,23 @@ let close_reopen_readonly () =
 let test_read_after_close t k =
   test_find_present t;
   Index.close t;
-  if Index.find_all t k <> [] then
-    Alcotest.fail "Read after close returns a value."
+  match Index.find t k with
+  | exception Not_found -> ()
+  | _ -> Alcotest.fail "Read after close returns a value."
 
 let test_read_after_close_readonly t k =
   test_find_present t;
   Index.close t;
   let exn = Unix.Unix_error (Unix.EBADF, "read", "") in
   Alcotest.check_raises "Cannot read in readonly index after close." exn
-    (fun () -> ignore (Index.find_all t k))
+    (fun () -> ignore (Index.find t k))
 
 let fail_read_after_close () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size "test4" in
-  Hashtbl.iter (fun k v -> Index.add w k v) tbl;
+  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   let k = Key.v () in
   let v = Value.v () in
-  Index.add w k v;
+  Index.replace w k v;
   test_read_after_close w k
 
 let fail_write_after_close () =
@@ -231,18 +233,18 @@ let fail_write_after_close () =
   Index.close w;
   let k, v = (Key.v (), Value.v ()) in
   (* a single add does not fail*)
-  Index.add w k v;
+  Index.replace w k v;
   let exn = Unix.Unix_error (Unix.EBADF, "read", "") in
   Alcotest.check_raises "Cannot write in index after close." exn (fun () ->
-      Hashtbl.iter (fun k v -> Index.add w k v) tbl)
+      Hashtbl.iter (fun k v -> Index.replace w k v) tbl)
 
 let open_twice () =
   let w1 = Index.v ~fresh:true ~readonly:false ~log_size "test6" in
   let w2 = Index.v ~fresh:true ~readonly:false ~log_size "test6" in
-  Hashtbl.iter (fun k v -> Index.add w1 k v) tbl;
+  Hashtbl.iter (fun k v -> Index.replace w1 k v) tbl;
   let k = Key.v () in
   let v = Value.v () in
-  Index.add w1 k v;
+  Index.replace w1 k v;
   Index.close w1;
 
   (* while another instance is still open, read does not fail*)
@@ -251,10 +253,10 @@ let open_twice () =
 
 let open_twice_readonly () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size "test7" in
-  Hashtbl.iter (fun k v -> Index.add w k v) tbl;
+  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   let k = Key.v () in
   let v = Value.v () in
-  Index.add w k v;
+  Index.replace w k v;
   Index.close w;
   let r1 = Index.v ~fresh:false ~readonly:true ~log_size "test7" in
   let r2 = Index.v ~fresh:false ~readonly:true ~log_size "test7" in
