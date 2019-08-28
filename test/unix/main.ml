@@ -73,22 +73,30 @@ let pool_size = 2
 
 let t = Index.v ~fresh:true ~log_size index_name
 
-let l = ref (List.init index_size (fun _ -> (Key.v (), Value.v ())))
-
-let () =
-  let () = List.iter (fun (k, v) -> Index.add t k v) !l in
-  Index.flush t
+(* [tbl] is the in-memory representation of the [t], i.e. tbl should always
+contain the same elements as [t] *)
+let tbl =
+  let tbl = Hashtbl.create 0 in
+  let rec loop i =
+    if i = 0 then (
+      Index.flush t;
+      tbl )
+    else
+      let k = Key.v () in
+      let v = Value.v () in
+      Index.add t k v;
+      Hashtbl.add tbl k v;
+      loop (i - 1)
+  in
+  loop index_size
 
 let rec random_new_key () =
   let r = Key.v () in
-  try
-    let _ = List.assoc r !l in
-    random_new_key ()
-  with Not_found -> r
+  if Hashtbl.mem tbl r then random_new_key () else r
 
 let test_find_present t =
-  List.iter
-    (fun (k, v) ->
+  Hashtbl.iter
+    (fun k v ->
       match Index.find_all t k with
       | [] ->
           Alcotest.fail
@@ -97,7 +105,7 @@ let test_find_present t =
           if not (List.mem v l) then
             Alcotest.fail
               (Printf.sprintf "Wrong insertion: %s value is missing." v))
-    (List.rev !l)
+    tbl
 
 let test_find_absent t =
   let rec loop i =
@@ -112,10 +120,13 @@ let test_find_absent t =
   loop index_size
 
 let test_add t =
-  let k, v = List.hd !l in
+  let k = Key.v () in
+  let v = Value.v () in
   let v' = Value.v () in
+  Index.add t k v;
+  Hashtbl.add tbl k v;
   Index.add t k v';
-  l := (k, v') :: !l;
+  Hashtbl.add tbl k v';
   match Index.find_all t k with
   | [] ->
       Alcotest.fail
@@ -157,10 +168,10 @@ let replace_restart () = test_add (Index.v ~fresh:false ~log_size index_name)
 let readonly () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size index_name in
   let r = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  List.iter (fun (k, v) -> Index.add w k v) !l;
+  Hashtbl.iter (fun k v -> Index.add w k v) tbl;
   Index.flush w;
-  List.iter
-    (fun (k, v) ->
+  Hashtbl.iter
+    (fun k v ->
       match Index.find_all r k with
       | [] ->
           Alcotest.fail
@@ -169,7 +180,7 @@ let readonly () =
           if not (List.mem v l) then
             Alcotest.fail
               (Printf.sprintf "Wrong insertion: %s value is missing." v))
-    !l
+    tbl
 
 let close_reopen_rw () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size "test1" in
