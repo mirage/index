@@ -432,6 +432,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let merge ~witness t =
     Log.debug (fun l -> l "unforced merge %S\n" t.root);
     let tmp_path = t.root // "tmp" // "index" in
+    IO.wait_for_lock tmp_path;
     let generation = Int64.succ t.generation in
     let tmp = IO.v ~readonly:false ~fresh:true ~generation tmp_path in
     let log =

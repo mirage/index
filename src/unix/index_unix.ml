@@ -260,6 +260,12 @@ module IO : Index.IO = struct
       let _ = Unix.fstat t.raw.fd in
       true
     with Unix.Unix_error (Unix.EBADF, _, _) -> false
+
+  let wait_for_lock f =
+    mkdir (Filename.dirname f);
+    while Sys.file_exists f do
+      Unix.sleep 1
+    done
 end
 
 module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO)
