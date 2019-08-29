@@ -182,6 +182,33 @@ let readonly () =
             (Printf.sprintf "Wrong insertion: %s key is missing." k))
     tbl
 
+let readonly_clear () =
+  let w = Index.v ~fresh:true ~readonly:false ~log_size "index1" in
+  let r = Index.v ~fresh:false ~readonly:true ~log_size "index1" in
+  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
+  test_find_present r;
+  Index.clear w;
+  Index.flush w;
+  Hashtbl.iter
+    (fun k _ ->
+      match Index.find r k with
+      | _ -> Alcotest.fail (Printf.sprintf "Found %s key after clearing." k)
+      | exception Not_found -> ())
+    tbl
+
+(*ignore (Index.mem r (Key.v ()));
+  Index.clear w;
+  ignore (Index.mem r (Key.v ()));
+  Index.flush w;
+  ignore (Index.mem r (Key.v ()));
+  Hashtbl.iter
+    (fun k _ ->
+      match Index.find r k with
+      | _ -> Alcotest.fail (Printf.sprintf "Found %s key after clearing." k)
+      | exception Not_found -> ())
+    tbl
+*)
+
 let close_reopen_rw () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size "test1" in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
@@ -280,7 +307,8 @@ let restart_tests =
     ("replace", `Quick, replace_restart);
   ]
 
-let readonly_tests = [ ("add", `Quick, readonly) ]
+let readonly_tests =
+  [ ("add", `Quick, readonly); ("read after clear", `Quick, readonly_clear) ]
 
 let close_tests =
   [
@@ -296,6 +324,7 @@ let close_tests =
 let () =
   Logs.set_level (Some Logs.Debug);
   Logs.set_reporter (reporter ());
+
   Alcotest.run "index"
     [
       ("live", live_tests);
