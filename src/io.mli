@@ -1,7 +1,13 @@
 module type S = sig
   type t
 
-  val v : readonly:bool -> fresh:bool -> generation:int64 -> string -> t
+  val v :
+    readonly:bool ->
+    fresh:bool ->
+    generation:int64 ->
+    fan_size:int64 ->
+    string ->
+    t
 
   val name : t -> string
 
@@ -22,6 +28,10 @@ module type S = sig
   val set_generation : t -> int64 -> unit
 
   val get_generation : t -> int64
+
+  val set_fanout : t -> string -> unit
+
+  val get_fanout : t -> string
 
   val rename : src:t -> dst:t -> unit
 
