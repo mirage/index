@@ -186,6 +186,7 @@ let readonly_clear () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size "index1" in
   let r = Index.v ~fresh:false ~readonly:true ~log_size "index1" in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
+  Index.flush w;
   test_find_present r;
   Index.clear w;
   Index.flush w;
