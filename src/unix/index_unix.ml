@@ -233,7 +233,6 @@ module IO : Index.IO = struct
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
     | false ->
-        if readonly then raise RO_not_allowed;
         let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; mode ] 0o644 in
         let raw = Raw.v x in
         Raw.Offset.set raw 0L;
