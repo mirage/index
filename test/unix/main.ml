@@ -191,9 +191,8 @@ let readonly_clear () =
   Index.clear w;
   Hashtbl.iter
     (fun k _ ->
-      match Index.find r k with
-      | _ -> Alcotest.fail (Printf.sprintf "Found %s key after clearing." k)
-      | exception Not_found -> ())
+      Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k)
+        Not_found (fun () -> ignore (Index.find r k)))
     tbl
 
 let close_reopen_rw () =
