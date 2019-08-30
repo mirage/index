@@ -261,11 +261,33 @@ module IO : Index.IO = struct
       true
     with Unix.Unix_error (Unix.EBADF, _, _) -> false
 
-  let wait_for_lock f =
+  type lock = Unix.file_descr
+
+  let unsafe_lock op f =
     mkdir (Filename.dirname f);
-    while Sys.file_exists f do
-      Unix.sleep 1
-    done
+    let fd = Unix.openfile f [ Unix.O_CREAT; Unix.O_RDWR ] 0o600
+    and pid = string_of_int (Unix.getpid ()) in
+    let pid_len = String.length pid in
+    try
+      Unix.lockf fd op 0;
+      if Unix.single_write_substring fd pid 0 pid_len <> pid_len then (
+        Unix.close fd;
+        failwith "Unable to write PID to lock file" )
+      else Some fd
+    with
+    | Unix.Unix_error (Unix.EAGAIN, _, _) ->
+        Unix.close fd;
+        None
+    | e ->
+        Unix.close fd;
+        raise e
+
+  let lock path =
+    match unsafe_lock Unix.F_TLOCK path with
+    | Some fd -> fd
+    | None -> failwith ("Lock didn't succeed: file " ^ path ^ " is present")
+
+  let unlock fd = Unix.close fd
 end
 
 module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO)

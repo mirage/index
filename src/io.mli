@@ -31,5 +31,9 @@ module type S = sig
 
   val valid_fd : t -> bool
 
-  val wait_for_lock : string -> unit
+  type lock
+
+  val lock : string -> lock
+
+  val unlock : lock -> unit
 end
