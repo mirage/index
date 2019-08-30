@@ -332,22 +332,24 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     if t.generation <> generation then (
       Tbl.clear t.log_mem;
       iter_io add_log_entry t.log;
-      let index_path = index_path t.root in
       may (fun i -> IO.close i.io) t.index;
-      let io = IO.v ~fresh:false ~readonly:true ~generation index_path in
-      let io_off = IO.force_offset io in
-      let fan_out_size =
-        Tbl.length t.log_mem + (Int64.to_int io_off / entry_size)
-      in
-      let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_out_size in
-      iter_io_off
-        (fun off e ->
-          let hash = e.key_hash in
-          Fan.update fan_out hash off)
-        io;
-      Fan.finalize fan_out;
-      t.index <- Some { fan_out; io };
-      t.generation <- generation )
+      t.generation <- generation;
+      if Int64.equal generation 0L then t.index <- None
+      else
+        let index_path = index_path t.root in
+        let io = IO.v ~fresh:false ~readonly:true ~generation index_path in
+        let io_off = IO.force_offset io in
+        let fan_out_size =
+          Tbl.length t.log_mem + (Int64.to_int io_off / entry_size)
+        in
+        let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_out_size in
+        iter_io_off
+          (fun off e ->
+            let hash = e.key_hash in
+            Fan.update fan_out hash off)
+          io;
+        Fan.finalize fan_out;
+        t.index <- Some { fan_out; io } )
     else if log_offset < new_log_offset then
       iter_io add_log_entry t.log ~min:log_offset
     else if log_offset > new_log_offset then assert false

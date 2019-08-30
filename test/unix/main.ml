@@ -98,6 +98,19 @@ let readonly () =
             (Printf.sprintf "Wrong insertion: %s key is missing." k))
     tbl
 
+let readonly_clear () =
+  let w = Index.v ~fresh:true ~readonly:false ~log_size "index1" in
+  let r = Index.v ~fresh:false ~readonly:true ~log_size "index1" in
+  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
+  Index.flush w;
+  test_find_present r;
+  Index.clear w;
+  Hashtbl.iter
+    (fun k _ ->
+      Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k)
+        Not_found (fun () -> ignore (Index.find r k)))
+    tbl
+
 let close_reopen_rw () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size "test1" in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
@@ -196,7 +209,8 @@ let restart_tests =
     ("replace", `Quick, replace_restart);
   ]
 
-let readonly_tests = [ ("add", `Quick, readonly) ]
+let readonly_tests =
+  [ ("add", `Quick, readonly); ("read after clear", `Quick, readonly_clear) ]
 
 let close_tests =
   [
