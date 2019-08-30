@@ -67,33 +67,39 @@ module IO : Index.IO = struct
       t.cursor <- off ++ Int64.of_int n;
       n
 
-    let unsafe_set_offset t n =
-      let buf = encode_int64 n in
-      unsafe_write t ~off:0L buf
+    module Offset = struct
+      let set t n =
+        let buf = encode_int64 n in
+        unsafe_write t ~off:0L buf
 
-    let unsafe_get_offset t =
-      let buf = Bytes.create 8 in
-      let n = unsafe_read t ~off:0L ~len:8 buf in
-      assert (n = 8);
-      decode_int64 (Bytes.unsafe_to_string buf)
+      let get t =
+        let buf = Bytes.create 8 in
+        let n = unsafe_read t ~off:0L ~len:8 buf in
+        assert (n = 8);
+        decode_int64 (Bytes.unsafe_to_string buf)
+    end
 
-    let unsafe_get_version t =
-      let buf = Bytes.create 8 in
-      let n = unsafe_read t ~off:8L ~len:8 buf in
-      assert (n = 8);
-      Bytes.unsafe_to_string buf
+    module Generation = struct
+      let get t =
+        let buf = Bytes.create 8 in
+        let n = unsafe_read t ~off:16L ~len:8 buf in
+        assert (n = 8);
+        decode_int64 (Bytes.unsafe_to_string buf)
 
-    let unsafe_set_version t = unsafe_write t ~off:8L current_version
+      let set t gen =
+        let buf = encode_int64 gen in
+        unsafe_write t ~off:16L buf
+    end
 
-    let unsafe_get_generation t =
-      let buf = Bytes.create 8 in
-      let n = unsafe_read t ~off:16L ~len:8 buf in
-      assert (n = 8);
-      decode_int64 (Bytes.unsafe_to_string buf)
+    module Version = struct
+      let get t =
+        let buf = Bytes.create 8 in
+        let n = unsafe_read t ~off:8L ~len:8 buf in
+        assert (n = 8);
+        Bytes.unsafe_to_string buf
 
-    let unsafe_set_generation t gen =
-      let buf = encode_int64 gen in
-      unsafe_write t ~off:16L buf
+      let set t = unsafe_write t ~off:8L current_version
+    end
   end
 
   type t = {
@@ -116,7 +122,7 @@ module IO : Index.IO = struct
     if buf = "" then ()
     else (
       Raw.unsafe_write t.raw ~off:t.flushed buf;
-      Raw.unsafe_set_offset t.raw offset;
+      Raw.Offset.set t.raw offset;
 
       (* concurrent append might happen so here t.offset might differ
          from offset *)
@@ -156,14 +162,14 @@ module IO : Index.IO = struct
   let offset t = t.offset
 
   let force_offset t =
-    t.offset <- Raw.unsafe_get_offset t.raw;
+    t.offset <- Raw.Offset.get t.raw;
     t.offset
 
   let version t = t.version
 
-  let get_generation t = Raw.unsafe_get_generation t.raw
+  let get_generation t = Raw.Generation.get t.raw
 
-  let set_generation t gen = Raw.unsafe_set_generation t.raw gen
+  let set_generation t = Raw.Generation.set t.raw
 
   let readonly t = t.readonly
 
@@ -193,8 +199,8 @@ module IO : Index.IO = struct
   let clear t =
     t.offset <- 0L;
     t.flushed <- header;
-    Raw.unsafe_set_generation t.raw 0L;
-    Raw.unsafe_set_offset t.raw t.offset;
+    Raw.Generation.set t.raw 0L;
+    Raw.Offset.set t.raw t.offset;
     Buffer.clear t.buf
 
   let buffers = Hashtbl.create 256
@@ -230,9 +236,9 @@ module IO : Index.IO = struct
         if readonly then raise RO_not_allowed;
         let x = Unix.openfile file Unix.[ O_CREAT; mode ] 0o644 in
         let raw = Raw.v x in
-        Raw.unsafe_set_offset raw 0L;
-        Raw.unsafe_set_version raw;
-        Raw.unsafe_set_generation raw generation;
+        Raw.Offset.set raw 0L;
+        Raw.Version.set raw;
+        Raw.Generation.set raw generation;
         v ~offset:0L ~version:current_version raw
     | true ->
         let x = Unix.openfile file Unix.[ O_EXCL; mode ] 0o644 in
@@ -240,13 +246,13 @@ module IO : Index.IO = struct
         if readonly && fresh then
           Fmt.failwith "IO.v: cannot reset a readonly file"
         else if fresh then (
-          Raw.unsafe_set_offset raw 0L;
-          Raw.unsafe_set_version raw;
-          Raw.unsafe_set_generation raw generation;
+          Raw.Offset.set raw 0L;
+          Raw.Version.set raw;
+          Raw.Generation.set raw generation;
           v ~offset:0L ~version:current_version raw )
         else
-          let offset = Raw.unsafe_get_offset raw in
-          let version = Raw.unsafe_get_version raw in
+          let offset = Raw.Offset.get raw in
+          let version = Raw.Version.get raw in
           v ~offset ~version raw
 
   let valid_fd t =
