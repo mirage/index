@@ -116,6 +116,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     log_mem : entry Tbl.t;
     entries : key Bloomf.t option;
     mutable counter : int;
+    lock : IO.lock;
   }
 
   let clear t =
@@ -136,6 +137,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let log_path root = root // "index.log"
 
   let index_path root = root // "index" // "index"
+
+  let lock_path root = root // "index" // ".lock"
 
   let page_size = Int64.mul entry_sizeL 1_000L
 
@@ -206,6 +209,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     `Staged f
 
   let v_no_cache ~fresh ~readonly ~log_size root =
+    let lock = IO.lock (lock_path root) in
     let config = { log_size = log_size * entry_size; readonly } in
     let log_path = log_path root in
     let index_path = index_path root in
@@ -236,7 +240,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Tbl.replace log_mem e.key e;
         may (fun bf -> Bloomf.add bf e.key) entries)
       log;
-    { config; generation; log_mem; root; log; index; entries; counter = 1 }
+    {
+      config;
+      generation;
+      log_mem;
+      root;
+      log;
+      index;
+      entries;
+      counter = 1;
+      lock;
+    }
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
 
@@ -506,5 +520,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       may (fun i -> IO.close i.io) t.index;
       t.index <- None;
       may Bloomf.clear t.entries;
-      Tbl.reset t.log_mem )
+      Tbl.reset t.log_mem;
+      IO.unlock t.lock )
 end

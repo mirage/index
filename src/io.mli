@@ -30,4 +30,10 @@ module type S = sig
   val close : t -> unit
 
   val valid_fd : t -> bool
+
+  type lock
+
+  val lock : string -> lock
+
+  val unlock : lock -> unit
 end
