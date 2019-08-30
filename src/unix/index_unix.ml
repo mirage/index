@@ -234,14 +234,14 @@ module IO : Index.IO = struct
     match Sys.file_exists file with
     | false ->
         if readonly then raise RO_not_allowed;
-        let x = Unix.openfile file Unix.[ O_CREAT; mode ] 0o644 in
+        let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; mode ] 0o644 in
         let raw = Raw.v x in
         Raw.Offset.set raw 0L;
         Raw.Version.set raw;
         Raw.Generation.set raw generation;
         v ~offset:0L ~version:current_version raw
     | true ->
-        let x = Unix.openfile file Unix.[ O_EXCL; mode ] 0o644 in
+        let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; mode ] 0o644 in
         let raw = Raw.v x in
         if readonly && fresh then
           Fmt.failwith "IO.v: cannot reset a readonly file"
