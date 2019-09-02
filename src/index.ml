@@ -114,7 +114,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     mutable index : index option;
     log : IO.t;
     log_mem : entry Tbl.t;
-    entries : key Bloomf.t option;
     mutable counter : int;
     lock : IO.lock;
   }
@@ -123,7 +122,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.debug (fun l -> l "clear %S" t.root);
     t.generation <- 0L;
     IO.clear t.log;
-    may Bloomf.clear t.entries;
     Tbl.clear t.log_mem;
     may
       (fun i ->
@@ -213,10 +211,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let config = { log_size = log_size * entry_size; readonly } in
     let log_path = log_path root in
     let index_path = index_path root in
-    let entries =
-      if readonly then None
-      else Some (Bloomf.create ~error_rate:0.01 100_000_000)
-    in
     let log_mem = Tbl.create 1024 in
     let log = IO.v ~fresh ~readonly ~generation:0L log_path in
     let generation = IO.get_generation log in
@@ -228,8 +222,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         iter_io_off
           (fun off e ->
             let hash = K.hash e.key in
-            Fan.update fan_out hash off;
-            may (fun bf -> Bloomf.add bf e.key) entries)
+            Fan.update fan_out hash off )
           io;
         Fan.finalize fan_out;
         Some { fan_out; io } )
@@ -237,8 +230,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     iter_io
       (fun e ->
-        Tbl.replace log_mem e.key e;
-        may (fun bf -> Bloomf.add bf e.key) entries)
+        Tbl.replace log_mem e.key e )
       log;
     {
       config;
@@ -247,7 +239,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       root;
       log;
       index;
-      entries;
       counter = 1;
       lock;
     }
@@ -379,10 +370,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           | Some index -> interpolation_search index key
           | None -> raise Not_found )
     in
-    match t.entries with
-    | None -> look_on_disk ()
-    | Some bf ->
-        if not (Bloomf.mem bf key) then raise Not_found else look_on_disk ()
+    look_on_disk ()
 
   let mem t key =
     Log.debug (fun l -> l "mem %a" K.pp key);
@@ -500,7 +488,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let entry = { key; key_hash = K.hash key; value } in
     append_entry t.log entry;
     Tbl.replace t.log_mem key entry;
-    may (fun bf -> Bloomf.add bf key) t.entries;
     if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
     then merge ~witness:entry t
 
@@ -519,7 +506,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       IO.close t.log;
       may (fun i -> IO.close i.io) t.index;
       t.index <- None;
-      may Bloomf.clear t.entries;
       Tbl.reset t.log_mem;
       IO.unlock t.lock )
 end
