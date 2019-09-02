@@ -136,11 +136,15 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let ( // ) = Filename.concat
 
-  let log_path root = root // "index.log"
+  let index_dir root = root // "index"
 
-  let index_path root = root // "index" // "index"
+  let log_path root = index_dir root // "log"
 
-  let lock_path root = root // "index" // ".lock"
+  let index_path root = index_dir root // "data"
+
+  let lock_path root = index_dir root // "lock"
+
+  let tmp_path root = index_dir root // "tmp"
 
   let page_size = Int64.mul entry_sizeL 1_000L
 
@@ -184,7 +188,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let roots = Hashtbl.create 0 in
     let f ?(fresh = false) ?(readonly = false) ~log_size root =
       try
-        if not (Sys.file_exists root) then (
+        if not (Sys.file_exists (index_dir root)) then (
           Log.debug (fun l ->
               l "[%s] does not exist anymore, cleaning up the fd cache"
                 (Filename.basename root));
@@ -416,7 +420,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let merge ~witness t =
     Log.debug (fun l -> l "unforced merge %S\n" t.root);
-    let tmp_path = t.root // "tmp" // "index" in
+    let tmp_path = tmp_path t.root in
     let generation = Int64.succ t.generation in
     let log =
       let compare_entry e e' = compare e.key_hash e'.key_hash in
