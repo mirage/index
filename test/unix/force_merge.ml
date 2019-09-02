@@ -1,6 +1,6 @@
 open Common
 
-let index_name = "test_merge"
+let index_name = Filename.concat "_tests" "unix.force_merge"
 
 let t = Index.v ~fresh:true ~log_size index_name
 

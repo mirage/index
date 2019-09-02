@@ -1,10 +1,14 @@
 open Common
 
-let index_name = "hello"
+let ( // ) = Filename.concat
 
-let t = Index.v ~fresh:true ~log_size index_name
+let root = "_tests" // "unix.main"
 
-let tbl = tbl index_name
+let main_dir = root // "main"
+
+let t = Index.v ~fresh:true ~log_size main_dir
+
+let tbl = tbl main_dir
 
 let rec random_new_key () =
   let r = Key.v () in
@@ -71,19 +75,18 @@ let find_present_live () = test_find_present t
 let find_absent_live () = test_find_absent t
 
 let find_present_restart () =
-  test_find_present (Index.v ~fresh:false ~log_size index_name)
+  test_find_present (Index.v ~fresh:false ~log_size main_dir)
 
 let find_absent_restart () =
-  test_find_absent (Index.v ~fresh:false ~log_size index_name)
+  test_find_absent (Index.v ~fresh:false ~log_size main_dir)
 
 let replace_live () = test_replace t
 
-let replace_restart () =
-  test_replace (Index.v ~fresh:false ~log_size index_name)
+let replace_restart () = test_replace (Index.v ~fresh:false ~log_size main_dir)
 
 let readonly () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size index_name in
-  let r = Index.v ~fresh:false ~readonly:true ~log_size index_name in
+  let w = Index.v ~fresh:true ~readonly:false ~log_size main_dir in
+  let r = Index.v ~fresh:false ~readonly:true ~log_size main_dir in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   Index.flush w;
   Hashtbl.iter
@@ -99,8 +102,8 @@ let readonly () =
     tbl
 
 let readonly_clear () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size "index1" in
-  let r = Index.v ~fresh:false ~readonly:true ~log_size "index1" in
+  let w = Index.v ~fresh:true ~readonly:false ~log_size (root // "index1") in
+  let r = Index.v ~fresh:false ~readonly:true ~log_size (root // "index1") in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   Index.flush w;
   test_find_present r;
@@ -112,26 +115,26 @@ let readonly_clear () =
     tbl
 
 let close_reopen_rw () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size "test1" in
+  let w = Index.v ~fresh:true ~readonly:false ~log_size (root // "test1") in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   Index.close w;
-  let w = Index.v ~fresh:false ~readonly:false ~log_size "test1" in
+  let w = Index.v ~fresh:false ~readonly:false ~log_size (root // "test1") in
   test_find_present w;
   Index.close w
 
 let open_readonly_close_rw () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size "test2" in
-  let r = Index.v ~fresh:false ~readonly:true ~log_size "test2" in
+  let w = Index.v ~fresh:true ~readonly:false ~log_size (root // "test2") in
+  let r = Index.v ~fresh:false ~readonly:true ~log_size (root // "test2") in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   Index.close w;
   test_find_present r;
   Index.close r
 
 let close_reopen_readonly () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size "test3" in
+  let w = Index.v ~fresh:true ~readonly:false ~log_size (root // "test3") in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   Index.close w;
-  let r = Index.v ~fresh:false ~readonly:true ~log_size "test3" in
+  let r = Index.v ~fresh:false ~readonly:true ~log_size (root // "test3") in
   test_find_present r;
   Index.close r
 
@@ -150,7 +153,7 @@ let test_read_after_close_readonly t k =
     (fun () -> ignore (Index.find t k))
 
 let fail_read_after_close () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size "test4" in
+  let w = Index.v ~fresh:true ~readonly:false ~log_size (root // "test4") in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   let k = Key.v () in
   let v = Value.v () in
@@ -158,7 +161,7 @@ let fail_read_after_close () =
   test_read_after_close w k
 
 let fail_write_after_close () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size "test5" in
+  let w = Index.v ~fresh:true ~readonly:false ~log_size (root // "test5") in
   Index.close w;
   let k, v = (Key.v (), Value.v ()) in
   (* a single add does not fail*)
@@ -168,8 +171,8 @@ let fail_write_after_close () =
       Hashtbl.iter (fun k v -> Index.replace w k v) tbl)
 
 let open_twice () =
-  let w1 = Index.v ~fresh:true ~readonly:false ~log_size "test6" in
-  let w2 = Index.v ~fresh:true ~readonly:false ~log_size "test6" in
+  let w1 = Index.v ~fresh:true ~readonly:false ~log_size (root // "test6") in
+  let w2 = Index.v ~fresh:true ~readonly:false ~log_size (root // "test6") in
   Hashtbl.iter (fun k v -> Index.replace w1 k v) tbl;
   let k = Key.v () in
   let v = Value.v () in
@@ -181,14 +184,14 @@ let open_twice () =
   test_read_after_close w2 k
 
 let open_twice_readonly () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size "test7" in
+  let w = Index.v ~fresh:true ~readonly:false ~log_size (root // "test7") in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
   let k = Key.v () in
   let v = Value.v () in
   Index.replace w k v;
   Index.close w;
-  let r1 = Index.v ~fresh:false ~readonly:true ~log_size "test7" in
-  let r2 = Index.v ~fresh:false ~readonly:true ~log_size "test7" in
+  let r1 = Index.v ~fresh:false ~readonly:true ~log_size (root // "test7") in
+  let r2 = Index.v ~fresh:false ~readonly:true ~log_size (root // "test7") in
   test_find_present r1;
   Index.close r1;
   test_read_after_close_readonly r2 k
