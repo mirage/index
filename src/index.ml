@@ -1,3 +1,7 @@
+module Private = struct
+  module Fan = Fan
+end
+
 module type Key = sig
   type t
 
@@ -212,36 +216,19 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let log_path = log_path root in
     let index_path = index_path root in
     let log_mem = Tbl.create 1024 in
-    let log = IO.v ~fresh ~readonly ~generation:0L log_path in
+    let log = IO.v ~fresh ~readonly ~generation:0L ~fan_size:0L log_path in
     let generation = IO.get_generation log in
     let index =
-      if Sys.file_exists index_path then (
-        let io = IO.v ~fresh ~readonly ~generation:0L index_path in
-        let fan_out_size = Int64.to_int (IO.offset io) / entry_size in
-        let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_out_size in
-        iter_io_off
-          (fun off e ->
-            let hash = K.hash e.key in
-            Fan.update fan_out hash off )
-          io;
-        Fan.finalize fan_out;
-        Some { fan_out; io } )
+      if Sys.file_exists index_path then
+        let io =
+          IO.v ~fresh ~readonly ~generation:0L ~fan_size:0L index_path
+        in
+        let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
+        Some { fan_out; io }
       else None
     in
-    iter_io
-      (fun e ->
-        Tbl.replace log_mem e.key e )
-      log;
-    {
-      config;
-      generation;
-      log_mem;
-      root;
-      log;
-      index;
-      counter = 1;
-      lock;
-    }
+    iter_io (fun e -> Tbl.replace log_mem e.key e) log;
+    { config; generation; log_mem; root; log; index; counter = 1; lock }
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
 
@@ -338,23 +325,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       Tbl.clear t.log_mem;
       iter_io add_log_entry t.log;
       may (fun i -> IO.close i.io) t.index;
-      t.generation <- generation;
       if Int64.equal generation 0L then t.index <- None
       else
         let index_path = index_path t.root in
-        let io = IO.v ~fresh:false ~readonly:true ~generation index_path in
-        let io_off = IO.force_offset io in
-        let fan_out_size =
-          Tbl.length t.log_mem + (Int64.to_int io_off / entry_size)
+        let io =
+          IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L index_path
         in
-        let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_out_size in
-        iter_io_off
-          (fun off e ->
-            let hash = e.key_hash in
-            Fan.update fan_out hash off)
-          io;
-        Fan.finalize fan_out;
-        t.index <- Some { fan_out; io } )
+        let fan_out =
+          Fan.import ~hash_size:K.encoded_size (IO.get_fanout io)
+        in
+        t.index <- Some { fan_out; io };
+        t.generation <- generation )
     else if log_offset < new_log_offset then
       iter_io add_log_entry t.log ~min:log_offset
     else if log_offset > new_log_offset then assert false
@@ -437,7 +418,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.debug (fun l -> l "unforced merge %S\n" t.root);
     let tmp_path = t.root // "tmp" // "index" in
     let generation = Int64.succ t.generation in
-    let tmp = IO.v ~readonly:false ~fresh:true ~generation tmp_path in
     let log =
       let compare_entry e e' = compare e.key_hash e'.key_hash in
       let b = Array.make (Tbl.length t.log_mem) witness in
@@ -450,29 +430,37 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       Array.fast_sort compare_entry b;
       b
     in
+    let fan_size =
+      match t.index with
+      | None -> Tbl.length t.log_mem
+      | Some index ->
+          (Int64.to_int (IO.offset index.io) / entry_size)
+          + Tbl.length t.log_mem
+    in
+    let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
+    let tmp =
+      IO.v ~readonly:false ~fresh:true ~generation
+        ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
+        tmp_path
+    in
     ( match t.index with
     | None ->
-        let fan_out_size = Tbl.length t.log_mem in
-        let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_out_size in
         let io =
-          IO.v ~fresh:true ~readonly:false ~generation:0L (index_path t.root)
+          IO.v ~fresh:true ~readonly:false ~generation:0L ~fan_size:0L
+            (index_path t.root)
         in
         append_remaining_log fan_out log 0 tmp;
         t.index <- Some { io; fan_out }
     | Some index ->
-        let fan_out_size =
-          (Int64.to_int (IO.offset index.io) / entry_size)
-          + Tbl.length t.log_mem
-        in
-        let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_out_size in
         let index = { index with fan_out } in
         merge_with log index tmp;
         t.index <- Some index );
     match t.index with
     | None -> assert false
     | Some index ->
-        IO.rename ~src:tmp ~dst:index.io;
         Fan.finalize index.fan_out;
+        IO.set_fanout tmp (Fan.export index.fan_out);
+        IO.rename ~src:tmp ~dst:index.io;
         IO.clear t.log;
         Tbl.clear t.log_mem;
         IO.set_generation t.log generation;

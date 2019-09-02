@@ -1,0 +1,11 @@
+(executable
+ (name main)
+ (libraries crowbar index))
+
+(alias
+ (name fuzz)
+ (deps
+  main.exe
+  (source_tree ../input))
+ (action
+  (run afl-fuzz -m 8192 -i ../input -o output ./main.exe @@)))

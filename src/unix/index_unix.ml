@@ -79,6 +79,16 @@ module IO : Index.IO = struct
         decode_int64 (Bytes.unsafe_to_string buf)
     end
 
+    module Version = struct
+      let get t =
+        let buf = Bytes.create 8 in
+        let n = unsafe_read t ~off:8L ~len:8 buf in
+        assert (n = 8);
+        Bytes.unsafe_to_string buf
+
+      let set t = unsafe_write t ~off:8L current_version
+    end
+
     module Generation = struct
       let get t =
         let buf = Bytes.create 8 in
@@ -91,28 +101,42 @@ module IO : Index.IO = struct
         unsafe_write t ~off:16L buf
     end
 
-    module Version = struct
-      let get t =
-        let buf = Bytes.create 8 in
-        let n = unsafe_read t ~off:8L ~len:8 buf in
-        assert (n = 8);
-        Bytes.unsafe_to_string buf
+    module Fan = struct
+      let set t buf =
+        let size = encode_int64 (Int64.of_int (String.length buf)) in
+        unsafe_write t ~off:24L size;
+        if buf <> "" then unsafe_write t ~off:(24L ++ 8L) buf
 
-      let set t = unsafe_write t ~off:8L current_version
+      let get_size t =
+        let size_buf = Bytes.create 8 in
+        let n = unsafe_read t ~off:24L ~len:8 size_buf in
+        assert (n = 8);
+        decode_int64 (Bytes.unsafe_to_string size_buf)
+
+      let set_size t size =
+        let buf = encode_int64 size in
+        unsafe_write t ~off:24L buf
+
+      let get t =
+        let size = Int64.to_int (get_size t) in
+        let buf = Bytes.create size in
+        let n = unsafe_read t ~off:(24L ++ 8L) ~len:size buf in
+        assert (n = size);
+        Bytes.unsafe_to_string buf
     end
   end
 
   type t = {
     file : string;
+    mutable header : int64;
     mutable raw : Raw.t;
     mutable offset : int64;
     mutable flushed : int64;
+    mutable fan_size : int64;
     readonly : bool;
     version : string;
     buf : Buffer.t;
   }
-
-  let header = 24L (* offset + version + generation *)
 
   let sync t =
     if t.readonly then raise RO_not_allowed;
@@ -126,13 +150,14 @@ module IO : Index.IO = struct
 
       (* concurrent append might happen so here t.offset might differ
          from offset *)
-      if not (t.flushed ++ Int64.of_int (String.length buf) = header ++ offset)
+      if
+        not (t.flushed ++ Int64.of_int (String.length buf) = t.header ++ offset)
       then
         Fmt.failwith "sync error: %s flushed=%Ld buf=%Ld offset+header=%Ld\n%!"
           t.file t.flushed
           (Int64.of_int (String.length buf))
-          (offset ++ header);
-      t.flushed <- offset ++ header )
+          (offset ++ t.header);
+      t.flushed <- offset ++ t.header )
 
   let name t = t.file
 
@@ -140,6 +165,8 @@ module IO : Index.IO = struct
     sync src;
     Unix.close dst.raw.fd;
     Unix.rename src.file dst.file;
+    dst.header <- src.header;
+    dst.fan_size <- src.fan_size;
     dst.offset <- src.offset;
     dst.flushed <- src.flushed;
     dst.raw <- src.raw
@@ -156,8 +183,8 @@ module IO : Index.IO = struct
     if t.offset -- t.flushed > auto_flush_limit then sync t
 
   let read t ~off buf =
-    if not t.readonly then assert (header ++ off <= t.flushed);
-    Raw.unsafe_read t.raw ~off:(header ++ off) ~len:(Bytes.length buf) buf
+    if not t.readonly then assert (t.header ++ off <= t.flushed);
+    Raw.unsafe_read t.raw ~off:(t.header ++ off) ~len:(Bytes.length buf) buf
 
   let offset t = t.offset
 
@@ -170,6 +197,12 @@ module IO : Index.IO = struct
   let get_generation t = Raw.Generation.get t.raw
 
   let set_generation t = Raw.Generation.set t.raw
+
+  let get_fanout t = Raw.Fan.get t.raw
+
+  let set_fanout t buf =
+    assert (Int64.equal (Int64.of_int (String.length buf)) t.fan_size);
+    Raw.Fan.set t.raw buf
 
   let readonly t = t.readonly
 
@@ -198,9 +231,10 @@ module IO : Index.IO = struct
 
   let clear t =
     t.offset <- 0L;
-    t.flushed <- header;
+    t.flushed <- t.header;
     Raw.Generation.set t.raw 0L;
     Raw.Offset.set t.raw t.offset;
+    Raw.Fan.set t.raw "";
     Buffer.clear t.buf
 
   let buffers = Hashtbl.create 256
@@ -217,14 +251,17 @@ module IO : Index.IO = struct
 
   let () = assert (String.length current_version = 8)
 
-  let v ~readonly ~fresh ~generation file =
-    let v ~offset ~version raw =
+  let v ~readonly ~fresh ~generation ~fan_size file =
+    let v ~fan_size ~offset ~version raw =
+      let header = 8L ++ 8L ++ 8L ++ 8L ++ fan_size in
       {
         version;
+        header;
         file;
         offset;
         raw;
         readonly;
+        fan_size;
         buf = buffer file;
         flushed = header ++ offset;
       }
@@ -236,9 +273,10 @@ module IO : Index.IO = struct
         let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; mode ] 0o644 in
         let raw = Raw.v x in
         Raw.Offset.set raw 0L;
+        Raw.Fan.set_size raw fan_size;
         Raw.Version.set raw;
         Raw.Generation.set raw generation;
-        v ~offset:0L ~version:current_version raw
+        v ~fan_size ~offset:0L ~version:current_version raw
     | true ->
         let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; mode ] 0o644 in
         let raw = Raw.v x in
@@ -246,13 +284,17 @@ module IO : Index.IO = struct
           Fmt.failwith "IO.v: cannot reset a readonly file"
         else if fresh then (
           Raw.Offset.set raw 0L;
+          Raw.Fan.set_size raw fan_size;
           Raw.Version.set raw;
           Raw.Generation.set raw generation;
-          v ~offset:0L ~version:current_version raw )
+          v ~fan_size ~offset:0L ~version:current_version raw )
         else
+          let () = Fmt.epr "HERE\n%!" in
           let offset = Raw.Offset.get raw in
           let version = Raw.Version.get raw in
-          v ~offset ~version raw
+          let fan_size = Raw.Fan.get_size raw in
+          let () = Fmt.epr "Got fan_size %Ld\n%!" fan_size in
+          v ~fan_size ~offset ~version raw
 
   let valid_fd t =
     try
