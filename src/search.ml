@@ -62,8 +62,23 @@ module Make
   S with module Entry := Entry and module Array := Array = struct
   module Entry = Entry
   module Array = Array
-  module Key = Entry.Key
   module Value = Entry.Value
+
+  module Key = struct
+    include Entry.Key
+
+    let ( = ) a b = compare a b = 0
+  end
+
+  module Metric = struct
+    include Metric
+
+    let ( < ) a b = compare a b < 0
+
+    let ( = ) a b = compare a b = 0
+
+    let ( > ) a b = compare a b > 0
+  end
 
   let look_around array key key_metric index =
     let rec search (op : int64 -> int64) curr =
@@ -72,7 +87,7 @@ module Make
       else
         let e = array.(i) in
         let e_metric = Metric.of_entry e in
-        if not (Metric.compare key_metric e_metric = 0) then raise Not_found
+        if not Metric.(key_metric = e_metric) then raise Not_found
         else if Key.equal (Entry.to_key e) key then Entry.to_value e
         else (search [@tailcall]) op i
     in
@@ -91,17 +106,16 @@ module Make
       else
         let lowest_entry = Lazy.force lowest_entry in
         if high = low then
-          if Key.equal (Entry.to_key lowest_entry) key then
+          if Key.(key = Entry.to_key lowest_entry) then
             Entry.to_value lowest_entry
           else raise Not_found
         else
           let lowest_metric = Metric.of_entry lowest_entry in
-          if Metric.compare lowest_metric key_metric > 0 then raise Not_found
+          if Metric.(lowest_metric > key_metric) then raise Not_found
           else
             let highest_entry = Lazy.force highest_entry in
             let highest_metric = Metric.of_entry highest_entry in
-            if Metric.compare highest_metric key_metric < 0 then
-              raise Not_found
+            if Metric.(highest_metric < key_metric) then raise Not_found
             else
               let next_index =
                 Metric.linear_interpolate ~low:(low, lowest_metric)
@@ -109,10 +123,10 @@ module Make
               in
               let e = array.(next_index) in
               let e_metric = Metric.of_entry e in
-              if Metric.compare key_metric e_metric = 0 then
-                if Key.equal key (Entry.to_key e) then Entry.to_value e
+              if Metric.(key_metric = e_metric) then
+                if Key.(key = Entry.to_key e) then Entry.to_value e
                 else look_around array key key_metric next_index
-              else if Metric.compare key_metric e_metric > 0 then
+              else if Metric.(key_metric > e_metric) then
                 (search [@tailcall])
                   Int64.(succ next_index)
                   high
