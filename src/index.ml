@@ -178,12 +178,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   end
 
   module IOArray = struct
-    type buffer = {
-      buf : bytes;
-      low_off : int64;
-      high_off : int64;
-      generation : int64;
-    }
+    type buffer = { buf : bytes; low_off : int64; high_off : int64 }
 
     type t = { io : IO.t; mutable buffer : buffer option }
 
@@ -208,10 +203,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       match t.buffer with
       | None -> false
       | Some b ->
-          let gen = IO.get_generation t.io in
-          Int64.equal gen b.generation
-          && Int64.compare off b.low_off >= 0
-          && Int64.compare off b.high_off <= 0
+          Int64.compare off b.low_off >= 0 && Int64.compare off b.high_off <= 0
 
     let get t i =
       let off = Int64.(mul i entry_sizeL) in
@@ -229,8 +221,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       let buf = Bytes.create range in
       let n = IO.read t.io ~off:low_off buf in
       assert (n = range);
-      t.buffer <-
-        Some { buf; low_off; high_off; generation = IO.get_generation t.io }
+      t.buffer <- Some { buf; low_off; high_off }
 
     let pre_fetch t ~low ~high =
       let range = entry_size * (1 + Int64.to_int (high -- low)) in
@@ -246,10 +237,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             let low_buf, high_buf =
               Int64.(div b.low_off entry_sizeL, div b.high_off entry_sizeL)
             in
-            if IO.get_generation t.io <> b.generation then
-              Logs.warn (fun m ->
-                  m "Generation number changed since last IO prefetch")
-            else if low >= low_buf && high <= high_buf then
+            if low >= low_buf && high <= high_buf then
               Logs.debug (fun m ->
                   m
                     "Pre-existing buffer [%Ld, %Ld] encloses requested \
