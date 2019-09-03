@@ -321,10 +321,24 @@ module IO : Index.IO = struct
         Unix.close fd;
         raise e
 
+  exception Locked
+
+  let err_rw_lock lock =
+    let ic = open_in lock in
+    let line = input_line ic in
+    close_in ic;
+    let pid = int_of_string line in
+    Fmt.epr
+      "Cannot lock %s: index is already opened in write mode by PID %d. \
+       Current PID is %d.\n\
+       %!"
+      lock pid (Unix.getpid ());
+    raise Locked
+
   let lock path =
     match unsafe_lock Unix.F_TLOCK path with
     | Some fd -> fd
-    | None -> failwith ("Lock didn't succeed: file " ^ path ^ " is present")
+    | None -> err_rw_lock path
 
   let unlock fd = Unix.close fd
 end
