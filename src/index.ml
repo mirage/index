@@ -69,10 +69,6 @@ let may f = function None -> () | Some bf -> f bf
 
 exception RO_not_allowed
 
-let src = Logs.Src.create "index" ~doc:"Index"
-
-module Log = (val Logs.src_log src : Logs.LOG)
-
 module Make (K : Key) (V : Value) (IO : IO) = struct
   type key = K.t
 
