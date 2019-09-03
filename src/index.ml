@@ -144,7 +144,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let lock_path root = index_dir root // "lock"
 
-  let tmp_path root = index_dir root // "tmp"
+  let merge_path root = index_dir root // "merge"
 
   let page_size = Int64.mul entry_sizeL 1_000L
 
@@ -420,7 +420,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let merge ~witness t =
     Log.debug (fun l -> l "unforced merge %S\n" t.root);
-    let tmp_path = tmp_path t.root in
+    let merge_path = merge_path t.root in
     let generation = Int64.succ t.generation in
     let log =
       let compare_entry e e' = compare e.key_hash e'.key_hash in
@@ -442,10 +442,10 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           + Tbl.length t.log_mem
     in
     let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
-    let tmp =
+    let merge =
       IO.v ~readonly:false ~fresh:true ~generation
         ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
-        tmp_path
+        merge_path
     in
     ( match t.index with
     | None ->
@@ -453,18 +453,18 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           IO.v ~fresh:true ~readonly:false ~generation:0L ~fan_size:0L
             (index_path t.root)
         in
-        append_remaining_log fan_out log 0 tmp;
+        append_remaining_log fan_out log 0 merge;
         t.index <- Some { io; fan_out }
     | Some index ->
         let index = { index with fan_out } in
-        merge_with log index tmp;
+        merge_with log index merge;
         t.index <- Some index );
     match t.index with
     | None -> assert false
     | Some index ->
         Fan.finalize index.fan_out;
-        IO.set_fanout tmp (Fan.export index.fan_out);
-        IO.rename ~src:tmp ~dst:index.io;
+        IO.set_fanout merge (Fan.export index.fan_out);
+        IO.rename ~src:merge ~dst:index.io;
         IO.clear t.log;
         Tbl.clear t.log_mem;
         IO.set_generation t.log generation;
