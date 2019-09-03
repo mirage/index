@@ -289,11 +289,9 @@ module IO : Index.IO = struct
           Raw.Generation.set raw generation;
           v ~fan_size ~offset:0L ~version:current_version raw )
         else
-          let () = Fmt.epr "HERE\n%!" in
           let offset = Raw.Offset.get raw in
           let version = Raw.Version.get raw in
           let fan_size = Raw.Fan.get_size raw in
-          let () = Fmt.epr "Got fan_size %Ld\n%!" fan_size in
           v ~fan_size ~offset ~version raw
 
   let valid_fd t =
