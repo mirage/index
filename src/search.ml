@@ -101,9 +101,9 @@ module Make
     let key_metric = Metric.of_key key in
     (* The core of the search *)
     let rec search low high lowest_entry highest_entry =
-      Array.pre_fetch array ~low ~high;
       if high < low then raise Not_found
-      else
+      else (
+        Array.pre_fetch array ~low ~high;
         let lowest_entry = Lazy.force lowest_entry in
         if high = low then
           if Key.(key = Entry.to_key lowest_entry) then
@@ -135,7 +135,7 @@ module Make
               else
                 (search [@tailcall]) low (Int64.pred next_index)
                   (Lazy.from_val lowest_entry)
-                  (lazy array.(Int64.(pred next_index)))
+                  (lazy array.(Int64.(pred next_index))) )
     in
     if high < 0L then raise Not_found
     else (search [@tailcall]) low high (lazy array.(low)) (lazy array.(high))

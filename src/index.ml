@@ -178,7 +178,12 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   end
 
   module IOArray = struct
-    type buffer = { buf : bytes; io_off : int64 }
+    type buffer = {
+      buf : bytes;
+      low_off : int64;
+      high_off : int64;
+      generation : int64;
+    }
 
     type t = { io : IO.t; mutable buffer : buffer option }
 
@@ -193,30 +198,75 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let ( -- ) = Int64.sub
 
     let get_entry_from_buffer buf off =
-      let buf_off = Int64.(to_int @@ (off -- buf.io_off)) in
+      let buf_off = Int64.(to_int @@ (off -- buf.low_off)) in
       assert (buf_off <= Bytes.length buf.buf);
       decode_entry buf.buf buf_off
 
     type elt = entry
 
+    let is_in_buffer t off =
+      match t.buffer with
+      | None -> false
+      | Some b ->
+          let gen = IO.get_generation t.io in
+          Int64.equal gen b.generation
+          && Int64.compare off b.low_off >= 0
+          && Int64.compare off b.high_off <= 0
+
     let get t i =
       let off = Int64.(mul i entry_sizeL) in
       match t.buffer with
-      | None -> get_entry_from_io t.io off
-      | Some b -> get_entry_from_buffer b off
+      | Some b when is_in_buffer t off -> (
+          try get_entry_from_buffer b off with _ -> assert false )
+      | _ -> get_entry_from_io t.io off
 
     let length t = Int64.(div (IO.offset t.io) entry_sizeL)
 
+    let set_buffer t ~low ~high =
+      let range = entry_size * (1 + Int64.to_int (high -- low)) in
+      let low_off = Int64.mul low entry_sizeL in
+      let high_off = Int64.mul high entry_sizeL in
+      let buf = Bytes.create range in
+      let n = IO.read t.io ~off:low_off buf in
+      assert (n = range);
+      t.buffer <-
+        Some { buf; low_off; high_off; generation = IO.get_generation t.io }
+
     let pre_fetch t ~low ~high =
-      match t.buffer with
-      | Some _ -> ()
-      | None ->
-          let range = entry_size * (1 + Int64.to_int (high -- low)) in
-          if range <= 4096 then (
-            let buf = Bytes.create range in
-            let n = IO.read t.io ~off:low buf in
-            assert (n = range);
-            t.buffer <- Some { buf; io_off = Int64.mul low entry_sizeL } )
+      let range = entry_size * (1 + Int64.to_int (high -- low)) in
+      if Int64.compare low high > 0 then
+        Logs.warn (fun m ->
+            m "Requested pre-fetch region is empty: [%Ld, %Ld]" low high)
+      else if range > 4096 then
+        Logs.debug (fun m ->
+            m "Requested pre-fetch [%Ld, %Ld] is larger than 4096" low high)
+      else
+        match t.buffer with
+        | Some b ->
+            let low_buf, high_buf =
+              Int64.(div b.low_off entry_sizeL, div b.high_off entry_sizeL)
+            in
+            if IO.get_generation t.io <> b.generation then
+              Logs.warn (fun m ->
+                  m "Generation number changed since last IO prefetch")
+            else if low >= low_buf && high <= high_buf then
+              Logs.debug (fun m ->
+                  m
+                    "Pre-existing buffer [%Ld, %Ld] encloses requested \
+                     pre-fetch [%Ld, %Ld]"
+                    low_buf high_buf low high)
+            else (
+              Logs.debug (fun m ->
+                  m
+                    "Current buffer [%Ld, %Ld] insufficient. Prefetching in \
+                     range [%Ld, %Ld]"
+                    low_buf high_buf low high);
+              set_buffer t ~low ~high )
+        | None ->
+            Logs.debug (fun m ->
+                m "No existing buffer. Prefetching in range [%Ld, %Ld]" low
+                  high);
+            set_buffer t ~low ~high
   end
 
   module Search =
