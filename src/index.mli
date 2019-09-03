@@ -119,27 +119,12 @@ module type S = sig
       and value of [t]. *)
 end
 
-module Private : sig
-  module Fan : sig
-    type t
-
-    val equal : t -> t -> bool
-
-    val v : hash_size:int -> entry_size:int -> int -> t
-
-    val search : t -> int -> int64 * int64
-
-    val update : t -> int -> int64 -> unit
-
-    val finalize : t -> unit
-
-    val exported_size : t -> int
-
-    val export : t -> string
-
-    val import : hash_size:int -> string -> t
-  end
-end
-
 module Make (K : Key) (V : Value) (IO : IO) :
   S with type key = K.t and type value = V.t
+
+(** These modules should not be used. They are exposed purely for testing purposes. *)
+module Private : sig
+  module Search : module type of Search
+
+  module Fan : module type of Fan
+end
