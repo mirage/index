@@ -1,15 +1,18 @@
-(** Deudex
+(** Index
 
-    deudex is a scalable implementation of persistent indexes in Ocaml.
+    [Index] is a scalable implementation of persistent indices in OCaml.
 
-    deudex is append-only, which means it provides [append], [find] and [mem]
-    primitives.
-    Multiples IOs are created when using the index :
-    - A `log` IO contains all the recently added bindings, it is also kept in
-      memory.
-    - When the `log` IO is full, it is merged into multiple `index` IOs.
-    Search is done first in `log` then in `index`, which makes recently added
-    bindings search faster.
+    [Index] provides the standard key-value interface: [find], [mem] and
+    [replace]. It requires three IO instances:
+
+    - A `log` IO containing all of the recently-added bindings; this is also
+      kept in memory.
+
+    - When the `log` IO is full, it is merged into the `index` IO. Search
+      is done first in `log` then in `index`, which makes recently added
+      bindings search faster.
+
+    - A `lock` IO to ensure safe concurrent access.
 *)
 
 (** The input of [Make] for keys. *)
@@ -29,8 +32,8 @@ module type Key = sig
       bits. *)
 
   val encode : t -> string
-  (** [encode] is an encoding function. The encoded resulting values must be of
-      fixed size. *)
+  (** [encode] is an encoding function. The resultant encoded values must have
+      size {!encoded_size} bytes. *)
 
   val decode : string -> int -> t
   (** [decode] is a decoding function such that [decode (encode t) 0 = t]. *)
@@ -44,7 +47,7 @@ module type Key = sig
 end
 
 (** The input of [Make] for values. The same requirements as for [Key]
-    applies. *)
+    apply. *)
 module type Value = sig
   type t
 
@@ -63,7 +66,7 @@ exception RO_not_allowed
 (** The exception raised when illegal operation is attempted on a read_only
     index. *)
 
-(** Index module signature.  *)
+(** Index module signature. *)
 module type S = sig
   type t
   (** The type for indexes. *)
@@ -79,15 +82,13 @@ module type S = sig
       @param fresh
       @param read_only whether read-only mode is enabled for this index.
       @param log_size  the maximum number of bindings in the `log` IO.
-      @param fan_out_size the number of bits of the fan out for index IO.
       *)
 
   val clear : t -> unit
   (** [clear t] clears [t] so that there are no more bindings in it. *)
 
   val find : t -> key -> value
-  (** [find t k] are all the bindings of [k] in [t]. The order is not
-      specified *)
+  (** [find t k] is the binding of [k] in [t]. *)
 
   val mem : t -> key -> bool
   (** [mem t k] is [true] iff [k] is bound in [t]. *)
@@ -111,10 +112,11 @@ module type S = sig
   (** Flushes all buffers to the disk. *)
 
   val close : t -> unit
-  (** Closes the files and clears the caches of [t].*)
+  (** Closes the files and clears the caches of [t]. *)
 
   val force_merge : t -> key -> value -> unit
-  (** [force_merge t k v] forces a merge for [t], where [k] and [v] are any key and value of [t].  *)
+  (** [force_merge t k v] forces a merge for [t], where [k] and [v] are any key
+      and value of [t]. *)
 end
 
 module Private : sig
