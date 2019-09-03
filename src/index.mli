@@ -126,5 +126,7 @@ module Make (K : Key) (V : Value) (IO : IO) :
 module Private : sig
   module Search : module type of Search
 
+  module Io_array : module type of Io_array
+
   module Fan : module type of Fan
 end
