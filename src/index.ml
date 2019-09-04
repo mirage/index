@@ -115,7 +115,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     log : IO.t;
     log_mem : entry Tbl.t;
     mutable counter : int;
-    lock : IO.lock;
+    lock : IO.lock option;
   }
 
   let clear t =
@@ -243,7 +243,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     `Staged f
 
   let v_no_cache ~fresh ~readonly ~log_size root =
-    let lock = IO.lock (lock_path root) in
+    let lock =
+      if not readonly then Some (IO.lock (lock_path root)) else None
+    in
     let config = { log_size = log_size * entry_size; readonly } in
     let log_path = log_path root in
     let index_path = index_path root in
@@ -451,5 +453,5 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       may (fun i -> IO.close i.io) t.index;
       t.index <- None;
       Tbl.reset t.log_mem;
-      IO.unlock t.lock )
+      may (fun lock -> IO.unlock lock) t.lock )
 end
