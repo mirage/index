@@ -56,7 +56,7 @@ let read_sequential () =
     let expected = mem_arr.(i) in
     let actual = IOArray.get io_arr (Int64.of_int i) in
     Alcotest.(check entry)
-      (Fmt.str "Inserted key at index %i is accessible" i)
+      (Fmt.strf "Inserted key at index %i is accessible" i)
       expected actual
   done
 
@@ -71,7 +71,7 @@ let read_sequential_prefetch () =
     let expected = mem_arr.(i) in
     let actual = IOArray.get io_arr (Int64.of_int i) in
     Alcotest.(check entry)
-      (Fmt.str "Inserted key at index %i is accessible" i)
+      (Fmt.strf "Inserted key at index %i is accessible" i)
       expected actual
   done
 
