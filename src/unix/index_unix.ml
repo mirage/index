@@ -294,12 +294,6 @@ module IO : Index.IO = struct
           let fan_size = Raw.Fan.get_size raw in
           v ~fan_size ~offset ~version raw
 
-  let valid_fd t =
-    try
-      let _ = Unix.fstat t.raw.fd in
-      true
-    with Unix.Unix_error (Unix.EBADF, _, _) -> false
-
   type lock = Unix.file_descr
 
   let unsafe_lock op f =

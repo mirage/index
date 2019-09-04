@@ -224,7 +224,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           Hashtbl.remove roots (root, false);
           raise Not_found );
         let t = Hashtbl.find roots (root, readonly) in
-        if IO.valid_fd t.log then (
+        if t.counter <> 0 then (
           Log.debug (fun l -> l "%s found in cache" root);
           t.counter <- t.counter + 1;
           if fresh then clear t;
