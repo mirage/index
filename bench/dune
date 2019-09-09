@@ -1,5 +1,5 @@
-(executable
- (name main)
+(executables
+ (names main concurrent_bench)
  (libraries fmt index.unix))
 
 (alias
@@ -10,3 +10,8 @@
 (alias
  (name runtest)
  (deps main.exe))
+
+(alias
+ (name cbench)
+ (action
+  (run ./concurrent_bench.exe)))

@@ -55,7 +55,7 @@ let t = Index.v ~fresh:true ~log_size index_name
 let pp_stats ppf (count, max) =
   Fmt.pf ppf "\t%4dk/%dk" (count / 1000) (max / 1000)
 
-let () =
+let add_and_find () =
   let t0 = Sys.time () in
   Fmt.epr "Adding %d bindings.\n%!" index_size;
   let rec loop bindings i =
@@ -83,3 +83,8 @@ let () =
   let t2 = Sys.time () -. t1 in
   Fmt.epr "\n%d bindings found in %fs.\n%!" index_size t2;
   print_newline ()
+
+let () =
+  add_and_find ();
+  Index.flush t;
+  ()
