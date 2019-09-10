@@ -1,10 +1,12 @@
 open Common
 
-let index_name = Filename.concat "_tests" "unix.force_merge"
+let root = Filename.concat "_tests" "unix.force_merge"
 
-let tbl = tbl index_name
+module Context = Common.Make_context (struct
+  let root = root
+end)
 
-let test_find_present t =
+let test_find_present t tbl =
   Hashtbl.iter
     (fun k v ->
       match Index.find t k with
@@ -23,6 +25,10 @@ let test_one_entry r k v =
       Alcotest.failf "Inserted value is not present anymore: %s." k
 
 let test_fd () =
+  (* TODO: fix these tests to take the correct directory name
+           (and not break when given the wrong one) *)
+  let name = "/tmp/empty" in
+  (* construct an index at a known location *)
   let pid = string_of_int (Unix.getpid ()) in
   let fd_file = "tmp" in
   let lsof_command = "lsof -a -s -p " ^ pid ^ " > " ^ fd_file in
@@ -32,7 +38,7 @@ let test_fd () =
   let lines = ref [] in
   let extract_fd line =
     try
-      let pos = Re.Str.search_forward (Re.Str.regexp index_name) line 0 in
+      let pos = Re.Str.search_forward (Re.Str.regexp name) line 0 in
       let fd = Re.Str.string_after line pos in
       lines := fd :: !lines
     with Not_found -> ()
@@ -64,24 +70,20 @@ let test_fd () =
   if List.length rs > 0 then Alcotest.failf "Unknown file descriptors opened"
 
 let readonly_s () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size index_name in
-  let r1 = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  let r2 = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  let r3 = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
-  Index.flush w;
-  test_find_present r1;
-  test_find_present r2;
-  test_find_present r3;
+  let { Context.tbl; clone; _ } = Context.full_index () in
+  let r1 = clone ~readonly:true in
+  let r2 = clone ~readonly:true in
+  let r3 = clone ~readonly:true in
+  test_find_present r1 tbl;
+  test_find_present r2 tbl;
+  test_find_present r3 tbl;
   test_fd ()
 
 let readonly () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size index_name in
-  let r1 = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  let r2 = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  let r3 = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
-  Index.flush w;
+  let { Context.tbl; clone; _ } = Context.full_index () in
+  let r1 = clone ~readonly:true in
+  let r2 = clone ~readonly:true in
+  let r3 = clone ~readonly:true in
   Hashtbl.iter
     (fun k v ->
       test_one_entry r1 k v;
@@ -91,14 +93,11 @@ let readonly () =
   test_fd ()
 
 let readonly_and_merge () =
-  let w = Index.v ~fresh:true ~readonly:false ~log_size index_name in
-  let r1 = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  let r2 = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  let r3 = Index.v ~fresh:false ~readonly:true ~log_size index_name in
-  let () =
-    Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
-    Index.flush w
-  in
+  let { Context.rw; clone; _ } = Context.full_index () in
+  let w = rw in
+  let r1 = clone ~readonly:true in
+  let r2 = clone ~readonly:true in
+  let r3 = clone ~readonly:true in
   let interleave () =
     let k1 = Key.v () in
     let v1 = Value.v () in
@@ -165,8 +164,7 @@ let merge_tests =
   [ ("readonly and merge interleaved", `Quick, readonly_and_merge) ]
 
 let () =
-  Logs.set_level (Some Logs.Debug);
-  Logs.set_reporter (reporter ());
+  Common.report ();
   Alcotest.run "index"
     [
       ("readonly tests", readonly_tests);

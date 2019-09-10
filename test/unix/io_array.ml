@@ -80,7 +80,6 @@ let fresh_tests = [ ("read sequential", `Quick, read_sequential) ]
 let prefetch_tests = [ ("read sequential", `Quick, read_sequential_prefetch) ]
 
 let () =
-  Logs.set_level (Some Logs.Debug);
-  Logs.set_reporter (Common.reporter ());
+  Common.report ();
   Alcotest.run "index"
     [ ("fresh tests", fresh_tests); ("prefetch tests", prefetch_tests) ]
