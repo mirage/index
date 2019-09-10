@@ -50,36 +50,42 @@ let index_name = "hello"
 
 let log_size = 500_000
 
-let t = Index.v ~fresh:true ~log_size index_name
-
 let pp_stats ppf (count, max) =
   Fmt.pf ppf "\t%4dk/%dk" (count / 1000) (max / 1000)
 
-let () =
-  let t0 = Sys.time () in
-  Fmt.epr "Adding %d bindings.\n%!" index_size;
-  let rec loop bindings i =
-    if i = 0 then bindings
-    else
-      let count = index_size - i in
+let rec replaces t bindings i =
+  if i = 0 then bindings
+  else
+    let count = index_size - i in
+    if count mod 1_000 = 0 then Fmt.epr "\r%a%!" pp_stats (count, index_size);
+    let k, v = (Key.v (), Value.v ()) in
+    Index.replace t k v;
+    replaces t ((k, v) :: bindings) (i - 1)
+
+let rec finds t count = function
+  | [] -> ()
+  | (k, _) :: tl ->
       if count mod 1_000 = 0 then Fmt.epr "\r%a%!" pp_stats (count, index_size);
-      let k, v = (Key.v (), Value.v ()) in
-      Index.replace t k v;
-      loop ((k, v) :: bindings) (i - 1)
-  in
-  let bindings = loop [] index_size in
+      ignore (Index.find t k);
+      finds t (count + 1) tl
+
+let with_timer f =
+  let t0 = Sys.time () in
+  let x = f () in
   let t1 = Sys.time () -. t0 in
+  (x, t1)
+
+let () =
+  Fmt.epr "Adding %d bindings.\n%!" index_size;
+  let rw = Index.v ~fresh:true ~log_size index_name in
+  let bindings, t1 = with_timer (fun () -> replaces rw [] index_size) in
   Fmt.epr "\n%d bindings added in %fs.\n%!" index_size t1;
   Fmt.epr "Finding %d bindings.\n%!" index_size;
-  let rec loop count = function
-    | [] -> ()
-    | (k, _) :: tl ->
-        if count mod 1_000 = 0 then
-          Fmt.epr "\r%a%!" pp_stats (count, index_size);
-        ignore (Index.find t k);
-        loop (count + 1) tl
-  in
-  loop 0 bindings;
-  let t2 = Sys.time () -. t1 in
-  Fmt.epr "\n%d bindings found in %fs.\n%!" index_size t2;
+  let (), t2 = with_timer (fun () -> finds rw 0 bindings) in
+  Fmt.epr "\n%d bindings found in %fs (RW).\n%!" index_size t2;
+  Index.close rw;
+  let ro = Index.v ~readonly:true ~log_size index_name in
+  let (), t3 = with_timer (fun () -> finds ro 0 bindings) in
+  Index.close ro;
+  Fmt.epr "\n%d bindings found in %fs (RO).\n%!" index_size t3;
   print_newline ()
