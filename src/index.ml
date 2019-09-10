@@ -439,6 +439,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   (* XXX: Perform a merge beforehands to ensure duplicates are not hit twice. *)
   let iter f t =
+    Log.debug (fun l -> l "iter %S" t.root);
+    if t.config.readonly then sync_log t;
     Tbl.iter (fun _ e -> f e.key e.value) t.log_mem;
     may (fun index -> iter_io (fun e -> f e.key e.value) index.io) t.index
 
