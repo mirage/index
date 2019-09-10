@@ -289,9 +289,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         let io =
           IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L index_path
         in
-        let fan_out =
-          Fan.import ~hash_size:K.encoded_size (IO.get_fanout io)
-        in
+        let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
         t.index <- Some { fan_out; io };
         t.generation <- generation )
     else if log_offset < new_log_offset then
