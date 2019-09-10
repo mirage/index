@@ -172,6 +172,3 @@ let () =
       ("readonly tests", readonly_tests);
       ("merge and readonly tests", merge_tests);
     ]
-
-(* Unix.sleep 10 *)
-(* for `ps aux | grep force_merge` and `lsof -a -s -p pid` *)

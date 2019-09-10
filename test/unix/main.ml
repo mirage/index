@@ -114,6 +114,32 @@ let readonly_clear () =
         Not_found (fun () -> ignore (Index.find r k)))
     tbl
 
+let add_values ?(batch_size = (2 * log_size) + 2) t tbl =
+  let rec loop i =
+    if i = 0 then Index.flush t
+    else
+      let k = Key.v () in
+      let v = Value.v () in
+      Index.replace t k v;
+      Hashtbl.replace tbl k v;
+      loop (i - 1)
+  in
+  loop batch_size
+
+let readonly_read_rw_write () =
+  let nb_batch_writes = 2 in
+  let w = Index.v ~fresh:false ~log_size (root // "index2") in
+  Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
+  test_find_present w;
+  let r = Index.v ~fresh:false ~readonly:true ~log_size (root // "index2") in
+  test_find_present r;
+  for _i = 0 to nb_batch_writes do
+    add_values w tbl;
+    test_find_present w;
+    Index.flush w;
+    test_find_present r
+  done
+
 let close_reopen_rw () =
   let w = Index.v ~fresh:true ~readonly:false ~log_size (root // "test1") in
   Hashtbl.iter (fun k v -> Index.replace w k v) tbl;
@@ -196,6 +222,21 @@ let open_twice_readonly () =
   Index.close r1;
   test_read_after_close_readonly r2 k
 
+let open_twice_rw () =
+  let w1 = Index.v ~fresh:true ~readonly:false ~log_size (root // "test8") in
+  Hashtbl.iter (fun k v -> Index.replace w1 k v) tbl;
+  Index.flush w1;
+  let r1 = Index.v ~fresh:false ~readonly:true ~log_size (root // "test8") in
+  test_find_present r1;
+  let w2 = Index.v ~fresh:false ~readonly:false ~log_size (root // "test8") in
+  test_find_present w2;
+  let k = Key.v () in
+  let v = Value.v () in
+  Index.replace w2 k v;
+  test_find_present w1;
+  if Index.find w1 k <> v then
+    Alcotest.fail (Printf.sprintf "Wrong insertion: %s value was not added" v)
+
 let live_tests =
   [
     ("find (present)", `Quick, find_present_live);
@@ -203,6 +244,7 @@ let live_tests =
     ("replace", `Quick, replace_live);
     ("fail add (key)", `Quick, different_size_for_key);
     ("fail add (value)", `Quick, different_size_for_value);
+    ("open twice rw", `Quick, open_twice_rw);
   ]
 
 let restart_tests =
@@ -213,7 +255,11 @@ let restart_tests =
   ]
 
 let readonly_tests =
-  [ ("add", `Quick, readonly); ("read after clear", `Quick, readonly_clear) ]
+  [
+    ("add", `Quick, readonly);
+    ("read after clear", `Quick, readonly_clear);
+    ("read after write in batches", `Quick, readonly_read_rw_write);
+  ]
 
 let close_tests =
   [
