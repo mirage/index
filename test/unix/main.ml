@@ -15,8 +15,8 @@ let rec random_new_key tbl =
   let r = Key.v () in
   if Hashtbl.mem tbl r then random_new_key tbl else r
 
-let check_entry_present index k v =
-  match Index.find index k with
+let check_entry findf k v =
+  match findf k with
   | v' when v = v' -> ()
   | v' (* v =/= v' *) ->
       Alcotest.failf "Wrong insertion: found %s when expected %s at key %s." v'
@@ -24,8 +24,13 @@ let check_entry_present index k v =
   | exception Not_found ->
       Alcotest.failf "Wrong insertion: %s key is missing." k
 
-let check_entries_present index htbl =
-  Hashtbl.iter (check_entry_present index) htbl
+let check_index_entry index = check_entry (Index.find index)
+
+let check_tbl_entry tbl = check_entry (Hashtbl.find tbl)
+
+let check_equivalence index htbl =
+  Hashtbl.iter (check_index_entry index) htbl;
+  Index.iter (check_tbl_entry htbl) index
 
 let test_replace t =
   let k = Key.v () in
@@ -33,7 +38,7 @@ let test_replace t =
   let v' = Value.v () in
   Index.replace t k v;
   Index.replace t k v';
-  check_entry_present t k v'
+  check_index_entry t k v'
 
 let test_find_absent t tbl =
   let rec loop i =
@@ -50,7 +55,7 @@ let test_find_absent t tbl =
 module Live = struct
   let find_present_live () =
     let { Context.rw; tbl; _ } = Context.full_index () in
-    check_entries_present rw tbl
+    check_equivalence rw tbl
 
   let find_absent_live () =
     let { Context.rw; tbl; _ } = Context.full_index () in
@@ -67,7 +72,7 @@ module Live = struct
     let exn = Index.Invalid_key_size k in
     Alcotest.check_raises
       "Cannot add a key of a different size than string_size." exn (fun () ->
-        Index.replace index k v)
+        Index.replace rw k v)
 
   let different_size_for_value () =
     let { Context.rw; _ } = Context.empty_index () in
@@ -76,7 +81,7 @@ module Live = struct
     let exn = Index.Invalid_value_size v in
     Alcotest.check_raises
       "Cannot add a value of a different size than string_size." exn (fun () ->
-        Index.replace index k v)
+        Index.replace rw k v)
 
   let tests =
     [
@@ -94,7 +99,7 @@ module Restart = struct
     let { Context.rw; tbl; clone } = Context.full_index () in
     Index.close rw;
     let rw = clone ~readonly:false in
-    check_entries_present rw tbl
+    check_equivalence rw tbl
 
   let find_absent () =
     let { Context.rw; tbl; clone } = Context.full_index () in
@@ -119,16 +124,16 @@ end
 (* Tests of read-only indices *)
 module Readonly = struct
   let readonly () =
-    check_entries_present r main.tbl
     let { Context.rw; clone; _ } = Context.empty_index () in
     let ro = clone ~readonly:true in
     Hashtbl.iter (fun k v -> Index.replace rw k v) main.tbl;
     Index.flush rw;
+    check_equivalence ro main.tbl
 
   let readonly_clear () =
     let { Context.rw; tbl; clone } = Context.full_index () in
     let r = clone ~readonly:true in
-    check_entries_present r tbl;
+    check_equivalence r tbl;
     Index.clear rw;
     Hashtbl.iter
       (fun k _ ->
@@ -146,14 +151,14 @@ module Close = struct
     let { Context.rw; tbl; clone } = Context.full_index () in
     Index.close rw;
     let w = clone ~readonly:false in
-    check_entries_present w tbl;
+    check_equivalence w tbl;
     Index.close w
 
   let open_readonly_close_rw () =
     let { Context.rw; tbl; clone } = Context.full_index () in
     let ro = clone ~readonly:true in
     Index.close rw;
-    check_entries_present ro tbl;
+    check_equivalence ro tbl;
     Index.close ro
 
   let close_reopen_readonly () =
@@ -163,14 +168,14 @@ module Close = struct
     check_equivalence ro tbl;
     Index.close ro
 
-  let test_read_after_close t k =
-    check_entries_present t main.tbl;
+  let test_read_after_close t k tbl =
+    check_equivalence t tbl;
     Index.close t;
     Alcotest.check_raises "Read after close raises Not_found" Not_found
       (fun () -> ignore (Index.find t k))
 
   let test_read_after_close_readonly t k tbl =
-    check_entries_present t tbl;
+    check_equivalence t tbl;
     Index.close t;
     let exn = Unix.Unix_error (Unix.EBADF, "read", "") in
     Alcotest.check_raises "Cannot read in readonly index after close." exn
@@ -203,18 +208,18 @@ module Close = struct
     Index.close w1;
 
     (* while another instance is still open, read does not fail*)
-    check_entries_present w1 main.tbl;
-    test_read_after_close w2 k
+    check_equivalence w1 tbl;
+    test_read_after_close w2 k tbl
 
   let open_twice_readonly () =
     let { Context.rw; tbl; clone } = Context.full_index () in
-    let k = Key.v () in
-    let v = Value.v () in
+    let k, v = (Key.v (), Value.v ()) in
     Index.replace rw k v;
+    Hashtbl.replace tbl k v;
     Index.close rw;
     let ro1 = clone ~readonly:true in
     let ro2 = clone ~readonly:true in
-    check_entries_present ro1 tbl;
+    check_equivalence ro1 tbl;
     Index.close ro1;
     test_read_after_close_readonly ro2 k tbl
 
