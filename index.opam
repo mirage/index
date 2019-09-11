@@ -18,6 +18,7 @@ depends: [
   "fmt"
   "logs"
   "alcotest" {with-test}
+  "crowbar" {with-test}
   "re" {with-test}
 ]
 synopsis: "Scalable indexes for Ocaml"

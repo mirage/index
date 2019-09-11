@@ -3,9 +3,13 @@
  (libraries crowbar index))
 
 (alias
+ (name runtest)
+ (deps main.exe))
+
+(alias
  (name fuzz)
  (deps
   main.exe
   (source_tree ../input))
  (action
-  (run afl-fuzz -m 8192 -i ../input -o output ./main.exe @@)))
+  (run afl-fuzz -i ../input -o output ./main.exe @@)))
