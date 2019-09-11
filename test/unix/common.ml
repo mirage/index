@@ -23,8 +23,6 @@ let report () =
 
 let string_size = 20
 
-let index_size = 103
-
 let () = Random.self_init ()
 
 let random_char () = char_of_int (33 + Random.int 94)
@@ -67,26 +65,43 @@ end
 
 module Index = Index_unix.Make (Key) (Value)
 
-let log_size = 4
+module Make_context (Config : sig
+  val root : string
+end) =
+struct
+  let fresh_name =
+    let c = ref 0 in
+    fun object_type ->
+      incr c;
+      let name = Filename.concat Config.root ("index_" ^ string_of_int !c) in
+      Logs.info (fun m ->
+          m "Constructing %s context object: %s" object_type name);
+      name
 
-let page_size = 2
+  type t = {
+    rw : Index.t;
+    tbl : (string, string) Hashtbl.t;
+    clone : readonly:bool -> Index.t;
+  }
 
-let pool_size = 2
+  let empty_index () =
+    let name = fresh_name "empty_index" in
+    let rw = Index.v ~fresh:true ~log_size:4 name in
+    let tbl = Hashtbl.create 0 in
+    let clone ~readonly = Index.v ~fresh:false ~log_size:4 ~readonly name in
+    { rw; tbl; clone }
 
-(* [tbl] is the in-memory representation of the [t], i.e. tbl should always
-contain the same elements as [t] *)
-let tbl index_name =
-  let t = Index.v ~fresh:true ~log_size index_name in
-  let tbl = Hashtbl.create 0 in
-  let rec loop i =
-    if i = 0 then (
-      Index.flush t;
-      tbl )
-    else
+  let full_index ?(size = 103) () =
+    let name = fresh_name "full_index" in
+    let t = Index.v ~fresh:true ~log_size:4 name in
+    let tbl = Hashtbl.create 0 in
+    for _ = 1 to size do
       let k = Key.v () in
       let v = Value.v () in
       Index.replace t k v;
-      Hashtbl.replace tbl k v;
-      loop (i - 1)
-  in
-  loop index_size
+      Hashtbl.replace tbl k v
+    done;
+    Index.flush t;
+    let clone ~readonly = Index.v ~fresh:false ~log_size:4 ~readonly name in
+    { rw = t; tbl; clone }
+end
