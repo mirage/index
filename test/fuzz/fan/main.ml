@@ -15,7 +15,10 @@ let hash = map [ bytes ] Hashtbl.hash
 
 let hash_list = map [ list hash ] (List.sort compare)
 
-let empty_fan = map [ bounded_int ] (Fan.v ~hash_size ~entry_size)
+let empty_fan_with_size =
+  map [ bounded_int ] (fun n -> (Fan.v ~hash_size ~entry_size n, n))
+
+let empty_fan = map [ empty_fan_with_size ] fst
 
 let update_list =
   let rec loop off acc = function
@@ -54,7 +57,14 @@ let check_updates (fan, updates) =
              low high))
     updates
 
+let check_fan_size (fan, size) =
+  let nb_fans = Fan.nb_fans fan in
+  let fan_size = size / nb_fans in
+  if fan_size * entry_size > 4096 * 4096 then
+    fail (Printf.sprintf "Fan size is too big: %d" fan_size)
+
 let () =
   add_test ~name:"Export size" [ fan ] check_export_size;
   add_test ~name:"Export/Import" [ fan ] check_export;
-  add_test ~name:"Update" [ fan_with_updates ] check_updates
+  add_test ~name:"Update" [ fan_with_updates ] check_updates;
+  add_test ~name:"Fan size" [ empty_fan_with_size ] check_fan_size
