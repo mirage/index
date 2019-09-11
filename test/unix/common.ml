@@ -69,10 +69,14 @@ module Make_context (Config : sig
   val root : string
 end) =
 struct
-  let c = ref 0
-
-  let name_of_count () =
-    Filename.concat Config.root ("index_" ^ string_of_int !c)
+  let fresh_name =
+    let c = ref 0 in
+    fun object_type ->
+      incr c;
+      let name = Filename.concat Config.root ("index_" ^ string_of_int !c) in
+      Logs.info (fun m ->
+          m "Constructing %s context object: %s" object_type name);
+      name
 
   type t = {
     rw : Index.t;
@@ -80,20 +84,15 @@ struct
     clone : readonly:bool -> Index.t;
   }
 
-  (* Fresh, empty index. *)
   let empty_index () =
-    incr c;
-    let name = name_of_count () in
-    Logs.info (fun m -> m "Constructing empty_index context object: %s" name);
+    let name = fresh_name "empty_index" in
     let rw = Index.v ~fresh:true ~log_size:4 name in
     let tbl = Hashtbl.create 0 in
     let clone ~readonly = Index.v ~fresh:false ~log_size:4 ~readonly name in
     { rw; tbl; clone }
 
   let full_index ?(size = 103) () =
-    incr c;
-    let name = name_of_count () in
-    Logs.info (fun m -> m "Constructing full_index context object: %s" name);
+    let name = fresh_name "full_index" in
     let t = Index.v ~fresh:true ~log_size:4 name in
     let tbl = Hashtbl.create 0 in
     for _ = 1 to size do
