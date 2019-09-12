@@ -29,7 +29,7 @@ end) : sig
   }
 
   val fresh_name : string -> string
-  (** A fresh name for either an "empty_index" or a "full_index". *)
+  (** [fresh_name typ] is a clean directory for a resource of type [typ]. *)
 
   val empty_index : unit -> t
   (** Fresh, empty index. *)
