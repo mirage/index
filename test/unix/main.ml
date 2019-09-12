@@ -94,22 +94,19 @@ module Live = struct
 end
 
 (* Tests of behaviour after restarting the index *)
-module Restart = struct
+module DuplicateInstance = struct
   let find_present () =
-    let { Context.rw; tbl; clone } = Context.full_index () in
-    Index.close rw;
+    let Context.{ tbl; clone; _ } = Context.full_index () in
     let rw = clone ~readonly:false in
     check_equivalence rw tbl
 
   let find_absent () =
-    let { Context.rw; tbl; clone } = Context.full_index () in
-    Index.close rw;
+    let Context.{ tbl; clone; _ } = Context.full_index () in
     let rw = clone ~readonly:false in
     test_find_absent rw tbl
 
   let replace () =
-    let { Context.rw; clone; _ } = Context.full_index ~size:5 () in
-    Index.close rw;
+    let Context.{ clone; _ } = Context.full_index ~size:5 () in
     let rw = clone ~readonly:false in
     test_replace rw
 
@@ -153,6 +150,20 @@ module Close = struct
     let w = clone ~readonly:false in
     check_equivalence w tbl;
     Index.close w
+
+  let find_absent () =
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
+    Index.close rw;
+    let rw = clone ~readonly:false in
+    test_find_absent rw tbl;
+    Index.close rw
+
+  let replace () =
+    let Context.{ rw; clone; _ } = Context.full_index ~size:5 () in
+    Index.close rw;
+    let rw = clone ~readonly:false in
+    test_replace rw;
+    Index.close rw
 
   let open_readonly_close_rw () =
     let { Context.rw; tbl; clone } = Context.full_index () in
@@ -226,6 +237,8 @@ module Close = struct
   let tests =
     [
       ("close and reopen", `Quick, close_reopen_rw);
+      ("find (absent)", `Quick, find_absent);
+      ("replace", `Quick, replace);
       ("open two instances, close one", `Quick, open_readonly_close_rw);
       ("close and reopen on readonly", `Quick, close_reopen_readonly);
       ("fail to read after close", `Quick, fail_read_after_close);
@@ -240,7 +253,7 @@ let () =
   Alcotest.run "index"
     [
       ("live", Live.tests);
-      ("on restart", Restart.tests);
+      ("on restart", DuplicateInstance.tests);
       ("readonly", Readonly.tests);
       ("close", Close.tests);
     ]
