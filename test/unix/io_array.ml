@@ -75,11 +75,8 @@ let read_sequential_prefetch () =
       expected actual
   done
 
-let fresh_tests = [ ("read sequential", `Quick, read_sequential) ]
-
-let prefetch_tests = [ ("read sequential", `Quick, read_sequential_prefetch) ]
-
-let () =
-  Common.report ();
-  Alcotest.run "index"
-    [ ("fresh tests", fresh_tests); ("prefetch tests", prefetch_tests) ]
+let tests =
+  [
+    ("fresh", `Quick, read_sequential);
+    ("prefetch", `Quick, read_sequential_prefetch);
+  ]
