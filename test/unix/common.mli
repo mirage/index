@@ -28,6 +28,9 @@ end) : sig
     clone : readonly:bool -> Index.t;
   }
 
+  val fresh_name : string -> string
+  (** [fresh_name typ] is a clean directory for a resource of type [typ]. *)
+
   val empty_index : unit -> t
   (** Fresh, empty index. *)
 
