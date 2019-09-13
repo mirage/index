@@ -21,6 +21,8 @@ let v ~hash_size ~entry_size n =
   let shift = hash_size - size in
   { fans = Array.make nb_fans 0L; mask = (nb_fans - 1) lsl shift; shift }
 
+let nb_fans t = Array.length t.fans
+
 let fan t h = (h land t.mask) lsr t.shift
 
 let search t h =
