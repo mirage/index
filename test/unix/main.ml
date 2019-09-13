@@ -138,8 +138,17 @@ module Readonly = struct
           Not_found (fun () -> ignore (Index.find r k)))
       tbl
 
+  (* a readonly index can create an empty_index *)
+  let start_ro () =
+    let ro = Index.v ~fresh:false ~readonly:true ~log_size:4 "empty_index" in
+    Index.close ro
+
   let tests =
-    [ ("add", `Quick, readonly); ("read after clear", `Quick, readonly_clear) ]
+    [
+      ("add", `Quick, readonly);
+      ("read after clear", `Quick, readonly_clear);
+      ("start readonly with empty index", `Quick, start_ro);
+    ]
 end
 
 (* Tests of {Index.close} *)
@@ -217,6 +226,7 @@ module Close = struct
     Index.replace w1 k v;
     Hashtbl.replace tbl k v;
     Index.close w1;
+
     (* while another instance is still open, read does not fail*)
     check_equivalence w1 tbl;
     test_read_after_close w2 k tbl
