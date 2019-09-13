@@ -154,22 +154,12 @@ let readonly_and_merge () =
   loop 10;
   test_fd ()
 
-let readonly_tests =
+let tests =
   [
     ("readonly in sequence", `Quick, readonly_s);
     ("readonly interleaved", `Quick, readonly);
+    ("interleaved merge", `Quick, readonly_and_merge);
   ]
-
-let merge_tests =
-  [ ("readonly and merge interleaved", `Quick, readonly_and_merge) ]
-
-let () =
-  Common.report ();
-  Alcotest.run "index"
-    [
-      ("readonly tests", readonly_tests);
-      ("merge and readonly tests", merge_tests);
-    ]
 
 (* Unix.sleep 10 *)
 (* for `ps aux | grep force_merge` and `lsof -a -s -p pid` *)

@@ -217,7 +217,6 @@ module Close = struct
     Index.replace w1 k v;
     Hashtbl.replace tbl k v;
     Index.close w1;
-
     (* while another instance is still open, read does not fail*)
     check_equivalence w1 tbl;
     test_read_after_close w2 k tbl
@@ -250,8 +249,10 @@ end
 
 let () =
   Common.report ();
-  Alcotest.run "index"
+  Alcotest.run "index.unix"
     [
+      ("io_array", Io_array.tests);
+      ("merge", Force_merge.tests);
       ("live", Live.tests);
       ("on restart", DuplicateInstance.tests);
       ("readonly", Readonly.tests);
