@@ -60,7 +60,7 @@ let check_updates (fan, updates) =
 let check_fan_size (fan, size) =
   let nb_fans = Fan.nb_fans fan in
   let fan_size = size / nb_fans in
-  if fan_size * entry_size > 4096 * 4096 then
+  if fan_size * entry_size > 4096 then
     fail (Printf.sprintf "Fan size is too big: %d" fan_size)
 
 let () =

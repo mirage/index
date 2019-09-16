@@ -15,8 +15,8 @@ let log2 a = log a /. log 2.
 let v ~hash_size ~entry_size n =
   let entry_sizef = float_of_int entry_size in
   let entries_per_page = 4096. /. entry_sizef in
-  let entries_fan = float_of_int n /. (entries_per_page *. entries_per_page) in
-  let size = max 0 (int_of_float (ceil (log2 entries_fan))) in
+  let raw_nb_fans = float_of_int n /. entries_per_page in
+  let size = max 0 (int_of_float (ceil (log2 raw_nb_fans))) in
   let nb_fans = 1 lsl size in
   let shift = hash_size - size in
   { fans = Array.make nb_fans 0L; mask = (nb_fans - 1) lsl shift; shift }
