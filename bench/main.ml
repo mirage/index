@@ -1,54 +1,28 @@
+open Common
+
 let key_size = 44
 
 let value_size = 12
 
 let index_size = 3_000_000
 
-let () = Random.self_init ()
+let hash_size = 30
 
-let random_char () = char_of_int (33 + Random.int 94)
-
-let random_string size = String.init size (fun _i -> random_char ())
-
-module Key = struct
-  type t = string
-
-  let v () = random_string key_size
-
-  let hash = Hashtbl.hash
-
-  let hash_size = 30
-
-  let encode s = s
-
-  let decode s off = String.sub s off key_size
-
-  let encoded_size = key_size
-
-  let equal = String.equal
-
-  let pp s = Fmt.fmt "%s" s
-end
-
-module Value = struct
-  type t = string
-
-  let v () = random_string value_size
-
-  let encode s = s
-
-  let decode s off = String.sub s off value_size
-
-  let encoded_size = value_size
-
-  let pp s = Fmt.fmt "%s" s
-end
-
-module Index = Index_unix.Make (Key) (Value)
-
-let index_name = "hello"
+let index_name = Filename.concat "_bench" "hello"
 
 let log_size = 500_000
+
+let () = Random.self_init ()
+
+module Context = Make_context (struct
+  let key_size = key_size
+
+  let hash_size = hash_size
+
+  let value_size = value_size
+end)
+
+module Index = Index_unix.Make (Context.Key) (Context.Value)
 
 let pp_stats ppf (count, max) =
   Fmt.pf ppf "\t%4dk/%dk" (count / 1000) (max / 1000)
@@ -58,7 +32,7 @@ let rec replaces t bindings i =
   else
     let count = index_size - i in
     if count mod 1_000 = 0 then Fmt.epr "\r%a%!" pp_stats (count, index_size);
-    let k, v = (Key.v (), Value.v ()) in
+    let k, v = (Context.Key.v (), Context.Value.v ()) in
     Index.replace t k v;
     replaces t ((k, v) :: bindings) (i - 1)
 
@@ -68,12 +42,6 @@ let rec finds t count = function
       if count mod 1_000 = 0 then Fmt.epr "\r%a%!" pp_stats (count, index_size);
       ignore (Index.find t k);
       finds t (count + 1) tl
-
-let with_timer f =
-  let t0 = Sys.time () in
-  let x = f () in
-  let t1 = Sys.time () -. t0 in
-  (x, t1)
 
 let () =
   Fmt.epr "Adding %d bindings.\n%!" index_size;

@@ -1,6 +1,12 @@
 (executable
  (name main)
- (libraries fmt index.unix))
+ (modules main)
+ (libraries fmt index.unix common))
+
+(executable
+ (name db_bench)
+ (modules db_bench)
+ (libraries fmt index.unix common lmdb bigstring rresult logs logs.fmt ))
 
 (alias
  (name bench)
@@ -10,3 +16,8 @@
 (alias
  (name runtest)
  (deps main.exe))
+
+(library
+ (name common)
+ (modules common)
+ (libraries index.unix logs logs.fmt))
