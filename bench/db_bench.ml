@@ -291,48 +291,47 @@ let main () =
   Common.report ();
   Index.init ();
   Lmdb.cleanup ();
-  Log.app (fun l -> l "Keys: %d bytes each.%!" key_size);
-  Log.app (fun l -> l "Values: %d bytes each.%!" value_size);
-  Log.app (fun l -> l "Entries: %d.%!" nb_entries);
-  Log.app (fun l -> l "Log size: %d.%!" log_size);
+  Log.app (fun l -> l "Keys: %d bytes each." key_size);
+  Log.app (fun l -> l "Values: %d bytes each." value_size);
+  Log.app (fun l -> l "Entries: %d." nb_entries);
+  Log.app (fun l -> l "Log size: %d." log_size);
 
-  Log.app (fun l -> l "\n%!");
-  Log.app (fun l -> l "Fill in sequential order%!");
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Fill in sequential order");
   Index.write_seq ();
   Lmdb.fail_on_error (fun () -> Lmdb.write_seq ());
 
-  Log.app (fun l -> l "\n%!");
-  Log.app (fun l -> l "Fill in sequential order of hashes%!");
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Fill in sequential order of hashes");
+
   Index.write_seq_hash ();
 
-  Log.app (fun l -> l "\n%!");
-  Log.app (fun l -> l "Fill in reverse sequential order of hashes%!");
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Fill in reverse sequential order of hashes");
   Index.write_rev_seq_hash ();
-
-  Log.app (fun l -> l "\n%!");
-  Log.app (fun l -> l "Fill in random order and sync%!");
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Fill in random order and sync");
   Index.write_sync ();
   Lmdb.fail_on_error (fun () -> Lmdb.write_sync ());
 
-  Log.app (fun l -> l "\n%!");
-  Log.app (fun l -> l "Fill in random order %!");
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Fill in random order ");
   let rw = Index.write_random () in
   let lmdb, env = R.get_ok (Lmdb.write_random ()) in
-  Log.app (fun l -> l "\n%!");
-  Log.app (fun l -> l "Read in random order %!");
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Read in random order ");
   Index.read_random rw;
   Lmdb.read_random lmdb;
 
-  Log.app (fun l -> l "\n%!");
-  Log.app (fun l -> l "Read in sequential order %!");
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Read in sequential order ");
   Index.read_seq rw;
   Lmdb.read_seq ();
 
-  Log.app (fun l -> l "\n%!");
-  Log.app (fun l -> l "Overwrite%!");
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Overwrite");
   Index.overwrite rw;
   Lmdb.overwrite lmdb;
-
   Index.close rw;
   Lmdb.close env
 

@@ -4,14 +4,17 @@ let reporter ?(prefix = "") () =
       over ();
       k ()
     in
-    let ppf = match level with Logs.App -> Fmt.stdout | _ -> Fmt.stderr in
     let with_stamp h _tags k fmt =
-      let dt = Unix.gettimeofday () in
-      Fmt.kpf k ppf
-        ("%s%+04.0fus %a %a @[" ^^ fmt ^^ "@]@.")
-        prefix dt
-        Fmt.(styled `Magenta string)
-        (Logs.Src.name src) Logs_fmt.pp_header (level, h)
+      match level with
+      | Logs.App -> Fmt.kpf k Fmt.stdout (fmt ^^ "@.%!")
+      | _ ->
+          let ppf = Fmt.stderr in
+          let dt = Unix.gettimeofday () in
+          Fmt.kpf k ppf
+            ("%s%+04.0fus %a %a @[" ^^ fmt ^^ "@]@.")
+            prefix dt
+            Fmt.(styled `Magenta string)
+            (Logs.Src.name src) Logs_fmt.pp_header (level, h)
     in
     msgf @@ fun ?header ?tags fmt -> with_stamp header tags k fmt
   in
