@@ -1,0 +1,30 @@
+opam-version: "2.0"
+maintainer:   "Clement Pascutto"
+authors:      ["Clement Pascutto" "Thomas Gazagnaire" "Ioana Cristescu"]
+license:      "MIT"
+homepage:     "https://github.com/mirage/index"
+bug-reports:  "https://github.com/mirage/index/issues"
+dev-repo:     "git+https://github.com/mirage/index.git"
+
+build: [
+ ["dune" "subst"] {pinned}
+ ["dune" "build" "-p" name "-j" jobs]
+ ["dune" "runtest" "-p" name] {with-test}
+]
+
+depends: [
+  "ocaml"   {>= "4.03.0"}
+  "dune"    {build & >= "1.7.0"}
+  "index"
+  "fmt"
+  "logs"
+  "bigstring"
+  "rresult"
+  "lmdb"
+]
+
+pin-depends: [
+  [ "lmdb.dev" "git+https://github.com/vbmithr/ocaml-lmdb#6f1f8cc802cbdd633c62e33b814436210f539f02" ]
+]
+
+synopsis: "Index benchmarking suite"
