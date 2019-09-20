@@ -1,10 +1,10 @@
 open Common
 
-let key_size = 44
+let key_size = 32
 
-let value_size = 12
+let value_size = 13
 
-let index_size = 3_000_000
+let index_size = 10_000_000
 
 let hash_size = 30
 
@@ -12,7 +12,7 @@ let index_name = Filename.concat "_bench" "hello"
 
 let log_size = 500_000
 
-let () = Random.self_init ()
+let () = Random.init 1
 
 module Context = Make_context (struct
   let key_size = key_size
