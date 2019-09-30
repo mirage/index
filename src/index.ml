@@ -64,6 +64,8 @@ module type S = sig
   val close : t -> unit
 
   val force_merge : t -> key -> value -> unit
+
+  val reset_fanout : t -> unit
 end
 
 let may f = function None -> () | Some bf -> f bf
@@ -421,6 +423,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Tbl.clear t.log_mem;
         IO.set_generation t.log generation;
         t.generation <- generation
+
+  let reset_fanout t =
+    Log.info (fun l -> l "reset fanout %S\n" t.root);
+    may
+      (fun index ->
+        let fan_size = Int64.to_int (IO.offset index.io) / entry_size in
+        let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
+        iter_io_off (fun off e -> Fan.update fan_out e.key_hash off) index.io;
+        Fan.finalize fan_out;
+        IO.set_fanout index.io (Fan.export index.fan_out))
+      t.index
 
   let force_merge t key value =
     Log.debug (fun l -> l "forced merge %S\n" t.root);

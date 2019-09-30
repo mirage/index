@@ -117,6 +117,9 @@ module type S = sig
   val force_merge : t -> key -> value -> unit
   (** [force_merge t k v] forces a merge for [t], where [k] and [v] are any key
       and value of [t]. *)
+
+  val reset_fanout : t -> unit
+  (** [reset_fanout t] resets the fanout of [t]. *)
 end
 
 module Make (K : Key) (V : Value) (IO : IO) :
