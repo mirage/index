@@ -127,6 +127,26 @@ end
 module Make (K : Key) (V : Value) (IO : IO) :
   S with type key = K.t and type value = V.t
 
+(** Statistics. *)
+module Stats : sig
+  type t = {
+    mutable bytes_read : int;
+    mutable nb_reads : int;
+    mutable bytes_written : int;
+    mutable nb_writes : int;
+    mutable nb_merge : int;
+    mutable nb_replace : int;
+  }
+
+  val reset_stats : unit -> unit
+
+  val get : unit -> t
+
+  val add_read : int -> unit
+
+  val add_write : int -> unit
+end
+
 (** These modules should not be used. They are exposed purely for testing
     purposes. *)
 module Private : sig

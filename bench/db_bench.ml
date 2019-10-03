@@ -25,6 +25,25 @@ let usage =
   ^ " [-all | -lmdb | -index], if no argument provided then minimal index \
      benchmarks are run"
 
+module Stats = Index.Stats
+
+let src =
+  let open Metrics in
+  let open Stats in
+  let tags = Tags.[] in
+  let data t =
+    Data.v
+      [
+        int "bytes_read" t.bytes_read;
+        int "bytes_written" t.bytes_written;
+        int "merge" t.nb_merge;
+        int "replace" t.nb_replace;
+      ]
+  in
+  Src.v "bench" ~tags ~data
+
+let no_tags x = x
+
 let seed = 1
 
 let () = Random.init seed
@@ -82,7 +101,7 @@ module Index = struct
   let print_results = print_results "index"
 
   let write_amplif () =
-    let stats = Index_unix.get_stats () in
+    let stats = Stats.get () in
     let ratio_bytes =
       float_of_int stats.bytes_written /. float_of_int (entry_size * nb_entries)
     in
@@ -94,7 +113,7 @@ module Index = struct
           ratio_bytes ratio_reads)
 
   let read_amplif () =
-    let stats = Index_unix.get_stats () in
+    let stats = Stats.get () in
     let ratio_bytes =
       float_of_int stats.bytes_read /. float_of_int (entry_size * nb_entries)
     in
@@ -110,36 +129,49 @@ module Index = struct
       let _ = Sys.command cmd in
       () )
 
-  let write rw () = Array.iter (fun (k, v) -> Index.replace rw k v) random
+  let write ~with_metrics rw () =
+    Array.iter
+      (fun (k, v) ->
+        Index.replace rw k v;
+        if with_metrics then
+          Metrics.add src no_tags (fun m -> m (Stats.get ())))
+      random
 
-  let read r () = Array.iter (fun (k, _) -> ignore (Index.find r k)) random
+  let read ~with_metrics r () =
+    Array.iter
+      (fun (k, _) ->
+        ignore (Index.find r k);
+        if with_metrics then
+          Metrics.add src no_tags (fun m -> m (Stats.get ())))
+      random
 
   let write_random () =
-    Index_unix.reset_stats ();
+    Log.debug (fun l -> l "write_radom");
+    Stats.reset_stats ();
     let rw = Index.v ~fresh:true ~log_size (root // "fill_random") in
-    print_results (write rw);
+    print_results (write ~with_metrics:false rw);
     write_amplif ();
     rw
 
   let write_seq () =
-    Index_unix.reset_stats ();
+    Stats.reset_stats ();
     let rw = Index.v ~fresh:true ~log_size (root // "fill_seq") in
     Array.sort (fun a b -> String.compare (fst a) (fst b)) random;
-    print_results (write rw);
+    print_results (write ~with_metrics:false rw);
     write_amplif ();
     Index.close rw
 
   let write_seq_hash () =
-    Index_unix.reset_stats ();
+    Stats.reset_stats ();
     let rw = Index.v ~fresh:true ~log_size (root // "fill_seq_hash") in
     let hash e = Context.Key.hash (fst e) in
     Array.sort (fun a b -> compare (hash a) (hash b)) random;
-    print_results (write rw);
+    print_results (write ~with_metrics:false rw);
     write_amplif ();
     Index.close rw
 
   let write_rev_seq_hash () =
-    Index_unix.reset_stats ();
+    Stats.reset_stats ();
     let rw = Index.v ~fresh:true ~log_size (root // "fill_rev_seq_hash") in
     let hash e = Context.Key.hash (fst e) in
     Array.sort (fun a b -> compare (hash a) (hash b)) random;
@@ -151,7 +183,7 @@ module Index = struct
     Index.close rw
 
   let write_sync () =
-    Index_unix.reset_stats ();
+    Stats.reset_stats ();
     let rw = Index.v ~fresh:true ~log_size (root // "fill_sync") in
     let write rw () =
       Array.iter
@@ -165,17 +197,17 @@ module Index = struct
     Index.close rw
 
   let overwrite rw =
-    Index_unix.reset_stats ();
-    print_results (write rw);
+    Stats.reset_stats ();
+    print_results (write ~with_metrics:false rw);
     write_amplif ()
 
   let read_random r =
-    Index_unix.reset_stats ();
-    print_results (read r);
+    Stats.reset_stats ();
+    print_results (read ~with_metrics:false r);
     read_amplif ()
 
   let read_seq r =
-    Index_unix.reset_stats ();
+    Stats.reset_stats ();
     let read () = Index.iter (fun _ _ -> ()) r in
     print_results read;
     read_amplif ()
@@ -362,6 +394,9 @@ let minimal_benchs () =
 
 let () =
   Arg.parse speclist ignore usage;
+  Metrics.enable_all ();
+  Metrics_gnuplot.set_reporter ();
+  Metrics_unix.monitor_gc 0.1;
   init ();
   if !all || !with_index then index_main ();
   if !all || !with_lmdb then lmdb_main ();

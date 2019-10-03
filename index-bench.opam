@@ -21,6 +21,7 @@ depends: [
   "bigstring"
   "rresult"
   "lmdb"
+  "metrics"
 ]
 
 pin-depends: [

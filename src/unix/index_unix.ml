@@ -2,25 +2,7 @@ exception RO_not_allowed
 
 let current_version = "00000001"
 
-type stats = {
-  mutable bytes_read : int;
-  mutable nb_reads : int;
-  mutable bytes_written : int;
-  mutable nb_writes : int;
-}
-
-let fresh_stats () =
-  { bytes_read = 0; nb_reads = 0; bytes_written = 0; nb_writes = 0 }
-
-let stats = fresh_stats ()
-
-let reset_stats () =
-  stats.bytes_read <- 0;
-  stats.nb_reads <- 0;
-  stats.bytes_written <- 0;
-  stats.nb_writes <- 0
-
-let get_stats () = stats
+module Stats = Index.Stats
 
 module IO : Index.IO = struct
   let ( ++ ) = Int64.add
@@ -81,14 +63,12 @@ module IO : Index.IO = struct
       let buf = Bytes.unsafe_of_string buf in
       really_write t.fd off buf;
       t.cursor <- off ++ Int64.of_int (Bytes.length buf);
-      stats.bytes_written <- stats.bytes_written + Bytes.length buf;
-      stats.nb_writes <- succ stats.nb_writes
+      Stats.add_write (Bytes.length buf)
 
     let unsafe_read t ~off ~len buf =
       let n = really_read t.fd off len buf in
       t.cursor <- off ++ Int64.of_int n;
-      stats.bytes_read <- stats.bytes_read + n;
-      stats.nb_reads <- succ stats.nb_reads;
+      Stats.add_read n;
       n
 
     module Offset = struct
