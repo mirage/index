@@ -8,12 +8,11 @@
     - A `log` IO containing all of the recently-added bindings; this is also
       kept in memory.
 
-    - When the `log` IO is full, it is merged into the `index` IO. Search
-      is done first in `log` then in `index`, which makes recently added
-      bindings search faster.
+    - When the `log` IO is full, it is merged into the `index` IO. Search is
+      done first in `log` then in `index`, which makes recently added bindings
+      search faster.
 
-    - A `lock` IO to ensure safe concurrent access.
-*)
+    - A `lock` IO to ensure safe concurrent access. *)
 
 (** The input of [Make] for keys. *)
 module type Key = sig
@@ -36,8 +35,8 @@ module type Key = sig
       size {!encoded_size}. *)
 
   val encoded_size : int
-  (** [encoded_size] is the size of the result of {!encode}, expressed in number
-      of bytes. *)
+  (** [encoded_size] is the size of the result of {!encode}, expressed in
+      number of bytes. *)
 
   val decode : string -> int -> t
   (** [decode s off] is the decoded form of the encoded value at the offset
@@ -47,8 +46,7 @@ module type Key = sig
   (** Formatter for keys *)
 end
 
-(** The input of [Make] for values. The same requirements as for [Key]
-    apply. *)
+(** The input of [Make] for values. The same requirements as for [Key] apply. *)
 module type Value = sig
   type t
 
@@ -80,10 +78,10 @@ module type S = sig
 
   val v : ?fresh:bool -> ?readonly:bool -> log_size:int -> string -> t
   (** The constructor for indexes.
+
       @param fresh whether an existing index should be overwritten.
       @param read_only whether read-only mode is enabled for this index.
-      @param log_size  the maximum number of bindings in the `log` IO.
-      *)
+      @param log_size the maximum number of bindings in the `log` IO. *)
 
   val clear : t -> unit
   (** [clear t] clears [t] so that there are no more bindings in it. *)
@@ -105,9 +103,9 @@ module type S = sig
       of [k]. *)
 
   val iter : (key -> value -> unit) -> t -> unit
-  (** Iterates over the index bindings. Order is not specified.
-      In case of recent replacements of existing values (after the last merge),
-      this will hit both the new and old bindings. *)
+  (** Iterates over the index bindings. Order is not specified. In case of
+      recent replacements of existing values (after the last merge), this will
+      hit both the new and old bindings. *)
 
   val force_merge : t -> unit
   (** [force_merge t] forces a merge for [t]. *)
@@ -122,8 +120,8 @@ end
 module Make (K : Key) (V : Value) (IO : IO) :
   S with type key = K.t and type value = V.t
 
-(** These modules should not be used.
-    They are exposed purely for testing purposes. *)
+(** These modules should not be used. They are exposed purely for testing
+    purposes. *)
 module Private : sig
   module Search : module type of Search
 

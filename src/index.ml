@@ -335,8 +335,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       append_entry_fanout fan_out log.(log_i) dst_io
     done
 
-  (** Merge [log] with [t] into [dst_io].
-      [log] must be sorted by key hashes. *)
+  (* Merge [log] with [t] into [dst_io]. [log] must be sorted by key hashes. *)
   let merge_with log index dst_io =
     let entries = 10_000 in
     let buf = Bytes.create (entries * entry_size) in
