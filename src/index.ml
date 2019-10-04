@@ -63,7 +63,7 @@ module type S = sig
 
   val close : t -> unit
 
-  val force_merge : t -> key -> value -> unit
+  val force_merge : t -> unit
 end
 
 let may f = function None -> () | Some bf -> f bf
@@ -422,9 +422,22 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         IO.set_generation t.log generation;
         t.generation <- generation
 
-  let force_merge t key value =
+  let get_witness t =
+    let exception Found of entry in
+    match Tbl.iter (fun _ entry -> raise (Found entry)) t.log_mem with
+    | exception Found e -> Some e
+    | () -> (
+        match t.index with
+        | None -> None
+        | Some index ->
+            let buf = Bytes.create entry_size in
+            let n = IO.read index.io ~off:0L buf in
+            assert (n = entry_size);
+            Some (decode_entry buf 0) )
+
+  let force_merge t =
     Log.debug (fun l -> l "forced merge %S\n" t.root);
-    merge ~witness:{ key; key_hash = K.hash key; value } t
+    match get_witness t with None -> () | Some witness -> merge ~witness t
 
   let replace t key value =
     Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
@@ -435,7 +448,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
     then merge ~witness:entry t
 
-  (* XXX: Perform a merge beforehands to ensure duplicates are not hit twice. *)
   let iter f t =
     Log.debug (fun l -> l "iter %S" t.root);
     if t.config.readonly then sync_log t;

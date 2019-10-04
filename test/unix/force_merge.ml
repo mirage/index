@@ -102,7 +102,7 @@ let readonly_and_merge () =
     let k1 = Key.v () in
     let v1 = Value.v () in
     Index.replace w k1 v1;
-    Index.force_merge w k1 v1;
+    Index.force_merge w;
     test_one_entry r1 k1 v1;
     test_one_entry r2 k1 v1;
     test_one_entry r3 k1 v1;
@@ -111,7 +111,7 @@ let readonly_and_merge () =
     let v2 = Value.v () in
     Index.replace w k2 v2;
     test_one_entry r1 k1 v1;
-    Index.force_merge w k1 v1;
+    Index.force_merge w;
     test_one_entry r2 k2 v2;
     test_one_entry r3 k1 v1;
 
@@ -121,17 +121,17 @@ let readonly_and_merge () =
     let v3 = Value.v () in
     test_one_entry r1 k1 v1;
     Index.replace w k2 v2;
-    Index.force_merge w k1 v1;
+    Index.force_merge w;
     test_one_entry r1 k1 v1;
     Index.replace w k3 v3;
-    Index.force_merge w k1 v1;
+    Index.force_merge w;
     test_one_entry r3 k3 v3;
 
     let k2 = Key.v () in
     let v2 = Value.v () in
     Index.replace w k2 v2;
     test_one_entry w k2 v2;
-    Index.force_merge w k1 v1;
+    Index.force_merge w;
     test_one_entry w k2 v2;
     test_one_entry r2 k2 v2;
     test_one_entry r3 k1 v1;
@@ -140,7 +140,7 @@ let readonly_and_merge () =
     let v2 = Value.v () in
     Index.replace w k2 v2;
     test_one_entry r2 k1 v1;
-    Index.force_merge w k1 v1;
+    Index.force_merge w;
     test_one_entry w k2 v2;
     test_one_entry r2 k2 v2;
     test_one_entry r3 k2 v2
