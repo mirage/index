@@ -114,9 +114,8 @@ module type S = sig
   val close : t -> unit
   (** Closes the files and clears the caches of [t]. *)
 
-  val force_merge : t -> key -> value -> unit
-  (** [force_merge t k v] forces a merge for [t], where [k] and [v] are any key
-      and value of [t]. *)
+  val force_merge : t -> unit
+  (** [force_merge t] forces a merge for [t]. *)
 end
 
 module Make (K : Key) (V : Value) (IO : IO) :
