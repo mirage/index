@@ -15,9 +15,9 @@ module type Key = sig
 
   val encode : t -> string
 
-  val decode : string -> int -> t
-
   val encoded_size : int
+
+  val decode : string -> int -> t
 
   val pp : t Fmt.t
 end
@@ -27,9 +27,9 @@ module type Value = sig
 
   val encode : t -> string
 
-  val decode : string -> int -> t
-
   val encoded_size : int
+
+  val decode : string -> int -> t
 
   val pp : t Fmt.t
 end
@@ -59,11 +59,11 @@ module type S = sig
 
   val iter : (key -> value -> unit) -> t -> unit
 
+  val force_merge : t -> unit
+
   val flush : t -> unit
 
   val close : t -> unit
-
-  val force_merge : t -> unit
 end
 
 let may f = function None -> () | Some bf -> f bf

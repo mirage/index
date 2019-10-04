@@ -11,8 +11,7 @@ val nb_fans : t -> int
 (** [nb_fans t] is the number of fans in [t]. *)
 
 val search : t -> int -> int64 * int64
-(** [search t hash] is the interval of offsets in witch [hash] is, if
-    present. *)
+(** [search t hash] is the interval of offsets containing [hash], if present. *)
 
 val update : t -> int -> int64 -> unit
 (** [update t hash off] updates [t] so that [hash] is registered to be at

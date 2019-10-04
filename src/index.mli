@@ -28,19 +28,20 @@ module type Key = sig
       drops. *)
 
   val hash_size : int
-  (** The maximum number of bits used to encode hashes. `Hashtbl.hash` uses 30
-      bits. *)
+  (** The number of bits necessary to encode the maximum output value of
+      {!hash}. `Hashtbl.hash` uses 30 bits. *)
 
   val encode : t -> string
   (** [encode] is an encoding function. The resultant encoded values must have
-      size {!encoded_size} bytes. *)
-
-  val decode : string -> int -> t
-  (** [decode] is a decoding function such that [decode (encode t) 0 = t]. *)
+      size {!encoded_size}. *)
 
   val encoded_size : int
-  (** [encoded_size] is the size of the encoded keys, expressed in number of
-      bytes. *)
+  (** [encoded_size] is the size of the result of {!encode}, expressed in number
+      of bytes. *)
+
+  val decode : string -> int -> t
+  (** [decode s off] is the decoded form of the encoded value at the offset
+      [off] of string [s]. Must satisfy [decode (encode t) 0 = t]. *)
 
   val pp : t Fmt.t
   (** Formatter for keys *)
@@ -53,9 +54,9 @@ module type Value = sig
 
   val encode : t -> string
 
-  val decode : string -> int -> t
-
   val encoded_size : int
+
+  val decode : string -> int -> t
 
   val pp : t Fmt.t
 end
@@ -63,7 +64,7 @@ end
 module type IO = Io.S
 
 exception RO_not_allowed
-(** The exception raised when illegal operation is attempted on a read_only
+(** The exception raised when a write operation is attempted on a read_only
     index. *)
 
 (** Index module signature. *)
@@ -79,7 +80,7 @@ module type S = sig
 
   val v : ?fresh:bool -> ?readonly:bool -> log_size:int -> string -> t
   (** The constructor for indexes.
-      @param fresh
+      @param fresh whether an existing index should be overwritten.
       @param read_only whether read-only mode is enabled for this index.
       @param log_size  the maximum number of bindings in the `log` IO.
       *)
@@ -100,7 +101,7 @@ module type S = sig
       size than encoded_size *)
 
   val replace : t -> key -> value -> unit
-  (** [replace t k v] binds [k] to [v] in [t], replacing any exising binding
+  (** [replace t k v] binds [k] to [v] in [t], replacing any existing binding
       of [k]. *)
 
   val iter : (key -> value -> unit) -> t -> unit
@@ -108,20 +109,21 @@ module type S = sig
       In case of recent replacements of existing values (after the last merge),
       this will hit both the new and old bindings. *)
 
-  val flush : t -> unit
-  (** Flushes all buffers to the disk. *)
-
-  val close : t -> unit
-  (** Closes the files and clears the caches of [t]. *)
-
   val force_merge : t -> unit
   (** [force_merge t] forces a merge for [t]. *)
+
+  val flush : t -> unit
+  (** Flushes all buffers to the supplied [IO] instance. *)
+
+  val close : t -> unit
+  (** Closes all resources used by [t]. *)
 end
 
 module Make (K : Key) (V : Value) (IO : IO) :
   S with type key = K.t and type value = V.t
 
-(** These modules should not be used. They are exposed purely for testing purposes. *)
+(** These modules should not be used.
+    They are exposed purely for testing purposes. *)
 module Private : sig
   module Search : module type of Search
 
