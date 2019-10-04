@@ -28,7 +28,10 @@ module type Key = sig
 
   val hash_size : int
   (** The number of bits necessary to encode the maximum output value of
-      {!hash}. `Hashtbl.hash` uses 30 bits. *)
+      {!hash}. `Hashtbl.hash` uses 30 bits.
+
+      Overestimating the [hash_size] will result in performance drops;
+      underestimation will result in undefined behavior. *)
 
   val encode : t -> string
   (** [encode] is an encoding function. The resultant encoded values must have
