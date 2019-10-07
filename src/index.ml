@@ -114,7 +114,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     mutable index : index option;
     log : IO.t;
     log_mem : entry Tbl.t;
-    mutable counter : int;
+    mutable open_instances : int;
     lock : IO.lock option;
   }
 
@@ -224,9 +224,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           Hashtbl.remove roots (root, false);
           raise Not_found );
         let t = Hashtbl.find roots (root, readonly) in
-        if t.counter <> 0 then (
+        if t.open_instances <> 0 then (
           Log.debug (fun l -> l "%s found in cache" root);
-          t.counter <- t.counter + 1;
+          t.open_instances <- t.open_instances + 1;
           if fresh then clear t;
           t )
         else (
@@ -262,7 +262,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       else None
     in
     iter_io (fun e -> Tbl.replace log_mem e.key e) log;
-    { config; generation; log_mem; root; log; index; counter = 1; lock }
+    { config; generation; log_mem; root; log; index; open_instances = 1; lock }
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
 
@@ -457,8 +457,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let flush t = IO.sync t.log
 
   let close t =
-    t.counter <- t.counter - 1;
-    if t.counter = 0 then (
+    t.open_instances <- t.open_instances - 1;
+    if t.open_instances = 0 then (
       Log.debug (fun l -> l "close %S" t.root);
       if not t.config.readonly then flush t;
       IO.close t.log;
