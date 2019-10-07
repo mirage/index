@@ -8,7 +8,8 @@ env:
  global:
    - PINS="index:. index-bench:."
  matrix:
+   - DISTRO=alpine OCAML_VERSION=4.09 PACKAGE="index"
    - DISTRO=alpine OCAML_VERSION=4.08 PACKAGE="index"
    - DISTRO=alpine OCAML_VERSION=4.07 PACKAGE="index"
    - DISTRO=alpine OCAML_VERSION=4.06 PACKAGE="index"
-   - DISTRO=alpine OCAML_VERSION=4.08 PACKAGE="index-bench"
+   - DISTRO=alpine OCAML_VERSION=4.09 PACKAGE="index-bench"
