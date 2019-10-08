@@ -286,59 +286,33 @@ module Close = struct
     check_equivalence ro tbl;
     Index.close ro
 
-  let test_read_after_close t k tbl =
-    check_equivalence t tbl;
-    Index.close t;
-    Alcotest.check_raises "Read after close raises Not_found" Not_found
-      (fun () -> ignore (Index.find t k))
-
-  let test_read_after_close_readonly t k tbl =
-    check_equivalence t tbl;
-    Index.close t;
-    let exn = Unix.Unix_error (Unix.EBADF, "read", "") in
-    Alcotest.check_raises "Cannot read in readonly index after close." exn
-      (fun () -> ignore (Index.find t k))
-
-  let fail_read_after_close () =
-    let Context.{ rw; tbl; _ } = Context.full_index () in
-    let k, v = (Key.v (), Value.v ()) in
-    Index.replace rw k v;
-    Hashtbl.replace tbl k v;
-    test_read_after_close rw k tbl
-
-  let fail_write_after_close () =
-    let Context.{ rw; _ } = Context.empty_index () in
-    Index.close rw;
-    let k, v = (Key.v (), Value.v ()) in
-    (* a single add does not fail*)
-    Index.replace rw k v;
-    let exn = Unix.Unix_error (Unix.EBADF, "read", "") in
-    Alcotest.check_raises "Cannot write in index after close." exn (fun () ->
-        Hashtbl.iter (fun k v -> Index.replace rw k v) main.tbl)
-
-  let open_twice () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
-    let rw2 = clone ~readonly:false in
-    let k, v = (Key.v (), Value.v ()) in
-    Index.replace rw k v;
-    Hashtbl.replace tbl k v;
-    Index.close rw;
-
-    (* while another instance is still open, read does not fail*)
-    check_equivalence rw tbl;
-    test_read_after_close rw2 k tbl
-
-  let open_twice_readonly () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
-    let k, v = (Key.v (), Value.v ()) in
-    Index.replace rw k v;
-    Hashtbl.replace tbl k v;
-    Index.close rw;
-    let ro1 = clone ~readonly:true in
-    let ro2 = clone ~readonly:true in
-    check_equivalence ro1 tbl;
-    Index.close ro1;
-    test_read_after_close_readonly ro2 k tbl
+  let fail_api_after_close () =
+    let Context.{ clone; _ } = Context.full_index () in
+    let k = Key.v () in
+    let v = Value.v () in
+    let calls t =
+      [
+        ("clear", fun () -> ignore (Index.clear t));
+        ("find", fun () -> ignore (Index.find t k));
+        ("mem", fun () -> ignore (Index.mem t k));
+        ("replace", fun () -> ignore (Index.replace t k v));
+        ("iter", fun () -> ignore (Index.iter (fun _ _ -> ()) t));
+        ("force_merge", fun () -> ignore (Index.force_merge t));
+        ("flush", fun () -> ignore (Index.flush t));
+      ]
+    in
+    let check_calls ~readonly =
+      let instance = clone ~readonly in
+      Index.close instance;
+      List.iter
+        (fun (name, call) ->
+          Alcotest.check_raises
+            (Printf.sprintf "%s after close with readonly=%b raises Closed"
+               name readonly) I.Closed (fun () -> call ()))
+        (calls instance)
+    in
+    check_calls ~readonly:true;
+    check_calls ~readonly:false
 
   let tests =
     [
@@ -347,10 +321,7 @@ module Close = struct
       ("replace", `Quick, replace);
       ("open two instances, close one", `Quick, open_readonly_close_rw);
       ("close and reopen on readonly", `Quick, close_reopen_readonly);
-      ("fail to read after close", `Quick, fail_read_after_close);
-      ("fail to write after close", `Quick, fail_write_after_close);
-      ("open twice same instance", `Quick, open_twice);
-      ("open twice same instance readonly", `Quick, open_twice_readonly);
+      ("all operations fail after close", `Quick, fail_api_after_close);
     ]
 end
 
