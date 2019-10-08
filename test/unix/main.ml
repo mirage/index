@@ -314,6 +314,13 @@ module Close = struct
     check_calls ~readonly:true;
     check_calls ~readonly:false
 
+  let check_double_close () =
+    let Context.{ rw; _ } = Context.full_index () in
+    Index.close rw;
+    Index.close rw;
+    Alcotest.check_raises "flush after double close with raises Closed"
+      I.Closed (fun () -> Index.flush rw)
+
   let tests =
     [
       ("close and reopen", `Quick, close_reopen_rw);
@@ -321,7 +328,8 @@ module Close = struct
       ("replace", `Quick, replace);
       ("open two instances, close one", `Quick, open_readonly_close_rw);
       ("close and reopen on readonly", `Quick, close_reopen_readonly);
-      ("all operations fail after close", `Quick, fail_api_after_close);
+      ("non-close operations fail after close", `Quick, fail_api_after_close);
+      ("double close", `Quick, check_double_close);
     ]
 end
 

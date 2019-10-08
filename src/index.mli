@@ -69,7 +69,8 @@ exception RO_not_allowed
     index. *)
 
 exception Closed
-(** The exception raised when any operation is attempted on a closed index. *)
+(** The exception raised when any operation is attempted on a closed index,
+    except for [close], which is idempotent. *)
 
 (** Index module signature. *)
 module type S = sig
