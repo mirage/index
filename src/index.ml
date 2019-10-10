@@ -150,9 +150,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       let remaining = Int64.sub max offset in
       if remaining <= 0L then ()
       else
-        let size = Stdlib.min remaining page_size in
-        let raw = Bytes.create (Int64.to_int size) in
-        let n = IO.read io ~off:offset raw in
+        let len = Int64.to_int (Stdlib.min remaining page_size) in
+        let raw = Bytes.create len in
+        let n = IO.read io ~off:offset ~len raw in
         let rec read_page page off =
           if off = n then ()
           else
@@ -338,8 +338,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   (* Merge [log] with [t] into [dst_io]. [log] must be sorted by key hashes. *)
   let merge_with log index dst_io =
     let entries = 10_000 in
-    let buf = Bytes.create (entries * entry_size) in
-    let refill off = ignore (IO.read index.io ~off buf) in
+    let len = entries * entry_size in
+    let buf = Bytes.create len in
+    let refill off = ignore (IO.read index.io ~off ~len buf) in
     let index_end = IO.offset index.io in
     let fan_out = index.fan_out in
     refill 0L;
@@ -430,7 +431,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         | None -> None
         | Some index ->
             let buf = Bytes.create entry_size in
-            let n = IO.read index.io ~off:0L buf in
+            let n = IO.read index.io ~off:0L ~len:entry_size buf in
             assert (n = entry_size);
             Some (decode_entry buf 0) )
 

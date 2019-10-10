@@ -206,9 +206,9 @@ module IO : Index.IO = struct
     t.offset <- t.offset ++ len;
     if t.offset -- t.flushed > auto_flush_limit then sync t
 
-  let read t ~off buf =
+  let read t ~off ~len buf =
     if not t.readonly then assert (t.header ++ off <= t.flushed);
-    Raw.unsafe_read t.raw ~off:(t.header ++ off) ~len:(Bytes.length buf) buf
+    Raw.unsafe_read t.raw ~off:(t.header ++ off) ~len buf
 
   let offset t = t.offset
 
