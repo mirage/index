@@ -287,32 +287,31 @@ module Close = struct
     Index.close ro
 
   let fail_api_after_close () =
-    let Context.{ clone; _ } = Context.full_index () in
     let k = Key.v () in
     let v = Value.v () in
     let calls t =
       [
-        ("clear", fun () -> ignore (Index.clear t));
-        ("find", fun () -> ignore (Index.find t k));
-        ("mem", fun () -> ignore (Index.mem t k));
-        ("replace", fun () -> ignore (Index.replace t k v));
-        ("iter", fun () -> ignore (Index.iter (fun _ _ -> ()) t));
-        ("force_merge", fun () -> ignore (Index.force_merge t));
-        ("flush", fun () -> ignore (Index.flush t));
+        ("clear", fun () -> Index.clear t);
+        ("find", fun () -> ignore (Index.find t k : string));
+        ("mem", fun () -> ignore (Index.mem t k : bool));
+        ("replace", fun () -> Index.replace t k v);
+        ("iter", fun () -> Index.iter (fun _ _ -> ()) t);
+        ("force_merge", fun () -> Index.force_merge t);
+        ("flush", fun () -> Index.flush t);
       ]
     in
-    let check_calls ~readonly =
-      let instance = clone ~readonly in
+    let check_calls ~readonly instance =
       Index.close instance;
       List.iter
         (fun (name, call) ->
           Alcotest.check_raises
             (Printf.sprintf "%s after close with readonly=%b raises Closed"
-               name readonly) I.Closed (fun () -> call ()))
+               name readonly)
+            I.Closed call)
         (calls instance)
     in
-    check_calls ~readonly:true;
-    check_calls ~readonly:false
+    check_calls ~readonly:true (Context.full_index ()).rw;
+    check_calls ~readonly:false (Context.full_index ()).rw
 
   let check_double_close () =
     let Context.{ rw; _ } = Context.full_index () in
