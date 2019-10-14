@@ -55,6 +55,10 @@ module type S = sig
 
   exception Invalid_value_size of value
 
+  exception Closed
+
+  exception RO_not_allowed
+
   val replace : t -> key -> value -> unit
 
   val iter : (key -> value -> unit) -> t -> unit
@@ -67,10 +71,6 @@ module type S = sig
 end
 
 let may f = function None -> () | Some bf -> f bf
-
-exception RO_not_allowed
-
-exception Closed
 
 module Make (K : Key) (V : Value) (IO : IO) = struct
   type key = K.t
@@ -86,6 +86,10 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   exception Invalid_key_size of key
 
   exception Invalid_value_size of value
+
+  exception Closed
+
+  exception RO_not_allowed
 
   let append_entry io e =
     let encoded_key = K.encode e.key in

@@ -1,4 +1,3 @@
-module I = Index
 open Common
 
 let ( // ) = Filename.concat
@@ -223,7 +222,7 @@ module Readonly = struct
   let fail_readonly_add () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
     let ro = clone ~readonly:true in
-    let exn = I.RO_not_allowed in
+    let exn = Index.RO_not_allowed in
     Alcotest.check_raises "Index readonly cannot write." exn (fun () ->
         Index.replace ro (Key.v ()) (Value.v ()));
     Index.close rw;
@@ -307,7 +306,7 @@ module Close = struct
           Alcotest.check_raises
             (Printf.sprintf "%s after close with readonly=%b raises Closed"
                name readonly)
-            I.Closed call)
+            Index.Closed call)
         (calls instance)
     in
     check_calls ~readonly:true (Context.full_index ()).rw;
@@ -318,7 +317,7 @@ module Close = struct
     Index.close rw;
     Index.close rw;
     Alcotest.check_raises "flush after double close with raises Closed"
-      I.Closed (fun () -> Index.flush rw)
+      Index.Closed (fun () -> Index.flush rw)
 
   let tests =
     [

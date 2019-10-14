@@ -64,14 +64,6 @@ end
 
 module type IO = Io.S
 
-exception RO_not_allowed
-(** The exception raised when a write operation is attempted on a read_only
-    index. *)
-
-exception Closed
-(** The exception raised when any operation is attempted on a closed index,
-    except for [close], which is idempotent. *)
-
 (** Index module signature. *)
 module type S = sig
   type t
@@ -104,6 +96,14 @@ module type S = sig
   exception Invalid_value_size of value
   (** The exceptions raised when trying to add a key or a value of different
       size than encoded_size *)
+
+  exception Closed
+  (** The exception raised when any operation is attempted on a closed index,
+      except for [close], which is idempotent. *)
+
+  exception RO_not_allowed
+  (** The exception raised when a write operation is attempted on a read_only
+      index. *)
 
   val replace : t -> key -> value -> unit
   (** [replace t k v] binds [k] to [v] in [t], replacing any existing binding
