@@ -25,6 +25,7 @@ let test_one_entry r k v =
       Alcotest.failf "Inserted value is not present anymore: %s." k
 
 let test_fd () =
+  let ( >>? ) x f = match x with `Ok x -> f x | err -> err in
   (* TODO: fix these tests to take the correct directory name
            (and not break when given the wrong one) *)
   let name = "/tmp/empty" in
@@ -32,42 +33,56 @@ let test_fd () =
   let pid = string_of_int (Unix.getpid ()) in
   let fd_file = "tmp" in
   let lsof_command = "lsof -a -s -p " ^ pid ^ " > " ^ fd_file in
-  ( match Unix.system lsof_command with
-  | Unix.WEXITED r when r = 0 -> ()
-  | _ -> failwith "lsof command didn't succeed" );
-  let lines = ref [] in
-  let extract_fd line =
-    try
-      let pos = Re.Str.search_forward (Re.Str.regexp name) line 0 in
-      let fd = Re.Str.string_after line pos in
-      lines := fd :: !lines
-    with Not_found -> ()
+  let result =
+    ( match Sys.os_type with
+    | "Unix" -> `Ok ()
+    | _ -> `Skip "non-UNIX operating system" )
+    >>? fun () ->
+    ( match Unix.system lsof_command with
+    | Unix.WEXITED 0 -> `Ok ()
+    | Unix.WEXITED _ ->
+        `Skip "failing `lsof` command. Is `lsof` installed on your system?"
+    | Unix.WSIGNALED _ | Unix.WSTOPPED _ ->
+        Alcotest.fail "`lsof` command was interrupted" )
+    >>? fun () ->
+    let lines = ref [] in
+    let extract_fd line =
+      try
+        let pos = Re.Str.search_forward (Re.Str.regexp name) line 0 in
+        let fd = Re.Str.string_after line pos in
+        lines := fd :: !lines
+      with Not_found -> ()
+    in
+    let ic = open_in fd_file in
+    let lines =
+      ( try
+          while true do
+            extract_fd (input_line ic)
+          done
+        with End_of_file -> close_in ic );
+      !lines
+    in
+    let contains sub s =
+      try
+        ignore (Re.Str.search_forward (Re.Str.regexp sub) s 0);
+        true
+      with Not_found -> false
+    in
+    let data, rs = List.partition (contains "data") lines in
+    if List.length data > 2 then
+      Alcotest.fail "Too many file descriptors opened for data files";
+    let log, rs = List.partition (contains "log") rs in
+    if List.length log > 2 then
+      Alcotest.fail "Too many file descriptors opened for log files";
+    let lock, rs = List.partition (contains "lock") rs in
+    if List.length lock > 2 then
+      Alcotest.fail "Too many file descriptors opened for lock files";
+    if List.length rs > 0 then Alcotest.fail "Unknown file descriptors opened";
+    `Ok ()
   in
-  let ic = open_in fd_file in
-  let lines =
-    ( try
-        while true do
-          extract_fd (input_line ic)
-        done
-      with End_of_file -> close_in ic );
-    !lines
-  in
-  let contains sub s =
-    try
-      ignore (Re.Str.search_forward (Re.Str.regexp sub) s 0);
-      true
-    with Not_found -> false
-  in
-  let data, rs = List.partition (contains "data") lines in
-  if List.length data > 2 then
-    Alcotest.failf "Too many file descriptors opened for data files";
-  let log, rs = List.partition (contains "log") rs in
-  if List.length log > 2 then
-    Alcotest.failf "Too many file descriptors opened for log files";
-  let lock, rs = List.partition (contains "lock") rs in
-  if List.length lock > 2 then
-    Alcotest.failf "Too many file descriptors opened for lock files";
-  if List.length rs > 0 then Alcotest.failf "Unknown file descriptors opened"
+  match result with
+  | `Ok () -> ()
+  | `Skip err -> Log.warn (fun m -> m "`test_fd` was skipped: %s" err)
 
 let readonly_s () =
   let { Context.tbl; clone; _ } = Context.full_index () in
