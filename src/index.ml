@@ -87,13 +87,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   exception Invalid_value_size of value
 
-  let append_entry io e =
-    let encoded_key = K.encode e.key in
-    let encoded_value = V.encode e.value in
+  let append_key_value io key value =
+    let encoded_key = K.encode key in
+    let encoded_value = V.encode value in
     if String.length encoded_key <> K.encoded_size then
-      raise (Invalid_key_size e.key);
+      raise (Invalid_key_size key);
     if String.length encoded_value <> V.encoded_size then
-      raise (Invalid_value_size e.value);
+      raise (Invalid_value_size value);
     IO.append io encoded_key;
     IO.append io encoded_value
 
@@ -115,7 +115,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     mutable generation : int64;
     mutable index : index option;
     log : IO.t;
-    log_mem : entry Tbl.t;
+    log_mem : value Tbl.t;
     mutable open_instances : int;
     lock : IO.lock option;
   }
@@ -270,7 +270,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Some { fan_out; io }
       else None
     in
-    iter_io (fun e -> Tbl.replace log_mem e.key e) log;
+    iter_io (fun e -> Tbl.replace log_mem e.key e.value) log;
     { config; generation; log_mem; root; log; index; open_instances = 1; lock }
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
@@ -287,7 +287,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let generation = IO.get_generation t.log in
     let log_offset = IO.offset t.log in
     let new_log_offset = IO.force_offset t.log in
-    let add_log_entry e = Tbl.replace t.log_mem e.key e in
+    let add_log_entry e = Tbl.replace t.log_mem e.key e.value in
     if t.generation <> generation then (
       Tbl.clear t.log_mem;
       iter_io add_log_entry t.log;
@@ -310,12 +310,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.debug (fun l -> l "find %a" K.pp key);
     if t.config.readonly then sync_log t;
     let look_on_disk () =
-      match Tbl.find t.log_mem key with
-      | e -> e.value
-      | exception Not_found -> (
-          match t.index with
-          | Some index -> interpolation_search index key
-          | None -> raise Not_found )
+      try Tbl.find t.log_mem key
+      with Not_found -> (
+        match t.index with
+        | Some index -> interpolation_search index key
+        | None -> raise Not_found )
     in
     look_on_disk ()
 
@@ -329,7 +328,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let append_entry_fanout fan_out entry dst_io =
     Fan.update fan_out entry.key_hash (IO.offset dst_io);
-    append_entry dst_io entry
+    append_key_value dst_io entry.key entry.value
 
   let rec merge_from_log fan_out log log_i hash_e dst_io =
     if log_i >= Array.length log then log_i
@@ -388,8 +387,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       let compare_entry e e' = compare e.key_hash e'.key_hash in
       let b = Array.make (Tbl.length t.log_mem) witness in
       Tbl.fold
-        (fun _ e i ->
-          b.(i) <- e;
+        (fun key value i ->
+          b.(i) <- { key; value; key_hash = K.hash key };
           i + 1)
         t.log_mem 0
       |> ignore;
@@ -434,7 +433,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let get_witness t =
     let exception Found of entry in
-    match Tbl.iter (fun _ entry -> raise (Found entry)) t.log_mem with
+    match
+      Tbl.iter
+        (fun key value -> raise (Found { key; value; key_hash = K.hash key }))
+        t.log_mem
+    with
     | exception Found e -> Some e
     | () -> (
         match t.index with
@@ -454,17 +457,16 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let t = assert_open t in
     Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
-    let entry = { key; key_hash = K.hash key; value } in
-    append_entry t.log entry;
-    Tbl.replace t.log_mem key entry;
+    append_key_value t.log key value;
+    Tbl.replace t.log_mem key value;
     if Int64.compare (IO.offset t.log) (Int64.of_int t.config.log_size) > 0
-    then merge ~witness:entry t
+    then merge ~witness:{ key; key_hash = K.hash key; value } t
 
   let iter f t =
     let t = assert_open t in
     Log.debug (fun l -> l "iter %S" t.root);
     if t.config.readonly then sync_log t;
-    Tbl.iter (fun _ e -> f e.key e.value) t.log_mem;
+    Tbl.iter f t.log_mem;
     may (fun index -> iter_io (fun e -> f e.key e.value) index.io) t.index
 
   let flush t =
