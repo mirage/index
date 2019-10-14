@@ -70,6 +70,8 @@ let may f = function None -> () | Some bf -> f bf
 
 exception RO_not_allowed
 
+exception Closed
+
 module Make (K : Key) (V : Value) (IO : IO) = struct
   type key = K.t
 
@@ -107,7 +109,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   type index = { io : IO.t; fan_out : Fan.t }
 
-  type t = {
+  type instance = {
     config : config;
     root : string;
     mutable generation : int64;
@@ -118,7 +120,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     lock : IO.lock option;
   }
 
+  type t = instance option ref
+
+  let assert_open t =
+    match !t with Some instance -> instance | None -> raise Closed
+
   let clear t =
+    let t = assert_open t in
     Log.debug (fun l -> l "clear %S" t.root);
     t.generation <- 0L;
     IO.clear t.log;
@@ -227,6 +235,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         if t.open_instances <> 0 then (
           Log.debug (fun l -> l "%s found in cache" root);
           t.open_instances <- t.open_instances + 1;
+          let t = ref (Some t) in
           if fresh then clear t;
           t )
         else (
@@ -236,9 +245,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Log.debug (fun l ->
             l "[%s] v fresh=%b readonly=%b" (Filename.basename root) fresh
               readonly);
-        let t = v ~fresh ~readonly ~log_size root in
-        Hashtbl.add roots (root, readonly) t;
-        t
+        let instance = v ~fresh ~readonly ~log_size root in
+        Hashtbl.add roots (root, readonly) instance;
+        ref (Some instance)
     in
     `Staged f
 
@@ -297,6 +306,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     else if log_offset > new_log_offset then assert false
 
   let find t key =
+    let t = assert_open t in
     Log.debug (fun l -> l "find %a" K.pp key);
     if t.config.readonly then sync_log t;
     let look_on_disk () =
@@ -436,10 +446,12 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             Some (decode_entry buf 0) )
 
   let force_merge t =
+    let t = assert_open t in
     Log.debug (fun l -> l "forced merge %S\n" t.root);
     match get_witness t with None -> () | Some witness -> merge ~witness t
 
   let replace t key value =
+    let t = assert_open t in
     Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
     let entry = { key; key_hash = K.hash key; value } in
@@ -449,21 +461,28 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     then merge ~witness:entry t
 
   let iter f t =
+    let t = assert_open t in
     Log.debug (fun l -> l "iter %S" t.root);
     if t.config.readonly then sync_log t;
     Tbl.iter (fun _ e -> f e.key e.value) t.log_mem;
     may (fun index -> iter_io (fun e -> f e.key e.value) index.io) t.index
 
-  let flush t = IO.sync t.log
+  let flush t =
+    let t = assert_open t in
+    IO.sync t.log
 
-  let close t =
-    t.open_instances <- t.open_instances - 1;
-    if t.open_instances = 0 then (
-      Log.debug (fun l -> l "close %S" t.root);
-      if not t.config.readonly then flush t;
-      IO.close t.log;
-      may (fun i -> IO.close i.io) t.index;
-      t.index <- None;
-      Tbl.reset t.log_mem;
-      may (fun lock -> IO.unlock lock) t.lock )
+  let close it =
+    match !it with
+    | None -> ()
+    | Some t ->
+        t.open_instances <- t.open_instances - 1;
+        if t.open_instances = 0 then (
+          Log.debug (fun l -> l "close %S" t.root);
+          if not t.config.readonly then flush it;
+          IO.close t.log;
+          may (fun i -> IO.close i.io) t.index;
+          t.index <- None;
+          Tbl.reset t.log_mem;
+          may (fun lock -> IO.unlock lock) t.lock );
+        it := None
 end
