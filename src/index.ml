@@ -288,15 +288,18 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
 
-  let interpolation_search index key =
+  let interpolation_search ~root index key =
     let hashed_key = K.hash key in
     let low_bytes, high_bytes = Fan.search index.fan_out hashed_key in
     let low, high =
       Int64.(div low_bytes entry_sizeL, div high_bytes entry_sizeL)
     in
-    Search.interpolation_search (IOArray.v index.io) key ~low ~high
+    Search.interpolation_search ~root (IOArray.v index.io) key ~low ~high
 
   let try_load_log t =
+    Log.debug (fun l ->
+        l "[%s] checking for a newly created log file"
+          (Filename.basename t.root));
     let log_path = log_path t.root in
     if Sys.file_exists log_path then (
       let io =
@@ -358,10 +361,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           value
         with Not_found -> (
           match t.index with
-          | Some index ->
-              Log.debug (fun l ->
-                  l "[%s] looking in index" (Filename.basename t.root));
-              interpolation_search index key
+          | Some index -> interpolation_search ~root:t.root index key
           | None ->
               Log.debug (fun l ->
                   l "[%s] not found" (Filename.basename t.root));

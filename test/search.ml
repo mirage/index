@@ -62,7 +62,7 @@ let interpolation_unique () =
   let length = EltArray.length array in
   Array.iter
     (fun (i, v) ->
-      Search.interpolation_search array i
+      Search.interpolation_search ~root:"test" array i
         ~low:Int64.(zero)
         ~high:Int64.(pred length)
       |> Alcotest.(check string) "" v)
