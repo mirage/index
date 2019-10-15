@@ -110,12 +110,12 @@ module type S = sig
       of [k]. *)
 
   val iter : ?no_duplicates:bool -> (key -> value -> unit) -> t -> unit
-  (** Iterates over the index bindings. Order is not specified.
-      In case of recent replacements of existing values (after the last merge),
-      this will hit both the new and old bindings.
+  (** Iterates over the index bindings. Order is not specified. In case of
+      recent replacements of existing values (after the last merge), this will
+      hit both the new and old bindings.
 
-      If [no_duplicates] is [true], then only the most recently added binding
-      will be hit; but this may result in significant cost. *)
+      If [no_duplicates] is [true], only the most recently-added binding of
+      each key will be hit; this may result in significant run-time cost. *)
 
   val force_merge : t -> unit
   (** [force_merge t] forces a merge for [t]. *)

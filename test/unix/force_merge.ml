@@ -174,8 +174,11 @@ let test_iter () =
     let { Context.rw; _ } = Context.full_index ~size:4 ~log_size:4 () in
     let k = Key.v () in
     let v1 = Value.v () in
+    (* the [k -> v1] binding induces a merge operation, since size > log_size *)
     Index.replace rw k v1;
     let v2 = Value.v () in
+    (* the [k -> v2] binding will be stored in the log, resulting in two
+    bindings for [k]: one each in the log and index. *)
     Index.replace rw k v2;
     (rw, k)
   in
