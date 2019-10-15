@@ -125,11 +125,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   type t = instance option ref
 
-  let assert_open t =
+  let check_open t =
     match !t with Some instance -> instance | None -> raise Closed
 
   let clear t =
-    let t = assert_open t in
+    let t = check_open t in
     Log.debug (fun l -> l "clear %S" t.root);
     if t.config.readonly then raise RO_not_allowed;
     t.generation <- 0L;
@@ -335,7 +335,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         else if log_offset > new_log_offset then assert false
 
   let find t key =
-    let t = assert_open t in
+    let t = check_open t in
     Log.debug (fun l -> l "find %a" K.pp key);
     if t.config.readonly then sync_log t;
     match t.log with
@@ -482,12 +482,12 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
                 Some (decode_entry buf 0) ) )
 
   let force_merge t =
-    let t = assert_open t in
+    let t = check_open t in
     Log.debug (fun l -> l "forced merge %S\n" t.root);
     match get_witness t with None -> () | Some witness -> merge ~witness t
 
   let replace t key value =
-    let t = assert_open t in
+    let t = check_open t in
     Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
     let log = assert_and_get t.log in
@@ -497,7 +497,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     then merge ~witness:{ key; key_hash = K.hash key; value } t
 
   let iter f t =
-    let t = assert_open t in
+    let t = check_open t in
     Log.debug (fun l -> l "iter %S" t.root);
     if t.config.readonly then sync_log t;
     match t.log with
@@ -514,7 +514,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     IO.sync log.io
 
   let flush t =
-    let instance = assert_open t in
+    let instance = check_open t in
     flush_instance instance
 
   let close it =
