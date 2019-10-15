@@ -314,9 +314,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let sync_log t =
     Log.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
+    let no_changes () =
+      Log.debug (fun l ->
+          l "[%s] no changes detected" (Filename.basename t.root))
+    in
     (match t.log with None -> try_load_log t | Some _ -> ());
     match t.log with
-    | None -> ()
+    | None -> no_changes ()
     | Some log ->
         let generation = IO.get_generation log.io in
         let log_offset = IO.offset log.io in
@@ -347,6 +351,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
                 (Filename.basename t.root));
           iter_io add_log_entry log.io ~min:log_offset )
         else if log_offset > new_log_offset then assert false
+        else no_changes ()
 
   let find t key =
     let t = check_open t in
