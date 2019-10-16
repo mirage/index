@@ -266,10 +266,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let config = { log_size = log_size * entry_size; readonly; fresh } in
     let log_path = log_path root in
     let log =
-      if readonly && not (Sys.file_exists log_path) then None
+      if readonly && not (Sys.file_exists log_path) then (
+        Log.debug (fun l ->
+            l "[%s] no log file detected." (Filename.basename root));
+        None )
       else
-        let mem = Tbl.create 1024 in
         let io = IO.v ~fresh ~readonly ~generation:0L ~fan_size:0L log_path in
+        let entries = Int64.div (IO.offset io) entry_sizeL in
+        Log.debug (fun l ->
+            l "[%s] log file detected. Loading %Ld entries"
+              (Filename.basename root) entries);
+        let mem = Tbl.create (Int64.to_int entries) in
         iter_io (fun e -> Tbl.replace mem e.key e.value) io;
         Some { io; mem }
     in
@@ -278,11 +285,18 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     let index =
       let index_path = index_path root in
-      if Sys.file_exists index_path then
+      if Sys.file_exists index_path then (
         let io = IO.v ~fresh ~readonly ~generation ~fan_size:0L index_path in
+        let entries = Int64.div (IO.offset io) entry_sizeL in
+        Log.debug (fun l ->
+            l "[%s] index file detected. Loading %Ld entries"
+              (Filename.basename root) entries);
         let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
-        Some { fan_out; io }
-      else None
+        Some { fan_out; io } )
+      else (
+        Log.debug (fun l ->
+            l "[%s] no index file detected." (Filename.basename root));
+        None )
     in
     { config; generation; log; root; index; open_instances = 1; lock }
 
