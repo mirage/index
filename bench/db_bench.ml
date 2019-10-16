@@ -7,6 +7,24 @@ let src = Logs.Src.create "db_bench"
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
+let all = ref false
+
+and with_lmdb = ref false
+
+and with_index = ref false
+
+let speclist =
+  [
+    ("-all", Arg.Set all, "run all benchmarks");
+    ("-lmdb", Arg.Set with_lmdb, "run the lmdb benchmarks");
+    ("-index", Arg.Set with_index, "run the index benchmarks");
+  ]
+
+let usage =
+  "usage: " ^ Sys.argv.(0)
+  ^ " [-all | -lmdb | -index], if no argument provided then minimal index \
+     benchmarks are run"
+
 let seed = 1
 
 let () = Random.init seed
@@ -43,21 +61,6 @@ let populate () =
       let v = Context.Value.v () in
       let () = random.(i) <- (k, v) in
       loop (i + 1)
-  in
-  loop 0
-
-let reshuffle () =
-  let rec loop i =
-    if i = 100 then ()
-    else (
-      Array.iteri
-        (fun i _ ->
-          let j = Random.int nb_entries in
-          let temp = random.(i) in
-          random.(i) <- random.(j);
-          random.(j) <- temp)
-        random;
-      loop (i + 1) )
   in
   loop 0
 
@@ -278,57 +281,88 @@ module Lmdb = struct
   let close env = closedir env
 end
 
-let main () =
+let init () =
   Common.report ();
   Index.init ();
   Lmdb.cleanup ();
-
   Log.app (fun l -> l "Keys: %d bytes each." key_size);
   Log.app (fun l -> l "Values: %d bytes each." value_size);
   Log.app (fun l -> l "Entries: %d." nb_entries);
   Log.app (fun l -> l "Log size: %d." log_size);
-  populate ();
+  populate ()
+
+let index_main () =
   Log.app (fun l -> l "\n");
   Log.app (fun l -> l "Fill in increasing order of keys");
   Index.write_seq ();
-  Lmdb.fail_on_error Lmdb.write_seq;
-
   Log.app (fun l -> l "\n");
   Log.app (fun l -> l "Fill in increasing order of hashes");
   Index.write_seq_hash ();
-
   Log.app (fun l -> l "\n");
   Log.app (fun l -> l "Fill in decreasing order of hashes");
   Index.write_rev_seq_hash ();
-
   populate ();
   Log.app (fun l -> l "\n");
   Log.app (fun l -> l "Fill in random order and sync after each write");
   Index.write_sync ();
-  Lmdb.fail_on_error Lmdb.write_sync;
-
   Log.app (fun l -> l "\n");
   Log.app (fun l -> l "Fill in random order");
   let rw = Index.write_random () in
-  let lmdb, env = R.get_ok (Lmdb.write_random ()) in
   Log.app (fun l -> l "\n");
   Log.app (fun l -> l "Read in random order ");
   Index.read_random rw;
-  Lmdb.read_random lmdb;
-
   Log.app (fun l -> l "\n");
   Log.app (fun l ->
       l
         "Read in sequential order (increasing order of hashes for index, \
          increasing order of keys for lmdb)");
   Index.read_seq rw;
-  Lmdb.read_seq ();
-
   Log.app (fun l -> l "\n");
   Log.app (fun l -> l "Overwrite");
   Index.overwrite rw;
+  Index.close rw
+
+let lmdb_main () =
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Fill in increasing order of keys");
+  Lmdb.fail_on_error Lmdb.write_seq;
+  populate ();
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Fill in random order and sync after each write");
+  Lmdb.fail_on_error Lmdb.write_sync;
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Fill in random order");
+  let lmdb, env = R.get_ok (Lmdb.write_random ()) in
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Read in random order ");
+  Lmdb.read_random lmdb;
+  Log.app (fun l -> l "\n");
+  Log.app (fun l ->
+      l
+        "Read in sequential order (increasing order of hashes for index, \
+         increasing order of keys for lmdb)");
+  Lmdb.read_seq ();
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Overwrite");
   Lmdb.overwrite lmdb;
-  Index.close rw;
   Lmdb.close env
 
-let () = main ()
+let minimal_benchs () =
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Fill in random order");
+  let rw = Index.write_random () in
+  Log.app (fun l -> l "\n");
+  Log.app (fun l -> l "Read in random order ");
+  Index.read_random rw;
+  Log.app (fun l -> l "\n");
+  Log.app (fun l ->
+      l "Read in sequential order (increasing order of hashes for index)");
+  Index.read_seq rw;
+  Index.close rw
+
+let () =
+  Arg.parse speclist ignore usage;
+  init ();
+  if !all || !with_index then index_main ();
+  if !all || !with_lmdb then lmdb_main ();
+  if not (!all || !with_lmdb || !with_index) then minimal_benchs ()
