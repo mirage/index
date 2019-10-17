@@ -1,3 +1,7 @@
+let src = Logs.Src.create "index_unix" ~doc:"Index_unix"
+
+module Log = (val Logs.src_log src : Logs.LOG)
+
 exception RO_not_allowed
 
 let current_version = "00000001"
@@ -318,7 +322,9 @@ module IO : Index.IO = struct
           let fan_size = Raw.Fan.get_size raw in
           v ~fan_size ~offset ~version raw
 
-  type lock = Unix.file_descr
+  type lock = { path : string; fd : Unix.file_descr }
+
+  exception Locked of string
 
   let unsafe_lock op f =
     mkdir (Filename.dirname f);
@@ -339,26 +345,27 @@ module IO : Index.IO = struct
         Unix.close fd;
         raise e
 
-  exception Locked
-
-  let err_rw_lock lock =
-    let ic = open_in lock in
+  let err_rw_lock path =
+    let ic = open_in path in
     let line = input_line ic in
     close_in ic;
     let pid = int_of_string line in
-    Fmt.epr
-      "Cannot lock %s: index is already opened in write mode by PID %d. \
-       Current PID is %d.\n\
-       %!"
-      lock pid (Unix.getpid ());
-    raise Locked
+    Log.err (fun l ->
+        l
+          "Cannot lock %s: index is already opened in write mode by PID %d. \
+           Current PID is %d."
+          path pid (Unix.getpid ()));
+    raise (Locked path)
 
   let lock path =
+    Log.debug (fun l -> l "Locking %s" path);
     match unsafe_lock Unix.F_TLOCK path with
-    | Some fd -> fd
+    | Some fd -> { path; fd }
     | None -> err_rw_lock path
 
-  let unlock fd = Unix.close fd
+  let unlock { path; fd } =
+    Log.debug (fun l -> l "Unlocking %s" path);
+    Unix.close fd
 end
 
 module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO)
