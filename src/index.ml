@@ -12,7 +12,10 @@ module Stats = struct
     mutable nb_writes : int;
     mutable nb_merge : int;
     mutable nb_replace : int;
+    mutable merge_time : float;
   }
+
+  let time = ref 0.0
 
   let fresh_stats () =
     {
@@ -22,6 +25,7 @@ module Stats = struct
       nb_writes = 0;
       nb_merge = 0;
       nb_replace = 0;
+      merge_time = 0.0;
     }
 
   let stats = fresh_stats ()
@@ -32,7 +36,8 @@ module Stats = struct
     stats.bytes_written <- 0;
     stats.nb_writes <- 0;
     stats.nb_merge <- 0;
-    stats.nb_replace <- 0
+    stats.nb_replace <- 0;
+    stats.merge_time <- 0.0
 
   let get () = stats
 
@@ -54,9 +59,13 @@ module Stats = struct
     incr_bytes_written n;
     incr_nb_writes ()
 
-  let start_merge () = incr_nb_merge ()
+  (* we assume that there are no concurrent merges *)
+  let start_merge () =
+    incr_nb_merge ();
+    time := Sys.time ()
 
-  let end_merge () = ()
+  let end_merge () =
+    stats.merge_time <- Sys.time () -. !time +. stats.merge_time
 end
 
 module type Key = sig

@@ -91,7 +91,8 @@ let print_results db f =
   let ops_sec = float_of_int nb_entries /. time in
   Log.app (fun l ->
       l "%s: %f micros/op; \t %f op/s; \t %f MB/s; \t total time = %fs." db
-        sec_op ops_sec mb time)
+        sec_op ops_sec mb time);
+  time
 
 module Index = struct
   module Index = Index_unix.Make (Context.Key) (Context.Value)
@@ -100,7 +101,7 @@ module Index = struct
 
   let print_results = print_results "index"
 
-  let write_amplif () =
+  let write_amplif ?exec_time () =
     let stats = Stats.get () in
     let ratio_bytes =
       float_of_int stats.bytes_written /. float_of_int (entry_size * nb_entries)
@@ -110,7 +111,13 @@ module Index = struct
     in
     Log.app (fun l ->
         l "\twrite amplification in bytes = %f; in nb of writes = %f; "
-          ratio_bytes ratio_reads)
+          ratio_bytes ratio_reads);
+    match exec_time with
+    | None -> ()
+    | Some exec_time ->
+        let ratio_merge = stats.merge_time /. exec_time in
+        Log.app (fun l ->
+            l "\tmerge time = %f; ratio = %f; " stats.merge_time ratio_merge)
 
   let read_amplif () =
     let stats = Stats.get () in
@@ -149,15 +156,15 @@ module Index = struct
     Log.debug (fun l -> l "write_radom");
     Stats.reset_stats ();
     let rw = Index.v ~fresh:true ~log_size (root // "fill_random") in
-    print_results (write ~with_metrics:false rw);
-    write_amplif ();
+    let exec_time = print_results (write ~with_metrics:false rw) in
+    write_amplif ~exec_time ();
     rw
 
   let write_seq () =
     Stats.reset_stats ();
     let rw = Index.v ~fresh:true ~log_size (root // "fill_seq") in
     Array.sort (fun a b -> String.compare (fst a) (fst b)) random;
-    print_results (write ~with_metrics:false rw);
+    ignore (print_results (write ~with_metrics:false rw));
     write_amplif ();
     Index.close rw
 
@@ -166,7 +173,7 @@ module Index = struct
     let rw = Index.v ~fresh:true ~log_size (root // "fill_seq_hash") in
     let hash e = Context.Key.hash (fst e) in
     Array.sort (fun a b -> compare (hash a) (hash b)) random;
-    print_results (write ~with_metrics:false rw);
+    ignore (print_results (write ~with_metrics:false rw));
     write_amplif ();
     Index.close rw
 
@@ -178,7 +185,7 @@ module Index = struct
     let write rw =
       Array.fold_right (fun (k, v) () -> Index.replace rw k v) random
     in
-    print_results (write rw);
+    ignore (print_results (write rw));
     write_amplif ();
     Index.close rw
 
@@ -192,24 +199,24 @@ module Index = struct
           Index.flush rw)
         random
     in
-    print_results (write rw);
+    ignore (print_results (write rw));
     write_amplif ();
     Index.close rw
 
   let overwrite rw =
     Stats.reset_stats ();
-    print_results (write ~with_metrics:false rw);
+    ignore (print_results (write ~with_metrics:false rw));
     write_amplif ()
 
   let read_random r =
     Stats.reset_stats ();
-    print_results (read ~with_metrics:false r);
+    ignore (print_results (read ~with_metrics:false r));
     read_amplif ()
 
   let read_seq r =
     Stats.reset_stats ();
     let read () = Index.iter (fun _ _ -> ()) r in
-    print_results read;
+    ignore (print_results read);
     read_amplif ()
 
   let close rw = Index.close rw
@@ -261,14 +268,14 @@ module Lmdb = struct
 
   let write_random () =
     get_wtxn root flags >>| fun (rw, env) ->
-    print_results (write rw);
+    ignore (print_results (write rw));
     print_stats rw;
     (rw, env)
 
   let write_seq () =
     Array.sort (fun a b -> String.compare (fst a) (fst b)) random;
     get_wtxn root flags >>| fun (rw, env) ->
-    print_results (write rw);
+    ignore (print_results (write rw));
     closedir env
 
   let write_sync () =
@@ -280,12 +287,12 @@ module Lmdb = struct
               Lmdb.put_string txn ddb k v >>= fun () -> sync env))
         ls
     in
-    print_results (write rw env random);
+    ignore (print_results (write rw env random));
     closedir env
 
-  let overwrite rw = print_results (write rw)
+  let overwrite rw = ignore (print_results (write rw))
 
-  let read_random r = print_results (read r)
+  let read_random r = ignore (print_results (read r))
 
   (*use a new db, created without the flag Lmdb.NoRdAhead*)
   let read_seq () =
@@ -307,7 +314,7 @@ module Lmdb = struct
       >>| fun () -> cursor_close cursor
     in
     let aux_read r () = fail_on_error (read r) in
-    print_results (aux_read rw);
+    ignore (print_results (aux_read rw));
     closedir env
 
   let close env = closedir env

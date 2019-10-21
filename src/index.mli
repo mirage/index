@@ -136,6 +136,7 @@ module Stats : sig
     mutable nb_writes : int;
     mutable nb_merge : int;
     mutable nb_replace : int;
+    mutable merge_time : float;
   }
 
   val reset_stats : unit -> unit
