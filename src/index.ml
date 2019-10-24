@@ -122,8 +122,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     mutable log_async : log option;
     mutable open_instances : int;
     lock : IO.lock option;
-    mutable merge_lock : Mutex.t;
-    mutable rename_lock : Mutex.t;
+    mutable merge_lock : IO.Mutex.t;
+    mutable rename_lock : IO.Mutex.t;
   }
 
   type t = instance option ref
@@ -136,23 +136,22 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.debug (fun l -> l "clear %S" t.root);
     if t.config.readonly then raise RO_not_allowed;
     t.generation <- 0L;
-    Mutex.lock t.merge_lock;
-    let log = assert_and_get t.log in
-    IO.clear log.io;
-    Tbl.clear log.mem;
-    may
-      (fun l ->
-        IO.clear l.io;
-        IO.close l.io)
-      t.log_async;
-    may
-      (fun (i : index) ->
-        IO.clear i.io;
-        IO.close i.io)
-      t.index;
-    t.index <- None;
-    t.log_async <- None;
-    Mutex.unlock t.merge_lock
+    IO.Mutex.with_lock t.merge_lock (fun () ->
+        let log = assert_and_get t.log in
+        IO.clear log.io;
+        Tbl.clear log.mem;
+        may
+          (fun l ->
+            IO.clear l.io;
+            IO.close l.io)
+          t.log_async;
+        may
+          (fun (i : index) ->
+            IO.clear i.io;
+            IO.close i.io)
+          t.index;
+        t.index <- None;
+        t.log_async <- None)
 
   let flush_instance instance =
     Log.debug (fun l ->
@@ -164,9 +163,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let flush t =
     let instance = check_open t in
     Log.info (fun l -> l "[%s] flush" (Filename.basename instance.root));
-    Mutex.lock instance.rename_lock;
-    flush_instance instance;
-    Mutex.unlock instance.rename_lock
+    IO.Mutex.with_lock instance.rename_lock (fun () -> flush_instance instance)
 
   let ( // ) = Filename.concat
 
@@ -330,8 +327,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       root;
       index;
       open_instances = 1;
-      merge_lock = Mutex.create ();
-      rename_lock = Mutex.create ();
+      merge_lock = IO.Mutex.create ();
+      rename_lock = IO.Mutex.create ();
       lock;
     }
 
@@ -421,36 +418,21 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               l "[%s] found in %s" (Filename.basename t.root) name);
           ans
     in
-    Mutex.lock t.rename_lock;
-    if t.config.readonly then sync_log t;
-    let ans =
-      try find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
-      with Not_found -> (
+    IO.Mutex.with_lock t.rename_lock (fun () ->
+        if t.config.readonly then sync_log t;
         try
-          find_if_exists ~name:"log_asyc"
-            ~find:(fun log -> Tbl.find log.mem)
-            t.log_async
+          find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
         with Not_found -> (
-          match t.index with
-          | None ->
-              Log.debug (fun l ->
-                  l "[%s] not found" (Filename.basename t.root));
-              Mutex.unlock t.rename_lock;
-              raise Not_found
-          | Some index -> (
-              match interpolation_search index key with
-              | Some e ->
-                  Log.debug (fun l ->
-                      l "[%s] found in index" (Filename.basename t.root));
-                  e
-              | None ->
-                  Log.debug (fun l ->
-                      l "[%s] not found in index" (Filename.basename t.root));
-                  Mutex.unlock t.rename_lock;
-                  raise Not_found ) ) )
-    in
-    Mutex.unlock t.rename_lock;
-    ans
+          try
+            find_if_exists ~name:"log_async"
+              ~find:(fun log -> Tbl.find log.mem)
+              t.log_async
+          with Not_found -> (
+            match
+              find_if_exists ~name:"index" ~find:interpolation_search t.index
+            with
+            | Some e -> e
+            | None -> raise Not_found ) ))
 
   let mem t key =
     let instance = check_open t in
@@ -516,7 +498,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     (go [@tailcall]) 0L 0 0
 
   let merge ~witness t =
-    Mutex.lock t.merge_lock;
+    IO.Mutex.lock t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
     flush_instance t;
     let log_async =
@@ -575,27 +557,26 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       in
       Fan.finalize index.fan_out;
       IO.set_fanout merge (Fan.export index.fan_out);
-      Mutex.lock t.rename_lock;
-      IO.rename ~src:merge ~dst:index.io;
-      t.index <- Some index;
-      IO.clear ~keep_generation:true log.io;
-      Tbl.clear log.mem;
-      IO.set_generation log.io generation;
-      t.generation <- generation;
-      let log_async = assert_and_get t.log_async in
-      Tbl.iter
-        (fun key value ->
-          Tbl.replace log.mem key value;
-          append_key_value log.io key value)
-        log_async.mem;
-      IO.sync log.io;
-      t.log_async <- None;
-      Mutex.unlock t.rename_lock;
+      IO.Mutex.with_lock t.rename_lock (fun () ->
+          IO.rename ~src:merge ~dst:index.io;
+          t.index <- Some index;
+          IO.clear ~keep_generation:true log.io;
+          Tbl.clear log.mem;
+          IO.set_generation log.io generation;
+          t.generation <- generation;
+          let log_async = assert_and_get t.log_async in
+          Tbl.iter
+            (fun key value ->
+              Tbl.replace log.mem key value;
+              append_key_value log.io key value)
+            log_async.mem;
+          IO.sync log.io;
+          t.log_async <- None);
       IO.clear log_async.io;
       IO.close log_async.io;
-      Mutex.unlock t.merge_lock
+      IO.Mutex.unlock t.merge_lock
     in
-    ignore (Thread.create go ())
+    IO.async go
 
   let get_witness t =
     match t.log with
@@ -631,18 +612,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.info (fun l ->
         l "[%s] replace %a %a" (Filename.basename t.root) K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
-    Mutex.lock t.rename_lock;
-    let log =
-      match t.log_async with
-      | Some async_log -> async_log
-      | None -> assert_and_get t.log
-    in
-    append_key_value log.io key value;
-    Tbl.replace log.mem key value;
     let do_merge =
-      Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0
+      IO.Mutex.with_lock t.rename_lock (fun () ->
+          let log =
+            match t.log_async with
+            | Some async_log -> async_log
+            | None -> assert_and_get t.log
+          in
+          append_key_value log.io key value;
+          Tbl.replace log.mem key value;
+          Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
     in
-    Mutex.unlock t.rename_lock;
     if do_merge then merge ~witness:{ key; key_hash = K.hash key; value } t
 
   let iter f t =
@@ -663,16 +643,15 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     | Some t ->
         (* XXX This piece of code is not thread safe. *)
         Log.info (fun l -> l "[%s] close" (Filename.basename t.root));
-        Mutex.lock t.merge_lock;
-        it := None;
-        t.open_instances <- t.open_instances - 1;
-        if t.open_instances = 0 then (
-          Log.debug (fun l ->
-              l "[%s] last open instance: closing the file descriptor"
-                (Filename.basename t.root));
-          if not t.config.readonly then flush_instance t;
-          may (fun l -> IO.close l.io) t.log;
-          may (fun (i : index) -> IO.close i.io) t.index;
-          may (fun lock -> IO.unlock lock) t.lock );
-        Mutex.unlock t.merge_lock
+        IO.Mutex.with_lock t.merge_lock (fun () ->
+            it := None;
+            t.open_instances <- t.open_instances - 1;
+            if t.open_instances = 0 then (
+              Log.debug (fun l ->
+                  l "[%s] last open instance: closing the file descriptor"
+                    (Filename.basename t.root));
+              if not t.config.readonly then flush_instance t;
+              may (fun l -> IO.close l.io) t.log;
+              may (fun (i : index) -> IO.close i.io) t.index;
+              may (fun lock -> IO.unlock lock) t.lock ))
 end

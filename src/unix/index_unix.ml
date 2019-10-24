@@ -367,6 +367,24 @@ module IO : Index.IO = struct
   let unlock { path; fd } =
     Log.debug (fun l -> l "Unlocking %s" path);
     Unix.close fd
+
+  module Mutex = struct
+    include Mutex
+
+    let with_lock t f =
+      Mutex.lock t;
+      try
+        let ans = f () in
+        Mutex.unlock t;
+        ans
+      with e ->
+        Mutex.unlock t;
+        raise e
+  end
+
+  let () = Logs_threaded.enable ()
+
+  let async f = ignore (Thread.create f ())
 end
 
 module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO)

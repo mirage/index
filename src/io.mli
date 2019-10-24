@@ -44,4 +44,18 @@ module type S = sig
   val lock : string -> lock
 
   val unlock : lock -> unit
+
+  module Mutex : sig
+    type t
+
+    val create : unit -> t
+
+    val lock : t -> unit
+
+    val unlock : t -> unit
+
+    val with_lock : t -> (unit -> 'a) -> 'a
+  end
+
+  val async : (unit -> 'a) -> unit
 end
