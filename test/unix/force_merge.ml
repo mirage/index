@@ -166,13 +166,9 @@ let readonly_and_merge () =
     test_one_entry r2 k2 v2;
     test_one_entry r3 k2 v2
   in
-  let rec loop i =
-    if i = 0 then ()
-    else (
-      interleave ();
-      loop (i - 1) )
-  in
-  loop 10;
+  for _ = 1 to 10 do
+    interleave ()
+  done;
   test_fd ()
 
 let _write_after_merge () =
