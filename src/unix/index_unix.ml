@@ -223,9 +223,14 @@ module IO : Index.IO = struct
 
   let version t = t.version
 
-  let get_generation t = Raw.Generation.get t.raw
+  let get_generation t =
+    let i = Raw.Generation.get t.raw in
+    Log.debug (fun m -> m "get_generation: %Ld" i);
+    i
 
-  let set_generation t = Raw.Generation.set t.raw
+  let set_generation t i =
+    Log.debug (fun m -> m "set_generation: %Ld" i);
+    Raw.Generation.set t.raw i
 
   let get_fanout t = Raw.Fan.get t.raw
 
