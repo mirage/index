@@ -268,14 +268,14 @@ module IO : Index.IO = struct
 
   let buffers = Hashtbl.create 256
 
-  let buffer file =
+  let buffer file readonly =
     try
-      let buf = Hashtbl.find buffers file in
+      let buf = Hashtbl.find buffers (file, readonly) in
       Buffer.clear buf;
       buf
     with Not_found ->
       let buf = Buffer.create (4 * 1024) in
-      Hashtbl.add buffers file buf;
+      Hashtbl.add buffers (file, readonly) buf;
       buf
 
   let () = assert (String.length current_version = 8)
@@ -291,7 +291,7 @@ module IO : Index.IO = struct
         raw;
         readonly;
         fan_size;
-        buf = buffer file;
+        buf = buffer file readonly;
         flushed = header ++ offset;
       }
     in
