@@ -169,11 +169,34 @@ let readonly_and_merge () =
   loop 10;
   test_fd ()
 
+let hook_merge () =
+  let m = Mutex.create () in
+  let { Context.rw; clone; _ } = Context.full_index () in
+  let w = rw in
+  let r1 = clone ~readonly:true in
+  let k1 = Key.v () in
+  let v1 = Value.v () in
+  Index.replace w k1 v1;
+  let test () =
+    Mutex.lock m;
+    test_one_entry w k1 v1;
+    Mutex.unlock m
+  in
+  let hook () =
+    Mutex.lock m;
+    test_one_entry r1 k1 v1;
+    Mutex.unlock m
+  in
+  let test_merge () = Index.force_merge ~hook w in
+  ignore (Thread.create test ());
+  test_merge ()
+
 let tests =
   [
     ("readonly in sequence", `Quick, readonly_s);
     ("readonly interleaved", `Quick, readonly);
     ("interleaved merge", `Quick, readonly_and_merge);
+    ("hook merge", `Quick, hook_merge);
   ]
 
 (* Unix.sleep 10 *)

@@ -59,7 +59,7 @@ module type S = sig
 
   val iter : (key -> value -> unit) -> t -> unit
 
-  val force_merge : t -> unit
+  val force_merge : ?hook:(unit -> unit) -> t -> unit
 
   val flush : t -> unit
 
@@ -406,7 +406,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let find t key =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] find %a" (Filename.basename t.root) K.pp key);
+    Log.info (fun l ->
+        l "[%s] ro= %b find %a" (Filename.basename t.root) t.config.readonly
+          K.pp key);
     let find_if_exists ~name ~find = function
       | None ->
           Log.debug (fun l ->
@@ -497,7 +499,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     (go [@tailcall]) 0L 0 0
 
-  let merge ~witness t =
+  let merge ?hook ~witness t =
     IO.Mutex.lock t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
     flush_instance t;
@@ -559,6 +561,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       IO.set_fanout merge (Fan.export index.fan_out);
       IO.Mutex.with_lock t.rename_lock (fun () ->
           IO.rename ~src:merge ~dst:index.io;
+          (match hook with Some f -> f () | None -> ());
           t.index <- Some index;
           IO.clear ~keep_generation:true log.io;
           Tbl.clear log.mem;
@@ -599,13 +602,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
                 assert (n = entry_size);
                 Some (decode_entry buf 0) ) )
 
-  let force_merge t =
+  let force_merge ?hook t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
     match get_witness t with
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
-    | Some witness -> merge ~witness t
+    | Some witness -> merge ?hook ~witness t
 
   let replace t key value =
     let t = check_open t in

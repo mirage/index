@@ -114,7 +114,7 @@ module type S = sig
       recent replacements of existing values (after the last merge), this will
       hit both the new and old bindings. *)
 
-  val force_merge : t -> unit
+  val force_merge : ?hook:(unit -> unit) -> t -> unit
   (** [force_merge t] forces a merge for [t]. *)
 
   val flush : t -> unit
