@@ -117,6 +117,7 @@ let readonly_and_merge () =
     let k1 = Key.v () in
     let v1 = Value.v () in
     Index.replace w k1 v1;
+    Index.flush w;
     Index.force_merge w;
     test_one_entry r1 k1 v1;
     test_one_entry r2 k1 v1;
@@ -125,6 +126,7 @@ let readonly_and_merge () =
     let k2 = Key.v () in
     let v2 = Value.v () in
     Index.replace w k2 v2;
+    Index.flush w;
     test_one_entry r1 k1 v1;
     Index.force_merge w;
     test_one_entry r2 k2 v2;
@@ -136,15 +138,18 @@ let readonly_and_merge () =
     let v3 = Value.v () in
     test_one_entry r1 k1 v1;
     Index.replace w k2 v2;
+    Index.flush w;
     Index.force_merge w;
     test_one_entry r1 k1 v1;
     Index.replace w k3 v3;
+    Index.flush w;
     Index.force_merge w;
     test_one_entry r3 k3 v3;
 
     let k2 = Key.v () in
     let v2 = Value.v () in
     Index.replace w k2 v2;
+    Index.flush w;
     test_one_entry w k2 v2;
     Index.force_merge w;
     test_one_entry w k2 v2;
@@ -154,6 +159,7 @@ let readonly_and_merge () =
     let k2 = Key.v () in
     let v2 = Value.v () in
     Index.replace w k2 v2;
+    Index.flush w;
     test_one_entry r2 k1 v1;
     Index.force_merge w;
     test_one_entry w k2 v2;
@@ -169,34 +175,51 @@ let readonly_and_merge () =
   loop 10;
   test_fd ()
 
-let hook_merge () =
+let _write_after_merge () =
   let m = Mutex.create () in
   let { Context.rw; clone; _ } = Context.full_index () in
   let w = rw in
   let r1 = clone ~readonly:true in
   let k1 = Key.v () in
   let v1 = Value.v () in
+  let k2 = Key.v () in
+  let v2 = Value.v () in
   Index.replace w k1 v1;
-  let test () =
-    Mutex.lock m;
-    test_one_entry w k1 v1;
-    Mutex.unlock m
-  in
   let hook () =
     Mutex.lock m;
-    test_one_entry r1 k1 v1;
+    Index.replace w k2 v2;
     Mutex.unlock m
   in
   let test_merge () = Index.force_merge ~hook w in
-  ignore (Thread.create test ());
-  test_merge ()
+  test_merge ();
+  test_one_entry r1 k1 v1;
+  test_one_entry r1 k2 v2
+
+let _write_async () =
+  let m = Mutex.create () in
+  let { Context.rw; clone; _ } = Context.full_index () in
+  let w = rw in
+  let r1 = clone ~readonly:true in
+  let k1 = Key.v () in
+  let v1 = Value.v () in
+  let k2 = Key.v () in
+  let v2 = Value.v () in
+  Index.replace w k1 v1;
+  let hook () =
+    Mutex.lock m;
+    Index.replace w k2 v2;
+    Mutex.unlock m
+  in
+  Index.force_merge ~hook w;
+  Index.flush w;
+  test_one_entry r1 k1 v1;
+  test_one_entry r1 k2 v2
 
 let tests =
   [
     ("readonly in sequence", `Quick, readonly_s);
     ("readonly interleaved", `Quick, readonly);
     ("interleaved merge", `Quick, readonly_and_merge);
-    ("hook merge", `Quick, hook_merge);
   ]
 
 (* Unix.sleep 10 *)
