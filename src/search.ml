@@ -52,12 +52,7 @@ module type S = sig
   module Array : ARRAY with type elt = Entry.t
 
   val interpolation_search :
-    root:string ->
-    Array.t ->
-    Entry.Key.t ->
-    low:int64 ->
-    high:int64 ->
-    Entry.Value.t
+    Array.t -> Entry.Key.t -> low:int64 -> high:int64 -> Entry.Value.t option
 end
 
 module Make
@@ -85,49 +80,42 @@ module Make
     let ( > ) a b = compare a b > 0
   end
 
-  let not_found root =
-    Log.debug (fun l -> l "[%s] not found in index" (Filename.basename root));
-    raise Not_found
-
-  let found root entry =
-    Log.debug (fun l -> l "[%s] found in index" (Filename.basename root));
-    Entry.to_value entry
-
-  let look_around ~root array key key_metric index =
+  let look_around array key key_metric index =
     let rec search (op : int64 -> int64) curr =
       let i = op curr in
-      if i < 0L || i >= Array.length array then not_found root
+      if i < 0L || i >= Array.length array then None
       else
         let e = array.(i) in
         let e_metric = Metric.of_entry e in
-        if not Metric.(key_metric = e_metric) then not_found root
-        else if Key.equal (Entry.to_key e) key then found root e
+        if not Metric.(key_metric = e_metric) then None
+        else if Key.equal (Entry.to_key e) key then Some (Entry.to_value e)
         else (search [@tailcall]) op i
     in
     match search Int64.succ index with
-    | e -> e
-    | exception Not_found -> (search [@tailcall]) Int64.pred index
+    | Some e -> Some e
+    | None -> (search [@tailcall]) Int64.pred index
 
   (** Improves over binary search in cases where the values in some array are
       uniformly distributed according to some metric (such as a hash). *)
-  let interpolation_search ~root array key ~low ~high =
+  let interpolation_search array key ~low ~high =
     let key_metric = Metric.of_key key in
     (* The core of the search *)
     let rec search low high lowest_entry highest_entry =
-      if high < low then not_found root
+      if high < low then None
       else (
         Array.pre_fetch array ~low ~high;
         let lowest_entry = Lazy.force lowest_entry in
         if high = low then
-          if Key.(key = Entry.to_key lowest_entry) then found root lowest_entry
-          else not_found root
+          if Key.(key = Entry.to_key lowest_entry) then
+            Some (Entry.to_value lowest_entry)
+          else None
         else
           let lowest_metric = Metric.of_entry lowest_entry in
-          if Metric.(lowest_metric > key_metric) then not_found root
+          if Metric.(lowest_metric > key_metric) then None
           else
             let highest_entry = Lazy.force highest_entry in
             let highest_metric = Metric.of_entry highest_entry in
-            if Metric.(highest_metric < key_metric) then not_found root
+            if Metric.(highest_metric < key_metric) then None
             else
               let next_index =
                 Metric.linear_interpolate ~low:(low, lowest_metric)
@@ -136,8 +124,8 @@ module Make
               let e = array.(next_index) in
               let e_metric = Metric.of_entry e in
               if Metric.(key_metric = e_metric) then
-                if Key.(key = Entry.to_key e) then Entry.to_value e
-                else look_around ~root array key key_metric next_index
+                if Key.(key = Entry.to_key e) then Some (Entry.to_value e)
+                else look_around array key key_metric next_index
               else if Metric.(key_metric > e_metric) then
                 (search [@tailcall])
                   Int64.(succ next_index)
@@ -149,6 +137,6 @@ module Make
                   (Lazy.from_val lowest_entry)
                   (lazy array.(Int64.(pred next_index))) )
     in
-    if high < 0L then not_found root
+    if high < 0L then None
     else (search [@tailcall]) low high (lazy array.(low)) (lazy array.(high))
 end
