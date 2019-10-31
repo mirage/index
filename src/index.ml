@@ -574,9 +574,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     IO.sync log.io
 
   let flush t =
-    let instance = check_open t in
-    Log.info (fun l -> l "[%s] flush" (Filename.basename instance.root));
-    flush_instance instance
+    let t = check_open t in
+    Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
+    flush_instance t
 
   let close it =
     match !it with
