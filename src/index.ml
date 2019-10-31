@@ -475,7 +475,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     if log_i >= Array.length log then log_i
     else
       let v = log.(log_i) in
-      if v.key_hash > hash_e then log_i
+      if v.key_hash >= hash_e then log_i
       else (
         append_entry_fanout fan_out v dst_io;
         (merge_from_log [@tailcall]) fan_out log (log_i + 1) hash_e dst_io )
