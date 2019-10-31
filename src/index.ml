@@ -228,6 +228,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let with_cache ~v ~clear =
     let roots = Hashtbl.create 0 in
     let f ?(fresh = false) ?(readonly = false) ~log_size root =
+      Log.info (fun l ->
+          l "[%s] v fresh=%b readonly=%b log_size=%d" (Filename.basename root)
+            fresh readonly log_size);
       try
         if not (Sys.file_exists (index_dir root)) then (
           Log.debug (fun l ->
@@ -238,7 +241,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           raise Not_found );
         let t = Hashtbl.find roots (root, readonly) in
         if t.open_instances <> 0 then (
-          Log.debug (fun l -> l "%s found in cache" root);
+          Log.debug (fun l -> l "[%s] found in cache" (Filename.basename root));
           t.open_instances <- t.open_instances + 1;
           let t = ref (Some t) in
           if fresh then clear t;
@@ -247,9 +250,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           Hashtbl.remove roots (root, readonly);
           raise Not_found )
       with Not_found ->
-        Log.debug (fun l ->
-            l "[%s] v fresh=%b readonly=%b" (Filename.basename root) fresh
-              readonly);
         let instance = v ~fresh ~readonly ~log_size root in
         Hashtbl.add roots (root, readonly) instance;
         ref (Some instance)
@@ -257,16 +257,26 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     `Staged f
 
   let v_no_cache ~fresh ~readonly ~log_size root =
+    Log.debug (fun l ->
+        l "[%s] not found in cache, creating a new instance"
+          (Filename.basename root));
     let lock =
       if not readonly then Some (IO.lock (lock_path root)) else None
     in
     let config = { log_size = log_size * entry_size; readonly; fresh } in
     let log_path = log_path root in
     let log =
-      if readonly && not (Sys.file_exists log_path) then None
+      if readonly && not (Sys.file_exists log_path) then (
+        Log.debug (fun l ->
+            l "[%s] no log file detected." (Filename.basename root));
+        None )
       else
-        let mem = Tbl.create 1024 in
         let io = IO.v ~fresh ~readonly ~generation:0L ~fan_size:0L log_path in
+        let entries = Int64.div (IO.offset io) entry_sizeL in
+        Log.debug (fun l ->
+            l "[%s] log file detected. Loading %Ld entries"
+              (Filename.basename root) entries);
+        let mem = Tbl.create (Int64.to_int entries) in
         iter_io (fun e -> Tbl.replace mem e.key e.value) io;
         Some { io; mem }
     in
@@ -275,11 +285,18 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     let index =
       let index_path = index_path root in
-      if Sys.file_exists index_path then
+      if Sys.file_exists index_path then (
         let io = IO.v ~fresh ~readonly ~generation ~fan_size:0L index_path in
+        let entries = Int64.div (IO.offset io) entry_sizeL in
+        Log.debug (fun l ->
+            l "[%s] index file detected. Loading %Ld entries"
+              (Filename.basename root) entries);
         let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
-        Some { fan_out; io }
-      else None
+        Some { fan_out; io } )
+      else (
+        Log.debug (fun l ->
+            l "[%s] no index file detected." (Filename.basename root));
+        None )
     in
     { config; generation; log; root; index; open_instances = 1; lock }
 
@@ -294,6 +311,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Search.interpolation_search (IOArray.v index.io) key ~low ~high
 
   let try_load_log t =
+    Log.debug (fun l ->
+        l "[%s] checking for a newly created log file"
+          (Filename.basename t.root));
     let log_path = log_path t.root in
     if Sys.file_exists log_path then (
       let io =
@@ -306,15 +326,24 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       t.log <- Some { io; mem } )
 
   let sync_log t =
+    Log.debug (fun l ->
+        l "[%s] checking for changes on disk" (Filename.basename t.root));
+    let no_changes () =
+      Log.debug (fun l ->
+          l "[%s] no changes detected" (Filename.basename t.root))
+    in
     (match t.log with None -> try_load_log t | Some _ -> ());
     match t.log with
-    | None -> ()
+    | None -> no_changes ()
     | Some log ->
         let generation = IO.get_generation log.io in
         let log_offset = IO.offset log.io in
         let new_log_offset = IO.force_offset log.io in
         let add_log_entry e = Tbl.replace log.mem e.key e.value in
         if t.generation <> generation then (
+          Log.debug (fun l ->
+              l "[%s] generation has changed, reading log and index from disk"
+                (Filename.basename t.root));
           Tbl.clear log.mem;
           iter_io add_log_entry log.io;
           may (fun (i : index) -> IO.close i.io) t.index;
@@ -330,25 +359,46 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             in
             t.index <- Some { fan_out; io };
             t.generation <- generation )
-        else if log_offset < new_log_offset then
-          iter_io add_log_entry log.io ~min:log_offset
+        else if log_offset < new_log_offset then (
+          Log.debug (fun l ->
+              l "[%s] new entries detected, reading log from disk"
+                (Filename.basename t.root));
+          iter_io add_log_entry log.io ~min:log_offset )
         else if log_offset > new_log_offset then assert false
+        else no_changes ()
 
   let find t key =
     let t = check_open t in
-    Log.debug (fun l -> l "find %a" K.pp key);
+    Log.info (fun l -> l "[%s] find %a" (Filename.basename t.root) K.pp key);
     if t.config.readonly then sync_log t;
     match t.log with
     | None -> raise Not_found
     | Some log -> (
-        try Tbl.find log.mem key
+        try
+          let value = Tbl.find log.mem key in
+          Log.debug (fun l -> l "[%s] found in log" (Filename.basename t.root));
+          value
         with Not_found -> (
           match t.index with
-          | Some index -> interpolation_search index key
-          | None -> raise Not_found ) )
+          | None ->
+              Log.debug (fun l ->
+                  l "[%s] not found" (Filename.basename t.root));
+              raise Not_found
+          | Some index -> (
+              match interpolation_search index key with
+              | Some e ->
+                  Log.debug (fun l ->
+                      l "[%s] found in index" (Filename.basename t.root));
+                  e
+              | None ->
+                  Log.debug (fun l ->
+                      l "[%s] not found in index" (Filename.basename t.root));
+                  raise Not_found ) ) )
 
   let mem t key =
-    Log.debug (fun l -> l "mem %a" K.pp key);
+    let instance = check_open t in
+    Log.info (fun l ->
+        l "[%s] mem %a" (Filename.basename instance.root) K.pp key);
     match find t key with _ -> true | exception Not_found -> false
 
   let append_buf_fanout fan_out hash buf_str dst_io =
@@ -409,7 +459,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     (go [@tailcall]) 0L 0 0
 
   let merge ~witness t =
-    Log.debug (fun l -> l "unforced merge %S\n" t.root);
+    Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
     let log = assert_and_get t.log in
     let merge_path = merge_path t.root in
     let generation = Int64.succ t.generation in
@@ -483,12 +533,16 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let force_merge t =
     let t = check_open t in
-    Log.debug (fun l -> l "forced merge %S\n" t.root);
-    match get_witness t with None -> () | Some witness -> merge ~witness t
+    Log.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
+    match get_witness t with
+    | None ->
+        Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
+    | Some witness -> merge ~witness t
 
   let replace t key value =
     let t = check_open t in
-    Log.debug (fun l -> l "add %a %a" K.pp key V.pp value);
+    Log.info (fun l ->
+        l "[%s] replace %a %a" (Filename.basename t.root) K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
     let log = assert_and_get t.log in
     append_key_value log.io key value;
@@ -498,7 +552,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
 
   let iter f t =
     let t = check_open t in
-    Log.debug (fun l -> l "iter %S" t.root);
+    Log.info (fun l -> l "[%s] iter" (Filename.basename t.root));
     if t.config.readonly then sync_log t;
     match t.log with
     | None -> ()
@@ -509,23 +563,29 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           t.index
 
   let flush_instance instance =
+    Log.debug (fun l ->
+        l "[%s] flushing instance" (Filename.basename instance.root));
     if instance.config.readonly then raise RO_not_allowed;
     let log = assert_and_get instance.log in
     IO.sync log.io
 
   let flush t =
     let instance = check_open t in
+    Log.info (fun l -> l "[%s] flush" (Filename.basename instance.root));
     flush_instance instance
 
   let close it =
     match !it with
-    | None -> ()
+    | None -> Log.info (fun l -> l "close: instance already closed")
     | Some t ->
         (* XXX This piece of code is not thread safe. *)
+        Log.info (fun l -> l "[%s] close" (Filename.basename t.root));
         it := None;
         t.open_instances <- t.open_instances - 1;
         if t.open_instances = 0 then (
-          Log.debug (fun l -> l "close %S" t.root);
+          Log.debug (fun l ->
+              l "[%s] last open instance: closing the file descriptor"
+                (Filename.basename t.root));
           if not t.config.readonly then flush_instance t;
           may (fun l -> IO.close l.io) t.log;
           may (fun (i : index) -> IO.close i.io) t.index;
