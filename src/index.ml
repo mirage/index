@@ -161,9 +161,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     may (fun log -> IO.sync log.io) instance.log_async
 
   let flush t =
-    let instance = check_open t in
-    Log.info (fun l -> l "[%s] flush" (Filename.basename instance.root));
-    IO.Mutex.with_lock instance.rename_lock (fun () -> flush_instance instance)
+    let t = check_open t in
+    Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
+    IO.Mutex.with_lock t.rename_lock (fun () -> flush_instance t)
 
   let ( // ) = Filename.concat
 
@@ -417,11 +417,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           else () )
         else no_changes ()
 
-  let find t key =
-    let t = check_open t in
-    Log.info (fun l ->
-        l "[%s] ro= %b find %a" (Filename.basename t.root) t.config.readonly
-          K.pp key);
+  let find_instance t key =
     let find_if_exists ~name ~find = function
       | None ->
           Log.debug (fun l ->
@@ -457,11 +453,17 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
                 | None -> raise Not_found )
             | None -> raise Not_found ) ))
 
-  let mem t key =
-    let instance = check_open t in
+  let find t key =
+    let t = check_open t in
     Log.info (fun l ->
-        l "[%s] mem %a" (Filename.basename instance.root) K.pp key);
-    match find t key with _ -> true | exception Not_found -> false
+        l "[%s] ro= %b find %a" (Filename.basename t.root) t.config.readonly
+          K.pp key);
+    find_instance t key
+
+  let mem t key =
+    let t = check_open t in
+    Log.info (fun l -> l "[%s] mem %a" (Filename.basename t.root) K.pp key);
+    match find_instance t key with _ -> true | exception Not_found -> false
 
   let append_buf_fanout fan_out hash buf_str dst_io =
     Fan.update fan_out hash (IO.offset dst_io);
