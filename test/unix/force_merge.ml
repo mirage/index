@@ -171,8 +171,8 @@ let readonly_and_merge () =
   done;
   test_fd ()
 
-let _write_after_merge () =
-  let m = Mutex.create () in
+(* A force merge has an implicit flush, however, if the replace occurs at the end of the merge, the value is not flushed *)
+let write_after_merge () =
   let { Context.rw; clone; _ } = Context.full_index () in
   let w = rw in
   let r1 = clone ~readonly:true in
@@ -181,41 +181,50 @@ let _write_after_merge () =
   let k2 = Key.v () in
   let v2 = Value.v () in
   Index.replace w k1 v1;
-  let hook () =
-    Mutex.lock m;
-    Index.replace w k2 v2;
-    Mutex.unlock m
-  in
-  let test_merge () = Index.force_merge ~hook w in
-  test_merge ();
+  let f () = Index.replace w k2 v2 in
+  Index.force_merge ~hook:(`After f) w;
+  test_one_entry r1 k1 v1;
+  Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k2)
+    Not_found (fun () -> ignore (Index.find r1 k2))
+
+let replace_while_merge () =
+  let { Context.rw; clone; _ } = Context.full_index () in
+  let w = rw in
+  let r1 = clone ~readonly:true in
+  let k1 = Key.v () in
+  let v1 = Value.v () in
+  let k2 = Key.v () in
+  let v2 = Value.v () in
+  Index.replace w k1 v1;
+  let f () = Index.replace w k2 v2 in
+  Index.force_merge ~hook:(`Before f) w;
   test_one_entry r1 k1 v1;
   test_one_entry r1 k2 v2
 
-let _write_async () =
-  let m = Mutex.create () in
+let find_while_merge () =
   let { Context.rw; clone; _ } = Context.full_index () in
   let w = rw in
-  let r1 = clone ~readonly:true in
   let k1 = Key.v () in
   let v1 = Value.v () in
-  let k2 = Key.v () in
-  let v2 = Value.v () in
   Index.replace w k1 v1;
-  let hook () =
-    Mutex.lock m;
-    Index.replace w k2 v2;
-    Mutex.unlock m
-  in
-  Index.force_merge ~hook w;
-  Index.flush w;
-  test_one_entry r1 k1 v1;
-  test_one_entry r1 k2 v2
+  let f () = test_one_entry w k1 v1 in
+  Index.force_merge ~hook:(`Before f) w;
+  let f () = test_one_entry w k1 v1 in
+  Index.force_merge ~hook:(`After f) w;
+  let r1 = clone ~readonly:true in
+  let f () = test_one_entry r1 k1 v1 in
+  Index.force_merge ~hook:(`Before f) w;
+  let f () = test_one_entry r1 k1 v1 in
+  Index.force_merge ~hook:(`After f) w
 
 let tests =
   [
     ("readonly in sequence", `Quick, readonly_s);
     ("readonly interleaved", `Quick, readonly);
     ("interleaved merge", `Quick, readonly_and_merge);
+    ("write at the end of merge", `Quick, write_after_merge);
+    ("write in log_async", `Quick, replace_while_merge);
+    ("find while merging", `Quick, find_while_merge);
   ]
 
 (* Unix.sleep 10 *)

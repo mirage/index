@@ -59,7 +59,8 @@ module type S = sig
 
   val iter : (key -> value -> unit) -> t -> unit
 
-  val force_merge : ?hook:(unit -> unit) -> t -> unit
+  val force_merge :
+    ?hook:[> `After of unit -> unit | `Before of unit -> unit ] -> t -> unit
 
   val flush : t -> unit
 
@@ -429,6 +430,15 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               l "[%s] found in %s" (Filename.basename t.root) name);
           ans
     in
+    let find_log_index () =
+      try find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
+      with Not_found -> (
+        match
+          find_if_exists ~name:"index" ~find:interpolation_search t.index
+        with
+        | Some e -> e
+        | None -> raise Not_found )
+    in
     IO.Mutex.with_lock t.rename_lock (fun () ->
         if t.config.readonly then sync_log t;
         try
@@ -443,14 +453,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               find_if_exists ~name:"index" ~find:interpolation_search t.index
             with
             | Some e -> e
-            | None when t.config.readonly -> (
+            | None when t.config.readonly ->
                 sync_log ~force:true t;
-                match
-                  find_if_exists ~name:"index" ~find:interpolation_search
-                    t.index
-                with
-                | Some e -> e
-                | None -> raise Not_found )
+                find_log_index ()
             | None -> raise Not_found ) ))
 
   let find t key =
@@ -538,6 +543,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     t.log_async <- Some log_async;
 
     let go () =
+      (match hook with Some (`Before f) -> f () | _ -> ());
       let log = assert_and_get t.log in
       let generation = Int64.succ t.generation in
       let log_array =
@@ -584,7 +590,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       IO.set_fanout merge (Fan.export index.fan_out);
       IO.Mutex.with_lock t.rename_lock (fun () ->
           IO.rename ~src:merge ~dst:index.io;
-          (match hook with Some f -> f () | None -> ());
           t.index <- Some index;
           IO.clear ~keep_generation:true log.io;
           Tbl.clear log.mem;
@@ -598,6 +603,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             log_async.mem;
           IO.sync log.io;
           t.log_async <- None);
+      (match hook with Some (`After f) -> f () | _ -> ());
       IO.clear log_async.io;
       IO.close log_async.io;
       IO.Mutex.unlock t.merge_lock
