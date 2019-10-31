@@ -659,7 +659,14 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         Tbl.iter f log.mem;
         may
           (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io)
-          t.index
+          t.index;
+        IO.Mutex.with_lock t.rename_lock (fun () ->
+            ( match t.log_async with
+            | None -> ()
+            | Some log -> Tbl.iter f log.mem );
+            may
+              (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io)
+              t.index)
 
   let close it =
     match !it with
