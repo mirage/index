@@ -447,14 +447,15 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               find_if_exists ~name:"index" ~find:interpolation_search t.index
             with
             | Some e -> e
-            | None -> (
-                if t.config.readonly then sync_log ~force:true t;
+            | None when t.config.readonly -> (
+                sync_log ~force:true t;
                 match
                   find_if_exists ~name:"index" ~find:interpolation_search
                     t.index
                 with
                 | Some e -> e
-                | None -> raise Not_found ) ) ))
+                | None -> raise Not_found )
+            | None -> raise Not_found ) ))
 
   let mem t key =
     let instance = check_open t in
