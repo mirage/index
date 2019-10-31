@@ -109,10 +109,13 @@ module type S = sig
   (** [replace t k v] binds [k] to [v] in [t], replacing any existing binding
       of [k]. *)
 
-  val iter : (key -> value -> unit) -> t -> unit
-  (** Iterates over the index bindings. Order is not specified. In case of
-      recent replacements of existing values (after the last merge), this will
-      hit both the new and old bindings. *)
+  val iter : ?no_duplicates:bool -> (key -> value -> unit) -> t -> unit
+  (** Iterates over the index bindings. Order is not specified.
+      In case of recent replacements of existing values (after the last merge),
+      this will hit both the new and old bindings.
+
+      If [no_duplicates] is [true], then only the most recently added binding
+      will be hit; but this may result in significant cost. *)
 
   val force_merge : t -> unit
   (** [force_merge t] forces a merge for [t]. *)

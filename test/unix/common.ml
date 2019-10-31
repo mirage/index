@@ -84,16 +84,16 @@ struct
     clone : readonly:bool -> Index.t;
   }
 
-  let empty_index () =
+  let empty_index ?(log_size = 4) () =
     let name = fresh_name "empty_index" in
-    let rw = Index.v ~fresh:true ~log_size:4 name in
+    let rw = Index.v ~fresh:true ~log_size name in
     let tbl = Hashtbl.create 0 in
-    let clone ~readonly = Index.v ~fresh:false ~log_size:4 ~readonly name in
+    let clone ~readonly = Index.v ~fresh:false ~log_size ~readonly name in
     { rw; tbl; clone }
 
-  let full_index ?(size = 103) () =
+  let full_index ?(size = 103) ?(log_size = 4) () =
     let name = fresh_name "full_index" in
-    let t = Index.v ~fresh:true ~log_size:4 name in
+    let t = Index.v ~fresh:true ~log_size name in
     let tbl = Hashtbl.create 0 in
     for _ = 1 to size do
       let k = Key.v () in
@@ -102,6 +102,6 @@ struct
       Hashtbl.replace tbl k v
     done;
     Index.flush t;
-    let clone ~readonly = Index.v ~fresh:false ~log_size:4 ~readonly name in
+    let clone ~readonly = Index.v ~fresh:false ~log_size ~readonly name in
     { rw = t; tbl; clone }
 end

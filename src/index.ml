@@ -57,7 +57,7 @@ module type S = sig
 
   val replace : t -> key -> value -> unit
 
-  val iter : (key -> value -> unit) -> t -> unit
+  val iter : ?no_duplicates:bool -> (key -> value -> unit) -> t -> unit
 
   val force_merge : t -> unit
 
@@ -413,7 +413,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     if log_i >= Array.length log then log_i
     else
       let v = log.(log_i) in
-      if v.key_hash > hash_e then log_i
+      if v.key_hash >= hash_e then log_i
       else (
         append_entry_fanout fan_out v dst_io;
         (merge_from_log [@tailcall]) fan_out log (log_i + 1) hash_e dst_io )
@@ -531,13 +531,16 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
                 assert (n = entry_size);
                 Some (decode_entry buf 0) ) )
 
-  let force_merge t =
-    let t = check_open t in
-    Log.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
+  let force_merge_instance t =
     match get_witness t with
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
     | Some witness -> merge ~witness t
+
+  let force_merge t =
+    let t = check_open t in
+    Log.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
+    force_merge_instance t
 
   let replace t key value =
     let t = check_open t in
@@ -550,9 +553,10 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     if Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0
     then merge ~witness:{ key; key_hash = K.hash key; value } t
 
-  let iter f t =
+  let iter ?(no_duplicates = false) f t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] iter" (Filename.basename t.root));
+    if no_duplicates then force_merge_instance t;
     if t.config.readonly then sync_log t;
     match t.log with
     | None -> ()

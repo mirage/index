@@ -31,10 +31,10 @@ end) : sig
   val fresh_name : string -> string
   (** [fresh_name typ] is a clean directory for a resource of type [typ]. *)
 
-  val empty_index : unit -> t
+  val empty_index : ?log_size:int -> unit -> t
   (** Fresh, empty index. *)
 
-  val full_index : ?size:int -> unit -> t
+  val full_index : ?size:int -> ?log_size:int -> unit -> t
   (** Fresh index with a random table of key/value pairs, and a given
       constructor for opening clones of the index at the same location. *)
 end

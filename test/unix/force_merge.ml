@@ -169,11 +169,35 @@ let readonly_and_merge () =
   loop 10;
   test_fd ()
 
+let test_iter () =
+  let context_with_duplicates () =
+    let { Context.rw; _ } = Context.full_index ~size:4 ~log_size:4 () in
+    let k = Key.v () in
+    let v1 = Value.v () in
+    Index.replace rw k v1;
+    let v2 = Value.v () in
+    Index.replace rw k v2;
+    (rw, k)
+  in
+  let check_iter msg ~no_duplicates (rw, duplicated_key) =
+    let count = ref 0 in
+    let expected_count = if no_duplicates then 1 else 2 in
+    Index.iter ~no_duplicates
+      (fun k _ -> if k = duplicated_key then incr count)
+      rw;
+    Alcotest.(check int) msg expected_count !count
+  in
+  context_with_duplicates ()
+  |> check_iter "iter with duplicates" ~no_duplicates:false;
+  context_with_duplicates ()
+  |> check_iter "iter without duplicates" ~no_duplicates:true
+
 let tests =
   [
     ("readonly in sequence", `Quick, readonly_s);
     ("readonly interleaved", `Quick, readonly);
     ("interleaved merge", `Quick, readonly_and_merge);
+    ("iter", `Quick, test_iter);
   ]
 
 (* Unix.sleep 10 *)
