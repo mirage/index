@@ -193,6 +193,7 @@ module IO : Index.IO = struct
     sync src;
     Unix.close dst.raw.fd;
     Unix.rename src.file dst.file;
+    Buffer.clear dst.buf;
     dst.header <- src.header;
     dst.fan_size <- src.fan_size;
     dst.offset <- src.offset;
@@ -257,10 +258,10 @@ module IO : Index.IO = struct
     in
     (aux [@tailcall]) dirname (fun () -> ())
 
-  let clear t =
+  let clear ?(keep_generation = false) t =
     t.offset <- 0L;
     t.flushed <- t.header;
-    Raw.Generation.set t.raw 0L;
+    if not keep_generation then Raw.Generation.set t.raw 0L;
     Raw.Offset.set t.raw t.offset;
     Raw.Fan.set t.raw "";
     Buffer.clear t.buf

@@ -119,8 +119,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     mutable generation : int64;
     mutable index : index option;
     mutable log : log option;
+    mutable log_async : log option;
     mutable open_instances : int;
     lock : IO.lock option;
+    mutable merge_lock : Mutex.t;
+    mutable rename_lock : Mutex.t;
   }
 
   type t = instance option ref
@@ -133,21 +136,45 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.debug (fun l -> l "clear %S" t.root);
     if t.config.readonly then raise RO_not_allowed;
     t.generation <- 0L;
+    Mutex.lock t.merge_lock;
     let log = assert_and_get t.log in
     IO.clear log.io;
     Tbl.clear log.mem;
+    may
+      (fun l ->
+        IO.clear l.io;
+        IO.close l.io)
+      t.log_async;
     may
       (fun (i : index) ->
         IO.clear i.io;
         IO.close i.io)
       t.index;
-    t.index <- None
+    t.index <- None;
+    t.log_async <- None;
+    Mutex.unlock t.merge_lock
+
+  let flush_instance instance =
+    Log.debug (fun l ->
+        l "[%s] flushing instance" (Filename.basename instance.root));
+    if instance.config.readonly then raise RO_not_allowed;
+    may (fun log -> IO.sync log.io) instance.log;
+    may (fun log -> IO.sync log.io) instance.log_async
+
+  let flush t =
+    let instance = check_open t in
+    Log.info (fun l -> l "[%s] flush" (Filename.basename instance.root));
+    Mutex.lock instance.rename_lock;
+    flush_instance instance;
+    Mutex.unlock instance.rename_lock
 
   let ( // ) = Filename.concat
 
   let index_dir root = root // "index"
 
   let log_path root = index_dir root // "log"
+
+  let log_async_path root = index_dir root // "log_async"
 
   let index_path root = index_dir root // "data"
 
@@ -266,10 +293,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     let config = { log_size = log_size * entry_size; readonly; fresh } in
     let log_path = log_path root in
     let log =
-      if readonly && not (Sys.file_exists log_path) then (
-        Log.debug (fun l ->
-            l "[%s] no log file detected." (Filename.basename root));
-        None )
+      if readonly then if fresh then raise RO_not_allowed else None
       else
         let io = IO.v ~fresh ~readonly ~generation:0L ~fan_size:0L log_path in
         let entries = Int64.div (IO.offset io) entry_sizeL in
@@ -298,7 +322,18 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             l "[%s] no index file detected." (Filename.basename root));
         None )
     in
-    { config; generation; log; root; index; open_instances = 1; lock }
+    {
+      config;
+      generation;
+      log;
+      log_async = None;
+      root;
+      index;
+      open_instances = 1;
+      merge_lock = Mutex.create ();
+      rename_lock = Mutex.create ();
+      lock;
+    }
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
 
@@ -310,20 +345,18 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     in
     Search.interpolation_search (IOArray.v index.io) key ~low ~high
 
-  let try_load_log t =
+  let try_load_log t path =
     Log.debug (fun l ->
-        l "[%s] checking for a newly created log file"
-          (Filename.basename t.root));
-    let log_path = log_path t.root in
-    if Sys.file_exists log_path then (
+        l "[%s] checking on-disk %s file" (Filename.basename t.root)
+          (Filename.basename path));
+    if Sys.file_exists path then (
       let io =
-        IO.v ~fresh:t.config.fresh ~readonly:true ~generation:0L ~fan_size:0L
-          log_path
+        IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
       in
-      let mem = Tbl.create 1024 in
+      let mem = Tbl.create 0 in
       iter_io (fun e -> Tbl.replace mem e.key e.value) io;
-      t.generation <- IO.get_generation io;
-      t.log <- Some { io; mem } )
+      Some { io; mem } )
+    else None
 
   let sync_log t =
     Log.debug (fun l ->
@@ -332,7 +365,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       Log.debug (fun l ->
           l "[%s] no changes detected" (Filename.basename t.root))
     in
-    (match t.log with None -> try_load_log t | Some _ -> ());
+    ( match t.log with
+    | None -> t.log <- try_load_log t (log_path t.root)
+    | Some _ -> () );
+    may (fun log -> IO.close log.io) t.log_async;
+    t.log_async <- try_load_log t (log_async_path t.root);
     match t.log with
     | None -> no_changes ()
     | Some log ->
@@ -364,25 +401,41 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               l "[%s] new entries detected, reading log from disk"
                 (Filename.basename t.root));
           iter_io add_log_entry log.io ~min:log_offset )
-        else if log_offset > new_log_offset then assert false
+        else if log_offset > new_log_offset then
+          (* In that case the log has probably been emptied and is being
+             refilled with async_log contents. *)
+          no_changes ()
         else no_changes ()
 
   let find t key =
     let t = check_open t in
     Log.info (fun l -> l "[%s] find %a" (Filename.basename t.root) K.pp key);
+    let find_if_exists ~name ~find = function
+      | None ->
+          Log.debug (fun l ->
+              l "[%s] %s is not present" (Filename.basename t.root) name);
+          raise Not_found
+      | Some e ->
+          let ans = find e key in
+          Log.debug (fun l ->
+              l "[%s] found in %s" (Filename.basename t.root) name);
+          ans
+    in
+    Mutex.lock t.rename_lock;
     if t.config.readonly then sync_log t;
-    match t.log with
-    | None -> raise Not_found
-    | Some log -> (
+    let ans =
+      try find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
+      with Not_found -> (
         try
-          let value = Tbl.find log.mem key in
-          Log.debug (fun l -> l "[%s] found in log" (Filename.basename t.root));
-          value
+          find_if_exists ~name:"log_asyc"
+            ~find:(fun log -> Tbl.find log.mem)
+            t.log_async
         with Not_found -> (
           match t.index with
           | None ->
               Log.debug (fun l ->
                   l "[%s] not found" (Filename.basename t.root));
+              Mutex.unlock t.rename_lock;
               raise Not_found
           | Some index -> (
               match interpolation_search index key with
@@ -393,7 +446,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               | None ->
                   Log.debug (fun l ->
                       l "[%s] not found in index" (Filename.basename t.root));
+                  Mutex.unlock t.rename_lock;
                   raise Not_found ) ) )
+    in
+    Mutex.unlock t.rename_lock;
+    ans
 
   let mem t key =
     let instance = check_open t in
@@ -459,56 +516,86 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     (go [@tailcall]) 0L 0 0
 
   let merge ~witness t =
+    Mutex.lock t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
-    let log = assert_and_get t.log in
-    let merge_path = merge_path t.root in
-    let generation = Int64.succ t.generation in
-    let log_array =
-      let compare_entry e e' = compare e.key_hash e'.key_hash in
-      let b = Array.make (Tbl.length log.mem) witness in
-      Tbl.fold
-        (fun key value i ->
-          b.(i) <- { key; value; key_hash = K.hash key };
-          i + 1)
-        log.mem 0
-      |> ignore;
-      Array.fast_sort compare_entry b;
-      b
+    flush_instance t;
+    let log_async =
+      let io =
+        let log_async_path = log_async_path t.root in
+        IO.v ~fresh:true ~readonly:false ~generation:(Int64.succ t.generation)
+          ~fan_size:0L log_async_path
+      in
+      let mem = Tbl.create 0 in
+      { io; mem }
     in
-    let fan_size =
-      match t.index with
-      | None -> Tbl.length log.mem
-      | Some index ->
-          (Int64.to_int (IO.offset index.io) / entry_size) + Tbl.length log.mem
+    t.log_async <- Some log_async;
+
+    let go () =
+      let log = assert_and_get t.log in
+      let generation = Int64.succ t.generation in
+      let log_array =
+        let compare_entry e e' = compare e.key_hash e'.key_hash in
+        let b = Array.make (Tbl.length log.mem) witness in
+        Tbl.fold
+          (fun key value i ->
+            b.(i) <- { key; key_hash = K.hash key; value };
+            i + 1)
+          log.mem 0
+        |> ignore;
+        Array.fast_sort compare_entry b;
+        b
+      in
+      let fan_size =
+        match t.index with
+        | None -> Tbl.length log.mem
+        | Some index ->
+            (Int64.to_int (IO.offset index.io) / entry_size)
+            + Array.length log_array
+      in
+      let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
+      let merge =
+        let merge_path = merge_path t.root in
+        IO.v ~fresh:true ~readonly:false ~generation
+          ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
+          merge_path
+      in
+      let index =
+        match t.index with
+        | None ->
+            let io =
+              IO.v ~fresh:true ~readonly:false ~generation ~fan_size:0L
+                (index_path t.root)
+            in
+            append_remaining_log fan_out log_array 0 merge;
+            { io; fan_out }
+        | Some index ->
+            let index = { index with fan_out } in
+            merge_with log_array index merge;
+            index
+      in
+      Fan.finalize index.fan_out;
+      IO.set_fanout merge (Fan.export index.fan_out);
+      Mutex.lock t.rename_lock;
+      IO.rename ~src:merge ~dst:index.io;
+      t.index <- Some index;
+      IO.clear ~keep_generation:true log.io;
+      Tbl.clear log.mem;
+      IO.set_generation log.io generation;
+      t.generation <- generation;
+      let log_async = assert_and_get t.log_async in
+      Tbl.iter
+        (fun key value ->
+          Tbl.replace log.mem key value;
+          append_key_value log.io key value)
+        log_async.mem;
+      IO.sync log.io;
+      t.log_async <- None;
+      Mutex.unlock t.rename_lock;
+      IO.clear log_async.io;
+      IO.close log_async.io;
+      Mutex.unlock t.merge_lock
     in
-    let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
-    let merge =
-      IO.v ~readonly:false ~fresh:true ~generation
-        ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
-        merge_path
-    in
-    ( match t.index with
-    | None ->
-        let io =
-          IO.v ~fresh:true ~readonly:false ~generation:0L ~fan_size:0L
-            (index_path t.root)
-        in
-        append_remaining_log fan_out log_array 0 merge;
-        t.index <- Some { io; fan_out }
-    | Some index ->
-        let index = { index with fan_out } in
-        merge_with log_array index merge;
-        t.index <- Some index );
-    match t.index with
-    | None -> assert false
-    | Some index ->
-        Fan.finalize index.fan_out;
-        IO.set_fanout merge (Fan.export index.fan_out);
-        IO.rename ~src:merge ~dst:index.io;
-        IO.clear log.io;
-        Tbl.clear log.mem;
-        IO.set_generation log.io generation;
-        t.generation <- generation
+    ignore (Thread.create go ())
 
   let get_witness t =
     match t.log with
@@ -544,11 +631,19 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.info (fun l ->
         l "[%s] replace %a %a" (Filename.basename t.root) K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
-    let log = assert_and_get t.log in
+    Mutex.lock t.rename_lock;
+    let log =
+      match t.log_async with
+      | Some async_log -> async_log
+      | None -> assert_and_get t.log
+    in
     append_key_value log.io key value;
     Tbl.replace log.mem key value;
-    if Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0
-    then merge ~witness:{ key; key_hash = K.hash key; value } t
+    let do_merge =
+      Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0
+    in
+    Mutex.unlock t.rename_lock;
+    if do_merge then merge ~witness:{ key; key_hash = K.hash key; value } t
 
   let iter f t =
     let t = check_open t in
@@ -562,24 +657,13 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io)
           t.index
 
-  let flush_instance instance =
-    Log.debug (fun l ->
-        l "[%s] flushing instance" (Filename.basename instance.root));
-    if instance.config.readonly then raise RO_not_allowed;
-    let log = assert_and_get instance.log in
-    IO.sync log.io
-
-  let flush t =
-    let instance = check_open t in
-    Log.info (fun l -> l "[%s] flush" (Filename.basename instance.root));
-    flush_instance instance
-
   let close it =
     match !it with
     | None -> Log.info (fun l -> l "close: instance already closed")
     | Some t ->
         (* XXX This piece of code is not thread safe. *)
         Log.info (fun l -> l "[%s] close" (Filename.basename t.root));
+        Mutex.lock t.merge_lock;
         it := None;
         t.open_instances <- t.open_instances - 1;
         if t.open_instances = 0 then (
@@ -589,5 +673,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           if not t.config.readonly then flush_instance t;
           may (fun l -> IO.close l.io) t.log;
           may (fun (i : index) -> IO.close i.io) t.index;
-          may (fun lock -> IO.unlock lock) t.lock )
+          may (fun lock -> IO.unlock lock) t.lock );
+        Mutex.unlock t.merge_lock
 end

@@ -19,7 +19,7 @@ module type S = sig
 
   val read : t -> off:int64 -> len:int -> bytes -> int
 
-  val clear : t -> unit
+  val clear : ?keep_generation:bool -> t -> unit
 
   val sync : t -> unit
 

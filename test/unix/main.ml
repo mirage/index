@@ -168,7 +168,7 @@ module DuplicateInstance = struct
   let fail_restart_ro_fresh () =
     let reuse_name = Context.fresh_name "empty_index" in
     let rw = Index.v ~fresh:true ~readonly:false ~log_size:4 reuse_name in
-    let exn = Failure "IO.v: cannot reset a readonly file" in
+    let exn = I.RO_not_allowed in
     Alcotest.check_raises "Index readonly cannot be fresh." exn (fun () ->
         ignore (Index.v ~fresh:true ~readonly:true ~log_size:4 reuse_name));
     Index.close rw
