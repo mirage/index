@@ -199,7 +199,13 @@ let replace_while_merge () =
   let f () = Index.replace w k2 v2 in
   Index.force_merge ~hook:(`Before f) w;
   test_one_entry r1 k1 v1;
-  test_one_entry r1 k2 v2
+  test_one_entry w k2 v2
+
+(* note that here we cannot do
+   `test_one_entry r1 k2 v2`
+   as there is no way to guarantee that the latests value
+   added by a RW instance is found by a RO instance
+*)
 
 let find_while_merge () =
   let { Context.rw; clone; _ } = Context.full_index () in
