@@ -196,10 +196,12 @@ let replace_while_merge () =
   let k2 = Key.v () in
   let v2 = Value.v () in
   Index.replace w k1 v1;
-  let f () = Index.replace w k2 v2 in
+  let f () =
+    Index.replace w k2 v2;
+    test_one_entry w k2 v2
+  in
   Index.force_merge ~hook:(`Before f) w;
-  test_one_entry r1 k1 v1;
-  test_one_entry w k2 v2
+  test_one_entry r1 k1 v1
 
 (* note that here we cannot do
    `test_one_entry r1 k2 v2`
