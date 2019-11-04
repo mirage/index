@@ -405,6 +405,9 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           no_changes ()
         else if force then (
           Log.debug (fun l -> l "[%s] force sync" (Filename.basename t.root));
+          Tbl.clear log.mem;
+          iter_io add_log_entry log.io;
+          may (fun (i : index) -> IO.close i.io) t.index;
           let index_path = index_path t.root in
           if Sys.file_exists index_path then
             let io =
