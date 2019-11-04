@@ -637,7 +637,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let force_merge ?hook t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
-    match get_witness t with
+    let witness = IO.Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
+    match witness with
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
     | Some witness -> merge ?hook ~witness t
