@@ -356,7 +356,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       Some { io; mem } )
     else None
 
-  let sync_log ?(force = false) t =
+  let sync_log t =
     Log.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
     let no_changes () =
@@ -403,22 +403,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
           (* In that case the log has probably been emptied and is being
              refilled with async_log contents. *)
           no_changes ()
-        else if force then (
-          Log.debug (fun l -> l "[%s] force sync" (Filename.basename t.root));
-          Tbl.clear log.mem;
-          iter_io add_log_entry log.io;
-          may (fun (i : index) -> IO.close i.io) t.index;
-          let index_path = index_path t.root in
-          if Sys.file_exists index_path then
-            let io =
-              IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L
-                index_path
-            in
-            let fan_out =
-              Fan.import ~hash_size:K.hash_size (IO.get_fanout io)
-            in
-            t.index <- Some { fan_out; io }
-          else () )
         else no_changes ()
 
   let find_instance t key =
@@ -457,7 +441,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             with
             | Some e -> e
             | None when t.config.readonly ->
-                sync_log ~force:true t;
+                sync_log t;
                 find_log_index ()
             | None -> raise Not_found ) ))
 
