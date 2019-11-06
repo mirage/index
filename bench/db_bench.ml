@@ -190,6 +190,15 @@ module Index = struct
     print_results (read r) nb_entries;
     read_amplif nb_entries
 
+  let ro_read_random rw =
+    Index.flush rw;
+    Index_unix.reset_stats ();
+    let ro =
+      Index.v ~fresh:false ~readonly:true ~log_size (root // "fill_random")
+    in
+    print_results (read ro) nb_entries;
+    read_amplif nb_entries
+
   let read_seq r =
     Index_unix.reset_stats ();
     let read () = Index.iter (fun _ _ -> ()) r in
@@ -379,12 +388,11 @@ let minimal_benchs () =
   Log.app (fun l -> l "Fill in random order");
   let rw = Index.write_random () in
   Log.app (fun l -> l "\n");
-  Log.app (fun l -> l "Read in random order ");
+  Log.app (fun l -> l "RW Read in random order ");
   Index.read_random rw;
   Log.app (fun l -> l "\n");
-  Log.app (fun l ->
-      l "Read in sequential order (increasing order of hashes for index)");
-  Index.read_seq rw;
+  Log.app (fun l -> l "RO Read in random order");
+  Index.ro_read_random rw;
   Log.app (fun l -> l "\n");
   Log.app (fun l -> l "Read 1000 absent values");
   Index.read_absent rw;
