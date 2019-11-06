@@ -199,7 +199,9 @@ module IO : Index.IO = struct
     dst.flushed <- src.flushed;
     dst.raw <- src.raw
 
-  let close t = Unix.close t.raw.fd
+  let close t =
+    if not t.readonly then Buffer.clear t.buf;
+    Unix.close t.raw.fd
 
   let auto_flush_limit = 1_000_000L
 
@@ -268,10 +270,7 @@ module IO : Index.IO = struct
   let buffers = Hashtbl.create 256
 
   let buffer file =
-    try
-      let buf = Hashtbl.find buffers file in
-      Buffer.clear buf;
-      buf
+    try Hashtbl.find buffers file
     with Not_found ->
       let buf = Buffer.create (4 * 1024) in
       Hashtbl.add buffers file buf;
