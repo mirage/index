@@ -28,7 +28,8 @@ module EltArray = struct
   let pre_fetch _ ~low:_ ~high:_ = ()
 end
 
-module Metric = struct
+(* Metric equal to an integer key *)
+module Metric_key = struct
   module Entry = Entry
 
   type t = Entry.Key.t
@@ -53,12 +54,10 @@ module Metric = struct
     Int64.of_float rounded
 end
 
-module Search = Index.Private.Search.Make (Entry) (EltArray) (Metric)
+module Search = Index.Private.Search.Make (Entry) (EltArray) (Metric_key)
 
 let interpolation_unique () =
-  let array =
-    List.init 10_000 (fun i -> (i, string_of_int i)) |> Array.of_list
-  in
+  let array = Array.init 10_000 (fun i -> (i, string_of_int i)) in
   let length = EltArray.length array in
   Array.iter
     (fun (i, v) ->
@@ -68,9 +67,45 @@ let interpolation_unique () =
       |> Alcotest.(check (option string)) "" (Some v))
     array
 
+(* Degenerate metric that is the same for all entries *)
+module Metric_constant = struct
+  module Entry = Entry
+
+  type t = unit
+
+  let compare () () = 0
+
+  let of_entry _ = ()
+
+  let of_key _ = ()
+
+  let linear_interpolate ~low:(low_out, _) ~high:(high_out, _) _ =
+    let ( + ), ( - ) = Int64.(add, sub) in
+    (* Any value in the range [low_out, high_out] is valid *)
+    low_out + Random.int64 (high_out - low_out) + 1L
+end
+
+module Search_constant =
+  Index.Private.Search.Make (Entry) (EltArray) (Metric_constant)
+
+let interpolation_constant_metric () =
+  let array = Array.init 100 (fun i -> (i, string_of_int i)) in
+  let length = EltArray.length array in
+  Array.iter
+    (fun (i, v) ->
+      Search_constant.interpolation_search array i ~low:0L
+        ~high:Int64.(pred length)
+      |> Alcotest.(check (option string)) "" (Some v))
+    array
+
 let () =
+  Random.self_init ();
   Alcotest.run "search"
     [
       ( "interpolation",
-        [ Alcotest.test_case "unique" `Quick interpolation_unique ] );
+        [
+          Alcotest.test_case "unique" `Quick interpolation_unique;
+          Alcotest.test_case "constant metric" `Quick
+            interpolation_constant_metric;
+        ] );
     ]
