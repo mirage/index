@@ -45,6 +45,8 @@ module type S = sig
 
   val unlock : lock -> unit
 
+  exception Bad_Fd_Read
+
   module Mutex : sig
     type t
 
