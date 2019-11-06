@@ -65,7 +65,7 @@ let interpolation_unique () =
       Search.interpolation_search array i
         ~low:Int64.(zero)
         ~high:Int64.(pred length)
-      |> Alcotest.(check (option string)) "" (Some v))
+      |> Alcotest.(check string) "" v)
     array
 
 let () =

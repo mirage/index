@@ -175,16 +175,8 @@ module IO : Index.IO = struct
     else (
       Raw.unsafe_write t.raw ~off:t.flushed buf;
       Raw.Offset.set t.raw offset;
-
-      (* concurrent append might happen so here t.offset might differ
-         from offset *)
-      if
-        not (t.flushed ++ Int64.of_int (String.length buf) = t.header ++ offset)
-      then
-        Fmt.failwith "sync error: %s flushed=%Ld buf=%Ld offset+header=%Ld\n%!"
-          t.file t.flushed
-          (Int64.of_int (String.length buf))
-          (offset ++ t.header);
+      assert (
+        t.flushed ++ Int64.of_int (String.length buf) = t.header ++ offset );
       t.flushed <- offset ++ t.header )
 
   let name t = t.file
@@ -273,14 +265,14 @@ module IO : Index.IO = struct
 
   let buffers = Hashtbl.create 256
 
-  let buffer file readonly =
+  let buffer file =
     try
-      let buf = Hashtbl.find buffers (file, readonly) in
+      let buf = Hashtbl.find buffers file in
       Buffer.clear buf;
       buf
     with Not_found ->
       let buf = Buffer.create (4 * 1024) in
-      Hashtbl.add buffers (file, readonly) buf;
+      Hashtbl.add buffers file buf;
       buf
 
   let () = assert (String.length current_version = 8)
@@ -296,7 +288,7 @@ module IO : Index.IO = struct
         raw;
         readonly;
         fan_size;
-        buf = buffer file readonly;
+        buf = buffer file;
         flushed = header ++ offset;
       }
     in

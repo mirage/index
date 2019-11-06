@@ -406,7 +406,8 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         else no_changes ()
 
   let find_instance t key =
-    let find_if_exists ~name ~find = function
+    let find_if_exists ~name ~find db () =
+      match db with
       | None ->
           Log.debug (fun l ->
               l "[%s] %s is not present" (Filename.basename t.root) name);
@@ -417,39 +418,26 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               l "[%s] found in %s" (Filename.basename t.root) name);
           ans
     in
+    let ( @~ ) a b = try a () with Not_found -> b () in
     let find_log_index () =
-      try find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
-      with Not_found -> (
-        match
-          find_if_exists ~name:"index" ~find:interpolation_search t.index
-        with
-        | Some e -> e
-        | None -> raise Not_found )
+      find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
+      @~ find_if_exists ~name:"index" ~find:interpolation_search t.index
     in
     IO.Mutex.with_lock t.rename_lock (fun () ->
         if t.config.readonly then sync_log t;
-        try
-          find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
-        with Not_found -> (
-          try
-            find_if_exists ~name:"log_async"
-              ~find:(fun log -> Tbl.find log.mem)
-              t.log_async
-          with Not_found -> (
-            match
-              find_if_exists ~name:"index" ~find:interpolation_search t.index
-            with
-            | Some e -> e
-            | None when t.config.readonly ->
-                sync_log t;
-                find_log_index ()
-            | None -> raise Not_found ) ))
+        find_if_exists ~name:"log_async"
+          ~find:(fun log -> Tbl.find log.mem)
+          t.log_async
+        @~ fun () ->
+        find_log_index @~ fun () ->
+        if t.config.readonly then (
+          sync_log t;
+          find_log_index () )
+        else raise Not_found)
 
   let find t key =
     let t = check_open t in
-    Log.info (fun l ->
-        l "[%s] ro= %b find %a" (Filename.basename t.root) t.config.readonly
-          K.pp key);
+    Log.info (fun l -> l "[%s] find %a" (Filename.basename t.root) K.pp key);
     find_instance t key
 
   let mem t key =
