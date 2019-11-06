@@ -2,6 +2,12 @@ module Private = struct
   module Fan = Fan
   module Io_array = Io_array
   module Search = Search
+
+  module Hook = struct
+    type 'a t = 'a -> unit
+
+    let v f = f
+  end
 end
 
 module type Key = sig
@@ -59,8 +65,7 @@ module type S = sig
 
   val iter : (key -> value -> unit) -> t -> unit
 
-  val force_merge :
-    ?hook:[> `After of unit -> unit | `Before of unit -> unit ] -> t -> unit
+  val force_merge : ?hook:[ `After | `Before ] Private.Hook.t -> t -> unit
 
   val flush : t -> unit
 
@@ -518,7 +523,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     t.log_async <- Some log_async;
 
     let go () =
-      (match hook with Some (`Before f) -> f () | _ -> ());
+      may (fun f -> f `Before) hook;
       let log = assert_and_get t.log in
       let generation = Int64.succ t.generation in
       let log_array =
@@ -578,7 +583,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
             log_async.mem;
           IO.sync log.io;
           t.log_async <- None);
-      (match hook with Some (`After f) -> f () | _ -> ());
+      may (fun f -> f `After) hook;
       IO.clear log_async.io;
       IO.close log_async.io;
       IO.Mutex.unlock t.merge_lock

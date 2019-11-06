@@ -1,3 +1,4 @@
+module Hook = Index.Private.Hook
 open Common
 
 let root = Filename.concat "_tests" "unix.force_merge"
@@ -5,6 +6,10 @@ let root = Filename.concat "_tests" "unix.force_merge"
 module Context = Common.Make_context (struct
   let root = root
 end)
+
+let after f = Hook.v (function `After -> f () | _ -> ())
+
+let before f = Hook.v (function `Before -> f () | _ -> ())
 
 let test_find_present t tbl =
   Hashtbl.iter
@@ -181,8 +186,8 @@ let write_after_merge () =
   let k2 = Key.v () in
   let v2 = Value.v () in
   Index.replace w k1 v1;
-  let f () = Index.replace w k2 v2 in
-  Index.force_merge ~hook:(`After f) w;
+  let hook = after (fun () -> Index.replace w k2 v2) in
+  Index.force_merge ~hook w;
   test_one_entry r1 k1 v1;
   Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k2)
     Not_found (fun () -> ignore (Index.find r1 k2))
@@ -196,11 +201,12 @@ let replace_while_merge () =
   let k2 = Key.v () in
   let v2 = Value.v () in
   Index.replace w k1 v1;
-  let f () =
-    Index.replace w k2 v2;
-    test_one_entry w k2 v2
+  let hook =
+    before (fun () ->
+        Index.replace w k2 v2;
+        test_one_entry w k2 v2)
   in
-  Index.force_merge ~hook:(`Before f) w;
+  Index.force_merge ~hook w;
   test_one_entry r1 k1 v1
 
 (* note that here we cannot do
@@ -216,14 +222,12 @@ let find_while_merge () =
   let v1 = Value.v () in
   Index.replace w k1 v1;
   let f () = test_one_entry w k1 v1 in
-  Index.force_merge ~hook:(`Before f) w;
-  let f () = test_one_entry w k1 v1 in
-  Index.force_merge ~hook:(`After f) w;
+  Index.force_merge ~hook:(after f) w;
+  Index.force_merge ~hook:(after f) w;
   let r1 = clone ~readonly:true in
   let f () = test_one_entry r1 k1 v1 in
-  Index.force_merge ~hook:(`Before f) w;
-  let f () = test_one_entry r1 k1 v1 in
-  Index.force_merge ~hook:(`After f) w
+  Index.force_merge ~hook:(before f) w;
+  Index.force_merge ~hook:(before f) w
 
 let tests =
   [
