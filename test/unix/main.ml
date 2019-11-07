@@ -207,6 +207,17 @@ module Readonly = struct
     Index.close rw;
     Index.close ro
 
+  let readonly_v_after_replace () =
+    let Context.{ rw; clone; _ } = Context.full_index () in
+    let k = Key.v () in
+    let v = Value.v () in
+    Index.replace rw k v;
+    let ro = clone ~readonly:true in
+    Index.close rw;
+    Index.close ro;
+    let rw = clone ~readonly:false in
+    check_index_entry rw k v
+
   let readonly_clear () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
     let ro = clone ~readonly:true in
@@ -244,6 +255,7 @@ module Readonly = struct
     [
       ("add", `Quick, readonly);
       ("read after clear", `Quick, readonly_clear);
+      ("Readonly v after replace", `Quick, readonly_v_after_replace);
       ("add not allowed", `Quick, fail_readonly_add);
       ("fail read if no flush", `Quick, fail_readonly_read);
     ]
