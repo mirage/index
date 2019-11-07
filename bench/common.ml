@@ -21,7 +21,7 @@ let reporter ?(prefix = "") () =
   { Logs.report }
 
 let report () =
-  Logs.set_level (Some Logs.Info);
+  Logs.set_level (Some Logs.App);
   Logs.set_reporter (reporter ())
 
 let random_char () = char_of_int (33 + Random.int 94)
