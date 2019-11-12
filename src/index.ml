@@ -377,10 +377,18 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     | Some log -> (
         try
           let log_offset = IO.offset log.io in
-          let new_log_offset = IO.force_offset log.io in
-          if log_offset <> new_log_offset then (
-            Tbl.clear log.mem;
-            iter_io (add_log_entry log) log.io )
+          IO.close log.io;
+          let path = log_async_path t.root in
+          if Sys.file_exists path then (
+            let io =
+              IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
+            in
+            t.log_async <- Some { log with io };
+            let new_log_offset = IO.offset io in
+            if log_offset <> new_log_offset then (
+              Tbl.clear log.mem;
+              iter_io (add_log_entry log) io ) )
+          else ()
         with IO.Bad_Fd_Read ->
           ()
           (* if log_async does not exits anymore, then its contents have been moved to log and the generation has changed *)
