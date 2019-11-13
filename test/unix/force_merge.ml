@@ -1,3 +1,4 @@
+module Hook = Index.Private.Hook
 open Common
 
 let root = Filename.concat "_tests" "unix.force_merge"
@@ -5,6 +6,10 @@ let root = Filename.concat "_tests" "unix.force_merge"
 module Context = Common.Make_context (struct
   let root = root
 end)
+
+let after f = Hook.v (function `After -> f () | _ -> ())
+
+let before f = Hook.v (function `Before -> f () | _ -> ())
 
 let test_find_present t tbl =
   Hashtbl.iter
@@ -117,6 +122,7 @@ let readonly_and_merge () =
     let k1 = Key.v () in
     let v1 = Value.v () in
     Index.replace w k1 v1;
+    Index.flush w;
     Index.force_merge w;
     test_one_entry r1 k1 v1;
     test_one_entry r2 k1 v1;
@@ -125,6 +131,7 @@ let readonly_and_merge () =
     let k2 = Key.v () in
     let v2 = Value.v () in
     Index.replace w k2 v2;
+    Index.flush w;
     test_one_entry r1 k1 v1;
     Index.force_merge w;
     test_one_entry r2 k2 v2;
@@ -136,15 +143,18 @@ let readonly_and_merge () =
     let v3 = Value.v () in
     test_one_entry r1 k1 v1;
     Index.replace w k2 v2;
+    Index.flush w;
     Index.force_merge w;
     test_one_entry r1 k1 v1;
     Index.replace w k3 v3;
+    Index.flush w;
     Index.force_merge w;
     test_one_entry r3 k3 v3;
 
     let k2 = Key.v () in
     let v2 = Value.v () in
     Index.replace w k2 v2;
+    Index.flush w;
     test_one_entry w k2 v2;
     Index.force_merge w;
     test_one_entry w k2 v2;
@@ -154,26 +164,79 @@ let readonly_and_merge () =
     let k2 = Key.v () in
     let v2 = Value.v () in
     Index.replace w k2 v2;
+    Index.flush w;
     test_one_entry r2 k1 v1;
     Index.force_merge w;
     test_one_entry w k2 v2;
     test_one_entry r2 k2 v2;
     test_one_entry r3 k2 v2
   in
-  let rec loop i =
-    if i = 0 then ()
-    else (
-      interleave ();
-      loop (i - 1) )
-  in
-  loop 10;
+  for _ = 1 to 10 do
+    interleave ()
+  done;
   test_fd ()
+
+(* A force merge has an implicit flush, however, if the replace occurs at the end of the merge, the value is not flushed *)
+let write_after_merge () =
+  let { Context.rw; clone; _ } = Context.full_index () in
+  let w = rw in
+  let r1 = clone ~readonly:true in
+  let k1 = Key.v () in
+  let v1 = Value.v () in
+  let k2 = Key.v () in
+  let v2 = Value.v () in
+  Index.replace w k1 v1;
+  let hook = after (fun () -> Index.replace w k2 v2) in
+  Index.force_merge ~hook w;
+  test_one_entry r1 k1 v1;
+  Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k2)
+    Not_found (fun () -> ignore (Index.find r1 k2))
+
+let replace_while_merge () =
+  let { Context.rw; clone; _ } = Context.full_index () in
+  let w = rw in
+  let r1 = clone ~readonly:true in
+  let k1 = Key.v () in
+  let v1 = Value.v () in
+  let k2 = Key.v () in
+  let v2 = Value.v () in
+  Index.replace w k1 v1;
+  let hook =
+    before (fun () ->
+        Index.replace w k2 v2;
+        test_one_entry w k2 v2)
+  in
+  Index.force_merge ~hook w;
+  test_one_entry r1 k1 v1
+
+(* note that here we cannot do
+   `test_one_entry r1 k2 v2`
+   as there is no way to guarantee that the latests value
+   added by a RW instance is found by a RO instance
+*)
+
+let find_while_merge () =
+  let { Context.rw; clone; _ } = Context.full_index () in
+  let w = rw in
+  let k1 = Key.v () in
+  let v1 = Value.v () in
+  Index.replace w k1 v1;
+  let f () = test_one_entry w k1 v1 in
+  Index.force_merge ~hook:(after f) w;
+  Index.force_merge ~hook:(after f) w;
+  let r1 = clone ~readonly:true in
+  let f () = test_one_entry r1 k1 v1 in
+  Index.force_merge ~hook:(before f) w;
+  Index.force_merge ~hook:(before f) w
 
 let tests =
   [
     ("readonly in sequence", `Quick, readonly_s);
     ("readonly interleaved", `Quick, readonly);
     ("interleaved merge", `Quick, readonly_and_merge);
+    ("write at the end of merge", `Quick, write_after_merge);
+    ("write in log_async", `Quick, replace_while_merge);
+    ("find while merging", `Quick, find_while_merge);
   ]
 
 (* Unix.sleep 10 *)

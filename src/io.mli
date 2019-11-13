@@ -36,7 +36,7 @@ module type S = sig
 
   val read : t -> off:int64 -> len:int -> bytes -> int
 
-  val clear : t -> unit
+  val clear : ?keep_generation:bool -> t -> unit
 
   val sync : t -> unit
 
@@ -61,4 +61,20 @@ module type S = sig
   val lock : string -> lock
 
   val unlock : lock -> unit
+
+  exception Bad_Read
+
+  module Mutex : sig
+    type t
+
+    val create : unit -> t
+
+    val lock : t -> unit
+
+    val unlock : t -> unit
+
+    val with_lock : t -> (unit -> 'a) -> 'a
+  end
+
+  val async : (unit -> 'a) -> unit
 end

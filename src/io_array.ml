@@ -95,7 +95,7 @@ module Make (IO : Io.S) (Elt : ELT) :
       Log.warn (fun m ->
           m "Requested pre-fetch region is empty: [%Ld, %Ld]" low high)
     else if range > max_buffer_size then
-      Log.debug (fun m ->
+      Log.warn (fun m ->
           m "Requested pre-fetch [%Ld, %Ld] is larger than %d" low high
             max_buffer_size)
     else
@@ -113,7 +113,7 @@ module Make (IO : Io.S) (Elt : ELT) :
                    pre-fetch [%Ld, %Ld]"
                   low_buf high_buf low high)
           else (
-            Log.debug (fun m ->
+            Log.warn (fun m ->
                 m
                   "Current buffer [%Ld, %Ld] insufficient. Prefetching in \
                    range [%Ld, %Ld]"

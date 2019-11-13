@@ -65,7 +65,7 @@ module type S = sig
   module Array : ARRAY with type elt = Entry.t
 
   val interpolation_search :
-    Array.t -> Entry.Key.t -> low:int64 -> high:int64 -> Entry.Value.t option
+    Array.t -> Entry.Key.t -> low:int64 -> high:int64 -> Entry.Value.t
 end
 
 module Make
