@@ -51,7 +51,7 @@ module IO : Index.IO = struct
     in
     get_uint64 buf 0
 
-  exception Bad_Fd_Read
+  exception Bad_Read
 
   module Raw = struct
     type t = { fd : Unix.file_descr; mutable cursor : int64 }
@@ -93,7 +93,7 @@ module IO : Index.IO = struct
     let unsafe_read t ~off ~len buf =
       let n =
         try really_read t.fd off len buf
-        with Unix.Unix_error (Unix.EBADF, "read", "") -> raise Bad_Fd_Read
+        with Unix.Unix_error (Unix.EBADF, "read", "") -> raise Bad_Read
       in
       t.cursor <- off ++ Int64.of_int n;
       stats.bytes_read <- stats.bytes_read + n;
@@ -383,8 +383,6 @@ module IO : Index.IO = struct
         Mutex.unlock t;
         raise e
   end
-
-  let () = Logs_threaded.enable ()
 
   let async f = ignore (Thread.create f ())
 end

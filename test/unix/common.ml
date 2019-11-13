@@ -18,6 +18,7 @@ let reporter ?(prefix = "") () =
   { Logs.report }
 
 let report () =
+  Logs_threaded.enable ();
   Logs.set_level (Some Logs.Debug);
   Logs.set_reporter (reporter ())
 

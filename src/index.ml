@@ -127,7 +127,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     mutable log : log option;
     mutable log_async : log option;
     mutable open_instances : int;
-    lock : IO.lock option;
+    writer_lock : IO.lock option;
     mutable merge_lock : IO.Mutex.t;
     mutable rename_lock : IO.Mutex.t;
   }
@@ -290,7 +290,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     Log.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
-    let lock =
+    let writer_lock =
       if not readonly then Some (IO.lock (lock_path root)) else None
     in
     let config = { log_size = log_size * entry_size; readonly; fresh } in
@@ -335,7 +335,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
       open_instances = 1;
       merge_lock = IO.Mutex.create ();
       rename_lock = IO.Mutex.create ();
-      lock;
+      writer_lock;
     }
 
   let (`Staged v) = with_cache ~v:v_no_cache ~clear
@@ -389,10 +389,10 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               Tbl.clear log.mem;
               iter_io (add_log_entry log) io ) )
           else ()
-        with IO.Bad_Fd_Read ->
-          ()
-          (* if log_async does not exits anymore, then its contents have been moved to log and the generation has changed *)
-        ) );
+        with IO.Bad_Read ->
+          (* if log_async does not exist anymore, then its contents have been
+             moved to log and the generation has changed *)
+          () ) );
     match t.log with
     | None -> no_changes ()
     | Some log ->
@@ -681,7 +681,6 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
     match !it with
     | None -> Log.info (fun l -> l "close: instance already closed")
     | Some t ->
-        (* XXX This piece of code is not thread safe. *)
         Log.info (fun l -> l "[%s] close" (Filename.basename t.root));
         IO.Mutex.with_lock t.merge_lock (fun () ->
             it := None;
@@ -693,5 +692,5 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
               if not t.config.readonly then flush_instance t;
               may (fun l -> IO.close l.io) t.log;
               may (fun (i : index) -> IO.close i.io) t.index;
-              may (fun lock -> IO.unlock lock) t.lock ))
+              may (fun lock -> IO.unlock lock) t.writer_lock ))
 end
