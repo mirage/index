@@ -95,7 +95,7 @@ let interpolation_constant_metric () =
     (fun (i, v) ->
       Search_constant.interpolation_search array i ~low:0L
         ~high:Int64.(pred length)
-      |> Alcotest.(check (option string)) "" (Some v))
+      |> Alcotest.(check string) "" v)
     array
 
 let () =
