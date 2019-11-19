@@ -1,7 +1,7 @@
 (executable
  (name main)
  (modules main)
- (libraries fmt index.unix common))
+ (libraries fmt index.unix common cmdliner))
 
 (executable
  (name db_bench)
