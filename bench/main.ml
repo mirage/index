@@ -65,7 +65,7 @@ let run input =
   in
   let () =
     match input with
-    | `Find `RW | `All ->
+    | `Find `RO| `All ->
         let ro = Index.v ~readonly:true ~log_size index_name in
         let (), t3 = with_timer (fun () -> finds ro 0 bindings) in
         Index.close ro;
