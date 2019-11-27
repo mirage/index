@@ -139,28 +139,28 @@ end
 module DuplicateInstance = struct
   let find_present () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
-    let rw2 = clone ~readonly:false in
+    let rw2 = clone ~readonly:false () in
     check_equivalence rw tbl;
     Index.close rw;
     Index.close rw2
 
   let find_absent () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
-    let rw2 = clone ~readonly:false in
+    let rw2 = clone ~readonly:false () in
     test_find_absent rw tbl;
     Index.close rw;
     Index.close rw2
 
   let replace () =
     let Context.{ rw; clone; _ } = Context.full_index ~size:5 () in
-    let rw2 = clone ~readonly:false in
+    let rw2 = clone ~readonly:false () in
     test_replace rw;
     Index.close rw;
     Index.close rw2
 
   let membership () =
     let Context.{ tbl; clone; rw } = Context.full_index () in
-    let rw2 = clone ~readonly:false in
+    let rw2 = clone ~readonly:false () in
     check_equivalence_mem rw2 tbl;
     Index.close rw;
     Index.close rw2
@@ -177,7 +177,7 @@ module DuplicateInstance = struct
     let Context.{ rw; clone; _ } = Context.full_index () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
-    let rw2 = clone ~readonly:false in
+    let rw2 = clone ~readonly:false () in
     let k2, v2 = (Key.v (), Value.v ()) in
     Index.replace rw2 k2 v2;
     check_index_entry rw k2 v2;
@@ -200,7 +200,7 @@ end
 module Readonly = struct
   let readonly () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
-    let ro = clone ~readonly:true in
+    let ro = clone ~readonly:true () in
     Hashtbl.iter (fun k v -> Index.replace rw k v) main.tbl;
     Index.flush rw;
     check_equivalence ro main.tbl;
@@ -212,15 +212,15 @@ module Readonly = struct
     let k = Key.v () in
     let v = Value.v () in
     Index.replace rw k v;
-    let ro = clone ~readonly:true in
+    let ro = clone ~readonly:true () in
     Index.close rw;
     Index.close ro;
-    let rw = clone ~readonly:false in
+    let rw = clone ~readonly:false () in
     check_index_entry rw k v
 
   let readonly_clear () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
-    let ro = clone ~readonly:true in
+    let ro = clone ~readonly:true () in
     check_equivalence ro tbl;
     Index.clear rw;
     Hashtbl.iter
@@ -233,7 +233,7 @@ module Readonly = struct
 
   let fail_readonly_add () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
-    let ro = clone ~readonly:true in
+    let ro = clone ~readonly:true () in
     let exn = I.RO_not_allowed in
     Alcotest.check_raises "Index readonly cannot write." exn (fun () ->
         Index.replace ro (Key.v ()) (Value.v ()));
@@ -243,7 +243,7 @@ module Readonly = struct
   (* Tests that the entries that are not flushed cannot be read by a readonly index. The test relies on the fact that, for log_size > 0, adding one entry into an empty index does not lead to flush/merge. *)
   let fail_readonly_read () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
-    let ro = clone ~readonly:true in
+    let ro = clone ~readonly:true () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
     Alcotest.check_raises "Index readonly cannot read if data is not flushed."
@@ -266,27 +266,27 @@ module Close = struct
   let close_reopen_rw () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
     Index.close rw;
-    let w = clone ~readonly:false in
+    let w = clone ~readonly:false () in
     check_equivalence w tbl;
     Index.close w
 
   let find_absent () =
     let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     Index.close rw;
-    let rw = clone ~readonly:false in
+    let rw = clone ~readonly:false () in
     test_find_absent rw tbl;
     Index.close rw
 
   let replace () =
     let Context.{ rw; clone; _ } = Context.full_index ~size:5 () in
     Index.close rw;
-    let rw = clone ~readonly:false in
+    let rw = clone ~readonly:false () in
     test_replace rw;
     Index.close rw
 
   let open_readonly_close_rw () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
-    let ro = clone ~readonly:true in
+    let ro = clone ~readonly:true () in
     Index.close rw;
     check_equivalence ro tbl;
     Index.close ro
@@ -294,7 +294,7 @@ module Close = struct
   let close_reopen_readonly () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
     Index.close rw;
-    let ro = clone ~readonly:true in
+    let ro = clone ~readonly:true () in
     check_equivalence ro tbl;
     Index.close ro
 
@@ -332,6 +332,20 @@ module Close = struct
     Alcotest.check_raises "flush after double close with raises Closed"
       I.Closed (fun () -> Index.flush rw)
 
+  let restart_twice () =
+    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let k1, v1 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    Index.close rw;
+    let rw = clone ~fresh:true ~readonly:false () in
+    Alcotest.check_raises "Index restarts fresh cannot read data." Not_found
+      (fun () -> ignore (Index.find rw k1));
+    Index.close rw;
+    let rw = clone ~fresh:false ~readonly:false () in
+    Alcotest.check_raises "Index restarted fresh once cannot read data."
+      Not_found (fun () -> ignore (Index.find rw k1));
+    Index.close rw
+
   let tests =
     [
       ("close and reopen", `Quick, close_reopen_rw);
@@ -341,6 +355,7 @@ module Close = struct
       ("close and reopen on readonly", `Quick, close_reopen_readonly);
       ("non-close operations fail after close", `Quick, fail_api_after_close);
       ("double close", `Quick, check_double_close);
+      ("double restart", `Quick, restart_twice);
     ]
 end
 

@@ -25,7 +25,7 @@ end) : sig
   type t = {
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
-    clone : readonly:bool -> Index.t;
+    clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
   }
 
   val fresh_name : string -> string
