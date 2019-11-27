@@ -110,3 +110,9 @@ struct
     in
     { rw = t; tbl; clone }
 end
+
+let ignore_value (_ : Value.t) = ()
+
+let ignore_bool (_ : bool) = ()
+
+let ignore_index (_ : Index.t) = ()

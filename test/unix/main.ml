@@ -47,7 +47,7 @@ let test_find_absent t tbl =
     else
       let k = random_new_key tbl in
       Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k)
-        Not_found (fun () -> ignore (Index.find t k));
+        Not_found (fun () -> ignore_value (Index.find t k));
       loop (i - 1)
   in
   loop 100
@@ -170,7 +170,8 @@ module DuplicateInstance = struct
     let rw = Index.v ~fresh:true ~readonly:false ~log_size:4 reuse_name in
     let exn = I.RO_not_allowed in
     Alcotest.check_raises "Index readonly cannot be fresh." exn (fun () ->
-        ignore (Index.v ~fresh:true ~readonly:true ~log_size:4 reuse_name));
+        ignore_index
+          (Index.v ~fresh:true ~readonly:true ~log_size:4 reuse_name));
     Index.close rw
 
   let sync () =
@@ -226,7 +227,7 @@ module Readonly = struct
     Hashtbl.iter
       (fun k _ ->
         Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k)
-          Not_found (fun () -> ignore (Index.find ro k)))
+          Not_found (fun () -> ignore_value (Index.find ro k)))
       tbl;
     Index.close rw;
     Index.close ro
@@ -247,7 +248,7 @@ module Readonly = struct
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
     Alcotest.check_raises "Index readonly cannot read if data is not flushed."
-      Not_found (fun () -> ignore (Index.find ro k1));
+      Not_found (fun () -> ignore_value (Index.find ro k1));
     Index.close rw;
     Index.close ro
 
@@ -304,8 +305,8 @@ module Close = struct
     let calls t =
       [
         ("clear", fun () -> Index.clear t);
-        ("find", fun () -> ignore (Index.find t k : string));
-        ("mem", fun () -> ignore (Index.mem t k : bool));
+        ("find", fun () -> ignore_value (Index.find t k : string));
+        ("mem", fun () -> ignore_bool (Index.mem t k : bool));
         ("replace", fun () -> Index.replace t k v);
         ("iter", fun () -> Index.iter (fun _ _ -> ()) t);
         ("force_merge", fun () -> Index.force_merge t);
@@ -339,11 +340,11 @@ module Close = struct
     Index.close rw;
     let rw = clone ~fresh:true ~readonly:false () in
     Alcotest.check_raises "Index restarts fresh cannot read data." Not_found
-      (fun () -> ignore (Index.find rw k1));
+      (fun () -> ignore_value (Index.find rw k1));
     Index.close rw;
     let rw = clone ~fresh:false ~readonly:false () in
     Alcotest.check_raises "Index restarted fresh once cannot read data."
-      Not_found (fun () -> ignore (Index.find rw k1));
+      Not_found (fun () -> ignore_value (Index.find rw k1));
     Index.close rw
 
   let tests =

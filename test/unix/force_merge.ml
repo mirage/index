@@ -190,7 +190,7 @@ let write_after_merge () =
   Index.force_merge ~hook w;
   test_one_entry r1 k1 v1;
   Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k2)
-    Not_found (fun () -> ignore (Index.find r1 k2))
+    Not_found (fun () -> ignore_value (Index.find r1 k2))
 
 let replace_while_merge () =
   let { Context.rw; clone; _ } = Context.full_index () in
