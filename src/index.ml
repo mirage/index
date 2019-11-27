@@ -707,7 +707,11 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
                   l "[%s] last open instance: closing the file descriptor"
                     (Filename.basename t.root));
               if not t.config.readonly then flush_instance t;
-              may (fun l -> IO.close l.io) t.log;
+              may
+                (fun l ->
+                  Tbl.clear l.mem;
+                  IO.close l.io)
+                t.log;
               may (fun (i : index) -> IO.close i.io) t.index;
               may (fun lock -> IO.unlock lock) t.writer_lock ))
 end
