@@ -16,8 +16,7 @@ let test_find_present t tbl =
     (fun k v ->
       match Index.find t k with
       | res ->
-          if not (res = v) then
-            Alcotest.fail "Replacing existing value failed."
+          if not (res = v) then Alcotest.fail "Replacing existing value failed."
       | exception Not_found ->
           Alcotest.failf "Inserted value is not present anymore: %s." k)
     tbl
