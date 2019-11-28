@@ -170,8 +170,7 @@ module DuplicateInstance = struct
     let rw = Index.v ~fresh:true ~readonly:false ~log_size:4 reuse_name in
     let exn = I.RO_not_allowed in
     Alcotest.check_raises "Index readonly cannot be fresh." exn (fun () ->
-        ignore_index
-          (Index.v ~fresh:true ~readonly:true ~log_size:4 reuse_name));
+        ignore_index (Index.v ~fresh:true ~readonly:true ~log_size:4 reuse_name));
     Index.close rw
 
   let sync () =
@@ -318,8 +317,8 @@ module Close = struct
       List.iter
         (fun (name, call) ->
           Alcotest.check_raises
-            (Printf.sprintf "%s after close with readonly=%b raises Closed"
-               name readonly)
+            (Printf.sprintf "%s after close with readonly=%b raises Closed" name
+               readonly)
             I.Closed call)
         (calls instance)
     in
@@ -330,8 +329,8 @@ module Close = struct
     let Context.{ rw; _ } = Context.full_index () in
     Index.close rw;
     Index.close rw;
-    Alcotest.check_raises "flush after double close with raises Closed"
-      I.Closed (fun () -> Index.flush rw)
+    Alcotest.check_raises "flush after double close with raises Closed" I.Closed
+      (fun () -> Index.flush rw)
 
   let restart_twice () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
