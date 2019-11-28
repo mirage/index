@@ -82,14 +82,16 @@ struct
   type t = {
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
-    clone : readonly:bool -> Index.t;
+    clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
   }
 
   let empty_index () =
     let name = fresh_name "empty_index" in
     let rw = Index.v ~fresh:true ~log_size:4 name in
     let tbl = Hashtbl.create 0 in
-    let clone ~readonly = Index.v ~fresh:false ~log_size:4 ~readonly name in
+    let clone ?(fresh = false) ~readonly () =
+      Index.v ~fresh ~log_size:4 ~readonly name
+    in
     { rw; tbl; clone }
 
   let full_index ?(size = 103) () =
@@ -103,6 +105,14 @@ struct
       Hashtbl.replace tbl k v
     done;
     Index.flush t;
-    let clone ~readonly = Index.v ~fresh:false ~log_size:4 ~readonly name in
+    let clone ?(fresh = false) ~readonly () =
+      Index.v ~fresh ~log_size:4 ~readonly name
+    in
     { rw = t; tbl; clone }
 end
+
+let ignore_value (_ : Value.t) = ()
+
+let ignore_bool (_ : bool) = ()
+
+let ignore_index (_ : Index.t) = ()

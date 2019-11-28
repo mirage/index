@@ -25,7 +25,7 @@ end) : sig
   type t = {
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
-    clone : readonly:bool -> Index.t;
+    clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
   }
 
   val fresh_name : string -> string
@@ -38,3 +38,9 @@ end) : sig
   (** Fresh index with a random table of key/value pairs, and a given
       constructor for opening clones of the index at the same location. *)
 end
+
+val ignore_value : Value.t -> unit
+
+val ignore_bool : bool -> unit
+
+val ignore_index : Index.t -> unit

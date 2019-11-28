@@ -91,9 +91,9 @@ let test_fd () =
 
 let readonly_s () =
   let { Context.tbl; clone; _ } = Context.full_index () in
-  let r1 = clone ~readonly:true in
-  let r2 = clone ~readonly:true in
-  let r3 = clone ~readonly:true in
+  let r1 = clone ~readonly:true () in
+  let r2 = clone ~readonly:true () in
+  let r3 = clone ~readonly:true () in
   test_find_present r1 tbl;
   test_find_present r2 tbl;
   test_find_present r3 tbl;
@@ -101,9 +101,9 @@ let readonly_s () =
 
 let readonly () =
   let { Context.tbl; clone; _ } = Context.full_index () in
-  let r1 = clone ~readonly:true in
-  let r2 = clone ~readonly:true in
-  let r3 = clone ~readonly:true in
+  let r1 = clone ~readonly:true () in
+  let r2 = clone ~readonly:true () in
+  let r3 = clone ~readonly:true () in
   Hashtbl.iter
     (fun k v ->
       test_one_entry r1 k v;
@@ -115,9 +115,9 @@ let readonly () =
 let readonly_and_merge () =
   let { Context.rw; clone; _ } = Context.full_index () in
   let w = rw in
-  let r1 = clone ~readonly:true in
-  let r2 = clone ~readonly:true in
-  let r3 = clone ~readonly:true in
+  let r1 = clone ~readonly:true () in
+  let r2 = clone ~readonly:true () in
+  let r3 = clone ~readonly:true () in
   let interleave () =
     let k1 = Key.v () in
     let v1 = Value.v () in
@@ -180,7 +180,7 @@ let readonly_and_merge () =
 let write_after_merge () =
   let { Context.rw; clone; _ } = Context.full_index () in
   let w = rw in
-  let r1 = clone ~readonly:true in
+  let r1 = clone ~readonly:true () in
   let k1 = Key.v () in
   let v1 = Value.v () in
   let k2 = Key.v () in
@@ -190,12 +190,12 @@ let write_after_merge () =
   Index.force_merge ~hook w;
   test_one_entry r1 k1 v1;
   Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k2)
-    Not_found (fun () -> ignore (Index.find r1 k2))
+    Not_found (fun () -> ignore_value (Index.find r1 k2))
 
 let replace_while_merge () =
   let { Context.rw; clone; _ } = Context.full_index () in
   let w = rw in
-  let r1 = clone ~readonly:true in
+  let r1 = clone ~readonly:true () in
   let k1 = Key.v () in
   let v1 = Value.v () in
   let k2 = Key.v () in
@@ -224,7 +224,7 @@ let find_while_merge () =
   let f () = test_one_entry w k1 v1 in
   Index.force_merge ~hook:(after f) w;
   Index.force_merge ~hook:(after f) w;
-  let r1 = clone ~readonly:true in
+  let r1 = clone ~readonly:true () in
   let f () = test_one_entry r1 k1 v1 in
   Index.force_merge ~hook:(before f) w;
   Index.force_merge ~hook:(before f) w
