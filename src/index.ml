@@ -324,6 +324,26 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
         iter_io (fun e -> Tbl.replace mem e.key e.value) io;
         Some { io; mem }
     in
+    let log_async_path = log_async_path root in
+    if (not readonly) && (not fresh) && Sys.file_exists log_async_path then
+      may
+        (fun log ->
+          let io =
+            IO.v ~fresh ~readonly ~generation:0L ~fan_size:0L log_async_path
+          in
+          let entries = Int64.div (IO.force_offset io) entry_sizeL in
+          Log.debug (fun l ->
+              l "[%s] log_async file detected. Loading %Ld entries"
+                (Filename.basename root) entries);
+          iter_io
+            (fun e ->
+              Tbl.replace log.mem e.key e.value;
+              append_key_value log.io e.key e.value)
+            io;
+          IO.sync log.io;
+          IO.clear io;
+          IO.close io)
+        log;
     let generation =
       match log with None -> 0L | Some log -> IO.get_generation log.io
     in
