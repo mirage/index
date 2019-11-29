@@ -1,12 +1,10 @@
-# Changelog
+# 1.0.1 (2019-11-29)
 
-## 1.0.1 (2019-11-28)
-
-### Added
+## Added
 
 - Provide a better CLI interface for the benchmarks (#130, #133)
 
-### Fixed
+## Fixed
 
 - Fix a segmentation fault when using musl <= 1.1.20 by not allocating 64k-byte
   buffers on the thread stack (#132)
@@ -14,6 +12,6 @@
 - Clear `log.mem` on `close` (#135)
 - Load `log_async` on startup (#136)
 
-## 1.0.0 (2019-11-14)
+# 1.0.0 (2019-11-14)
 
 First stable release.
