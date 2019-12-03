@@ -241,6 +241,39 @@ let find_while_merge () =
   Threads.await t3;
   Threads.await t4
 
+let find_in_async_generation_change () =
+  let { Context.rw; clone; _ } = Context.full_index () in
+  let w = rw in
+  let r1 = clone ~readonly:true () in
+  let k1 = Key.v () in
+  let v1 = Value.v () in
+  let f () =
+    Index.replace w k1 v1;
+    Index.flush w;
+    test_one_entry r1 k1 v1
+  in
+  let t1 = Index.force_merge ~hook:(before f) w in
+  Threads.await t1
+
+let find_in_async_same_generation () =
+  let { Context.rw; clone; _ } = Context.full_index () in
+  let w = rw in
+  let r1 = clone ~readonly:true () in
+  let k1 = Key.v () in
+  let v1 = Value.v () in
+  let k2 = Key.v () in
+  let v2 = Value.v () in
+  let f () =
+    Index.replace w k1 v1;
+    Index.flush w;
+    test_one_entry r1 k1 v1;
+    Index.replace w k2 v2;
+    Index.flush w;
+    test_one_entry r1 k2 v2
+  in
+  let t1 = Index.force_merge ~hook:(before f) w in
+  Threads.await t1
+
 let tests =
   [
     ("readonly in sequence", `Quick, readonly_s);
@@ -249,4 +282,6 @@ let tests =
     ("write at the end of merge", `Quick, write_after_merge);
     ("write in log_async", `Quick, replace_while_merge);
     ("find while merging", `Quick, find_while_merge);
+    ("find in async without log", `Quick, find_in_async_generation_change);
+    ("find in async with log", `Quick, find_in_async_same_generation);
   ]

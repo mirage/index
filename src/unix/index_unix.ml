@@ -50,8 +50,6 @@ module IO : Index.IO = struct
     in
     get_uint64 buf 0
 
-  exception Bad_Read
-
   module Raw = struct
     type t = { fd : Unix.file_descr; mutable cursor : int64 }
 
@@ -87,10 +85,7 @@ module IO : Index.IO = struct
       Stats.add_write (Bytes.length buf)
 
     let unsafe_read t ~off ~len buf =
-      let n =
-        try really_read t.fd off len buf
-        with Unix.Unix_error (Unix.EBADF, "read", "") -> raise Bad_Read
-      in
+      let n = really_read t.fd off len buf in
       t.cursor <- off ++ Int64.of_int n;
       Stats.add_read n;
       n
@@ -383,7 +378,7 @@ module IO : Index.IO = struct
 
   let return () = None
 
-  let await t = match t with None -> () | Some t -> ignore (Thread.join t)
+  let await t = match t with None -> () | Some t -> Thread.join t
 end
 
 module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO)

@@ -401,37 +401,28 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
           l "[%s] no changes detected" (Filename.basename t.root))
     in
     let add_log_entry log e = Tbl.replace log.mem e.key e.value in
+    let sync_log_async ?(generation_change = false) () =
+      match t.log_async with
+      | None -> t.log_async <- try_load_log t (log_async_path t.root)
+      | Some log ->
+          let offset = IO.offset log.io in
+          let new_offset = IO.force_offset log.io in
+          if generation_change || offset <> new_offset then (
+            Tbl.clear log.mem;
+            iter_io (add_log_entry log) log.io )
+          else ()
+    in
     ( match t.log with
     | None -> t.log <- try_load_log t (log_path t.root)
     | Some _ -> () );
-    ( match t.log_async with
-    | None -> t.log_async <- try_load_log t (log_async_path t.root)
-    | Some log -> (
-        try
-          let log_offset = IO.offset log.io in
-          IO.close log.io;
-          let path = log_async_path t.root in
-          if Sys.file_exists path then (
-            let io =
-              IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
-            in
-            t.log_async <- Some { log with io };
-            let new_log_offset = IO.offset io in
-            if log_offset <> new_log_offset then (
-              Tbl.clear log.mem;
-              iter_io (add_log_entry log) io ) )
-          else ()
-        with IO.Bad_Read ->
-          (* if log_async does not exist anymore, then its contents have been
-             moved to log and the generation has changed *)
-          () ) );
     match t.log with
-    | None -> no_changes ()
+    | None -> sync_log_async ()
     | Some log ->
         let generation = IO.get_generation log.io in
         let log_offset = IO.offset log.io in
         let new_log_offset = IO.force_offset log.io in
         let add_log_entry e = add_log_entry log e in
+        sync_log_async ~generation_change:(t.generation <> generation) ();
         if t.generation <> generation then (
           Log.debug (fun l ->
               l "[%s] generation has changed, reading log and index from disk"
