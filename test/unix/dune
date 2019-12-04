@@ -1,4 +1,4 @@
 (tests
  (names main force_merge io_array)
  (package index)
- (libraries index.unix alcotest fmt logs logs.fmt re))
+ (libraries index index.unix alcotest fmt logs logs.fmt re stdlib-shims))
