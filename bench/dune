@@ -1,12 +1,12 @@
 (executable
  (name main)
  (modules main)
- (libraries fmt index.unix common cmdliner))
+ (libraries fmt index index.unix common cmdliner))
 
 (executable
  (name db_bench)
  (modules db_bench)
- (libraries fmt index.unix common lmdb bigstring rresult logs logs.fmt))
+ (libraries fmt index index.unix common lmdb bigstring rresult logs logs.fmt))
 
 (alias
  (name bench)
@@ -20,4 +20,4 @@
 (library
  (name common)
  (modules common)
- (libraries index.unix logs logs.fmt))
+ (libraries fmt index index.unix logs logs.fmt))
