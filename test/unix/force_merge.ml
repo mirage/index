@@ -241,16 +241,6 @@ let find_while_merge () =
   Threads.await t3;
   Threads.await t4
 
-let test_fail () =
-  let { Context.rw; _ } = Context.empty_index () in
-  let w = rw in
-  let k1 = Key.v () in
-  let v1 = Value.v () in
-  Index.replace w k1 v1;
-  let f () = Alcotest.fail "test fail" in
-  let t = Index.force_merge ~hook:(before f) w in
-  Threads.join t
-
 let tests =
   [
     ("readonly in sequence", `Quick, readonly_s);
@@ -259,5 +249,4 @@ let tests =
     ("write at the end of merge", `Quick, write_after_merge);
     ("write in log_async", `Quick, replace_while_merge);
     ("find while merging", `Quick, find_while_merge);
-    ("test that should fail", `Quick, test_fail);
   ]
