@@ -84,6 +84,10 @@ exception RO_not_allowed
 exception Closed
 
 module Make_private (K : Key) (V : Value) (IO : IO) = struct
+  type async = IO.async
+
+  let await = IO.await
+
   type key = K.t
 
   type value = V.t
@@ -666,7 +670,8 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
     let witness = IO.Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
     match witness with
     | None ->
-        Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
+        Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
+        IO.return ()
     | Some witness -> merge ?hook ~witness t
 
   let replace t key value =
@@ -685,7 +690,8 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
           Tbl.replace log.mem key value;
           Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
     in
-    if do_merge then merge ~witness:{ key; key_hash = K.hash key; value } t
+    if do_merge then
+      ignore (merge ~witness:{ key; key_hash = K.hash key; value } t)
 
   let iter f t =
     let t = check_open t in
@@ -744,7 +750,11 @@ module Private = struct
 
     val iter : (key -> value -> unit) -> t -> unit
 
-    val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> unit
+    type async
+
+    val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> async
+
+    val await : async -> unit
   end
 
   module Make = Make_private

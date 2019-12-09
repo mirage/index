@@ -44,3 +44,9 @@ val ignore_value : Value.t -> unit
 val ignore_bool : bool -> unit
 
 val ignore_index : Index.t -> unit
+
+module Threads : sig
+  val with_thread : (unit -> unit) -> unit
+
+  val await : Index.async -> unit
+end

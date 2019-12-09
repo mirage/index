@@ -76,5 +76,11 @@ module type S = sig
     val with_lock : t -> (unit -> 'a) -> 'a
   end
 
-  val async : (unit -> 'a) -> unit
+  type async_type
+
+  val async : (unit -> 'a) -> async_type
+
+  val await : async_type -> unit
+
+  val return : unit -> async_type
 end

@@ -308,7 +308,10 @@ module Close = struct
         ("mem", fun () -> ignore_bool (Index.mem t k : bool));
         ("replace", fun () -> Index.replace t k v);
         ("iter", fun () -> Index.iter (fun _ _ -> ()) t);
-        ("force_merge", fun () -> Index.force_merge t);
+        ( "force_merge",
+          fun () ->
+            let thread = Index.force_merge t in
+            Index.await thread );
         ("flush", fun () -> Index.flush t);
       ]
     in

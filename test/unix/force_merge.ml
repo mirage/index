@@ -7,9 +7,9 @@ module Context = Common.Make_context (struct
   let root = root
 end)
 
-let after f = Hook.v (function `After -> f () | _ -> ())
+let after f = Hook.v (function `After -> Threads.with_thread f | _ -> ())
 
-let before f = Hook.v (function `Before -> f () | _ -> ())
+let before f = Hook.v (function `Before -> Threads.with_thread f | _ -> ())
 
 let test_find_present t tbl =
   Hashtbl.iter
@@ -122,7 +122,7 @@ let readonly_and_merge () =
     let v1 = Value.v () in
     Index.replace w k1 v1;
     Index.flush w;
-    Index.force_merge w;
+    let t1 = Index.force_merge w in
     test_one_entry r1 k1 v1;
     test_one_entry r2 k1 v1;
     test_one_entry r3 k1 v1;
@@ -132,7 +132,7 @@ let readonly_and_merge () =
     Index.replace w k2 v2;
     Index.flush w;
     test_one_entry r1 k1 v1;
-    Index.force_merge w;
+    let t2 = Index.force_merge w in
     test_one_entry r2 k2 v2;
     test_one_entry r3 k1 v1;
 
@@ -143,11 +143,11 @@ let readonly_and_merge () =
     test_one_entry r1 k1 v1;
     Index.replace w k2 v2;
     Index.flush w;
-    Index.force_merge w;
+    let t3 = Index.force_merge w in
     test_one_entry r1 k1 v1;
     Index.replace w k3 v3;
     Index.flush w;
-    Index.force_merge w;
+    let t4 = Index.force_merge w in
     test_one_entry r3 k3 v3;
 
     let k2 = Key.v () in
@@ -155,7 +155,7 @@ let readonly_and_merge () =
     Index.replace w k2 v2;
     Index.flush w;
     test_one_entry w k2 v2;
-    Index.force_merge w;
+    let t5 = Index.force_merge w in
     test_one_entry w k2 v2;
     test_one_entry r2 k2 v2;
     test_one_entry r3 k1 v1;
@@ -165,11 +165,18 @@ let readonly_and_merge () =
     Index.replace w k2 v2;
     Index.flush w;
     test_one_entry r2 k1 v1;
-    Index.force_merge w;
+    let t6 = Index.force_merge w in
     test_one_entry w k2 v2;
     test_one_entry r2 k2 v2;
-    test_one_entry r3 k2 v2
+    test_one_entry r3 k2 v2;
+    Index.await t1;
+    Index.await t2;
+    Index.await t3;
+    Index.await t4;
+    Index.await t5;
+    Index.await t6
   in
+
   for _ = 1 to 10 do
     interleave ()
   done;
@@ -186,7 +193,8 @@ let write_after_merge () =
   let v2 = Value.v () in
   Index.replace w k1 v1;
   let hook = after (fun () -> Index.replace w k2 v2) in
-  Index.force_merge ~hook w;
+  let t = Index.force_merge ~hook w in
+  Threads.await t;
   test_one_entry r1 k1 v1;
   Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k2)
     Not_found (fun () -> ignore_value (Index.find r1 k2))
@@ -205,8 +213,9 @@ let replace_while_merge () =
         Index.replace w k2 v2;
         test_one_entry w k2 v2)
   in
-  Index.force_merge ~hook w;
-  test_one_entry r1 k1 v1
+  let t = Index.force_merge ~hook w in
+  test_one_entry r1 k1 v1;
+  Threads.await t
 
 (* note that here we cannot do
    `test_one_entry r1 k2 v2`
@@ -221,12 +230,26 @@ let find_while_merge () =
   let v1 = Value.v () in
   Index.replace w k1 v1;
   let f () = test_one_entry w k1 v1 in
-  Index.force_merge ~hook:(after f) w;
-  Index.force_merge ~hook:(after f) w;
+  let t1 = Index.force_merge ~hook:(after f) w in
+  let t2 = Index.force_merge ~hook:(after f) w in
   let r1 = clone ~readonly:true () in
   let f () = test_one_entry r1 k1 v1 in
-  Index.force_merge ~hook:(before f) w;
-  Index.force_merge ~hook:(before f) w
+  let t3 = Index.force_merge ~hook:(before f) w in
+  let t4 = Index.force_merge ~hook:(before f) w in
+  Threads.await t1;
+  Threads.await t2;
+  Threads.await t3;
+  Threads.await t4
+
+let test_fail () =
+  let { Context.rw; _ } = Context.empty_index () in
+  let w = rw in
+  let k1 = Key.v () in
+  let v1 = Value.v () in
+  Index.replace w k1 v1;
+  let f () = Alcotest.fail "test fail" in
+  let t = Index.force_merge ~hook:(before f) w in
+  Threads.join t
 
 let tests =
   [
@@ -236,7 +259,5 @@ let tests =
     ("write at the end of merge", `Quick, write_after_merge);
     ("write in log_async", `Quick, replace_while_merge);
     ("find while merging", `Quick, find_while_merge);
+    ("test that should fail", `Quick, test_fail);
   ]
-
-(* Unix.sleep 10 *)
-(* for `ps aux | grep force_merge` and `lsof -a -s -p pid` *)
