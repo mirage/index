@@ -99,66 +99,95 @@ module Index = struct
         l "\tread amplification in bytes = %f; in nb of reads = %f " ratio_bytes
           ratio_reads)
 
-  let init () =
-    if Sys.file_exists root then (
-      let cmd = Printf.sprintf "rm -rf %s" root in
-      Logs.app (fun l -> l "exec: %s\n" cmd);
-      let _ = Sys.command cmd in
-      () )
+  let bench_list =
+    [
+      "fill_random";
+      "fill_seq";
+      "fill_seq_hash";
+      "fill_rev_seq_hash";
+      "fill_sync";
+    ]
+
+  let namespace_v ?(fresh = true) ?(readonly = false) bench_name =
+    Index.v ~fresh ~log_size ~readonly (root // bench_name)
+
+  let write_bench ~bench bench_name =
+    if List.mem bench_name bench_list then (
+      Index_unix.reset_stats ();
+      let rw = bench (namespace_v bench_name) in
+      write_amplif ();
+      rw )
+    else failwith "Add the bench name to bench_list"
+
+  let cleanup () =
+    let files = [ "data"; "log"; "lock"; "log_async"; "merge" ] in
+    List.iter
+      (fun dir ->
+        let dir = root // dir // "index" in
+        List.iter
+          (fun file ->
+            let file = dir // file in
+            if Sys.file_exists file then (
+              let cmd = Printf.sprintf "rm %s" file in
+              Logs.app (fun l -> l "exec: %s\n" cmd);
+              let _ = Sys.command cmd in
+              () ))
+          files)
+      bench_list
 
   let write rw () = Array.iter (fun (k, v) -> Index.replace rw k v) random
 
   let read r () = Array.iter (fun (k, _) -> ignore (Index.find r k)) random
 
   let write_random () =
-    Index_unix.reset_stats ();
-    let rw = Index.v ~fresh:true ~log_size (root // "fill_random") in
-    print_results (write rw) nb_entries;
-    write_amplif ();
-    rw
+    let bench rw =
+      print_results (write rw) nb_entries;
+      rw
+    in
+    write_bench ~bench "fill_random"
 
   let write_seq () =
-    Index_unix.reset_stats ();
-    let rw = Index.v ~fresh:true ~log_size (root // "fill_seq") in
-    Array.sort (fun a b -> String.compare (fst a) (fst b)) random;
-    print_results (write rw) nb_entries;
-    write_amplif ();
-    Index.close rw
+    let bench rw =
+      Array.sort (fun a b -> String.compare (fst a) (fst b)) random;
+      print_results (write rw) nb_entries;
+      Index.close rw
+    in
+    ignore (write_bench ~bench "fill_seq")
 
   let write_seq_hash () =
-    Index_unix.reset_stats ();
-    let rw = Index.v ~fresh:true ~log_size (root // "fill_seq_hash") in
-    let hash e = Context.Key.hash (fst e) in
-    Array.sort (fun a b -> compare (hash a) (hash b)) random;
-    print_results (write rw) nb_entries;
-    write_amplif ();
-    Index.close rw
+    let bench rw =
+      let hash e = Context.Key.hash (fst e) in
+      Array.sort (fun a b -> compare (hash a) (hash b)) random;
+      print_results (write rw) nb_entries;
+      Index.close rw
+    in
+    ignore (write_bench ~bench "fill_seq_hash")
 
   let write_rev_seq_hash () =
-    Index_unix.reset_stats ();
-    let rw = Index.v ~fresh:true ~log_size (root // "fill_rev_seq_hash") in
-    let hash e = Context.Key.hash (fst e) in
-    Array.sort (fun a b -> compare (hash a) (hash b)) random;
-    let write rw =
-      Array.fold_right (fun (k, v) () -> Index.replace rw k v) random
+    let bench rw =
+      let hash e = Context.Key.hash (fst e) in
+      Array.sort (fun a b -> compare (hash a) (hash b)) random;
+      let write rw =
+        Array.fold_right (fun (k, v) () -> Index.replace rw k v) random
+      in
+      print_results (write rw) nb_entries;
+      Index.close rw
     in
-    print_results (write rw) nb_entries;
-    write_amplif ();
-    Index.close rw
+    ignore (write_bench ~bench "fill_rev_seq_hash")
 
   let write_sync () =
-    Index_unix.reset_stats ();
-    let rw = Index.v ~fresh:true ~log_size (root // "fill_sync") in
-    let write rw () =
-      Array.iter
-        (fun (k, v) ->
-          Index.replace rw k v;
-          Index.flush rw)
-        random
+    let bench rw =
+      let write rw () =
+        Array.iter
+          (fun (k, v) ->
+            Index.replace rw k v;
+            Index.flush rw)
+          random
+      in
+      print_results (write rw) nb_entries;
+      Index.close rw
     in
-    print_results (write rw) nb_entries;
-    write_amplif ();
-    Index.close rw
+    ignore (write_bench ~bench "fill_sync")
 
   let overwrite rw =
     Index_unix.reset_stats ();
@@ -173,9 +202,7 @@ module Index = struct
   let ro_read_random rw =
     Index.flush rw;
     Index_unix.reset_stats ();
-    let ro =
-      Index.v ~fresh:false ~readonly:true ~log_size (root // "fill_random")
-    in
+    let ro = namespace_v ~fresh:false ~readonly:true "fill_random" in
     print_results (read ro) nb_entries;
     read_amplif nb_entries
 
@@ -315,7 +342,7 @@ let lmdb_benchmarks () =
 
 let init () =
   Common.report ();
-  Index.init ();
+  Index.cleanup ();
   Lmdb.cleanup ();
   Log.app (fun l -> l "Keys: %d bytes each." key_size);
   Log.app (fun l -> l "Values: %d bytes each." value_size);
