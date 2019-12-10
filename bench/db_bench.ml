@@ -23,6 +23,8 @@ let log_size = 500_000
 
 let ( // ) = Filename.concat
 
+let root = ref "_bench"
+
 module Context = Make_context (struct
   let key_size = key_size
 
@@ -75,8 +77,6 @@ let populate_absents ar nb_entries =
 module Index = struct
   module Index = Index_unix.Make (Context.Key) (Context.Value)
 
-  let root = "_bench" // "db_bench"
-
   let print_results = print_results "index"
 
   let write_amplif () =
@@ -109,7 +109,7 @@ module Index = struct
     ]
 
   let namespace_v ?(fresh = true) ?(readonly = false) bench_name =
-    Index.v ~fresh ~log_size ~readonly (root // bench_name)
+    Index.v ~fresh ~log_size ~readonly (!root // bench_name)
 
   let write_bench ~bench bench_name =
     if List.mem bench_name bench_list then (
@@ -123,7 +123,7 @@ module Index = struct
     let files = [ "data"; "log"; "lock"; "log_async"; "merge" ] in
     List.iter
       (fun dir ->
-        let dir = root // dir // "index" in
+        let dir = !root // dir // "index" in
         List.iter
           (fun file ->
             let file = dir // file in
@@ -350,7 +350,8 @@ let init () =
   Log.app (fun l -> l "Log size: %d." log_size);
   populate ()
 
-let run input =
+let run input data_dir =
+  root := data_dir // "db_bench";
   init ();
   Log.app (fun l -> l "\n");
   Log.app (fun l -> l "Fill in random order");
@@ -427,8 +428,13 @@ let input =
   in
   Arg.(value & opt options `Minimal & info [ "b"; "bench" ] ~doc)
 
+let data_dir =
+  let doc = "Set directory for the data files" in
+  Arg.(value & opt dir !root & info [ "d"; "directory" ] ~doc)
+
 let cmd =
   let doc = "Specify the benchmark you want to run." in
-  (Term.(const run $ input), Term.info "run" ~doc ~exits:Term.default_exits)
+  ( Term.(const run $ input $ data_dir),
+    Term.info "run" ~doc ~exits:Term.default_exits )
 
 let () = Term.(exit @@ eval cmd)
