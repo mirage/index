@@ -384,4 +384,6 @@ module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO)
 
 module Private = struct
   module IO = IO
+  module Make (K : Index.Key) (V : Index.Value) =
+    Index.Private.Make (K) (V) (IO)
 end

@@ -65,22 +65,6 @@ module type Key = sig
   (** Formatter for keys *)
 end
 
-(** These modules should not be used. They are exposed purely for testing
-    purposes. *)
-module Private : sig
-  module Search : module type of Search
-
-  module Io_array : module type of Io_array
-
-  module Fan : module type of Fan
-
-  module Hook : sig
-    type 'a t
-
-    val v : ('a -> unit) -> 'a t
-  end
-end
-
 module Stats = Stats
 
 (** The input of [Make] for values. The same requirements as for [Key] apply. *)
@@ -148,9 +132,6 @@ module type S = sig
       recent replacements of existing values (after the last merge), this will
       hit both the new and old bindings. *)
 
-  val force_merge : ?hook:[ `After | `Before ] Private.Hook.t -> t -> unit
-  (** [force_merge t] forces a merge for [t]. *)
-
   val flush : t -> unit
   (** Flushes all buffers to the supplied [IO] instance. *)
 
@@ -160,3 +141,29 @@ end
 
 module Make (K : Key) (V : Value) (IO : IO) :
   S with type key = K.t and type value = V.t
+
+(** These modules should not be used. They are exposed purely for testing
+    purposes. *)
+module Private : sig
+  module Hook : sig
+    type 'a t
+
+    val v : ('a -> unit) -> 'a t
+  end
+
+  module Search : module type of Search
+
+  module Io_array : module type of Io_array
+
+  module Fan : module type of Fan
+
+  module type S = sig
+    include S
+
+    val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> unit
+    (** [force_merge t] forces a merge for [t]. *)
+  end
+
+  module Make (K : Key) (V : Value) (IO : IO) :
+    S with type key = K.t and type value = V.t
+end

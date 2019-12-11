@@ -15,18 +15,6 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
-module Private = struct
-  module Fan = Fan
-  module Io_array = Io_array
-  module Search = Search
-
-  module Hook = struct
-    type 'a t = 'a -> unit
-
-    let v f = f
-  end
-end
-
 module Stats = Stats
 
 module type Key = sig
@@ -84,8 +72,6 @@ module type S = sig
 
   val iter : (key -> value -> unit) -> t -> unit
 
-  val force_merge : ?hook:[ `After | `Before ] Private.Hook.t -> t -> unit
-
   val flush : t -> unit
 
   val close : t -> unit
@@ -99,7 +85,7 @@ exception RO_not_allowed
 
 exception Closed
 
-module Make (K : Key) (V : Value) (IO : IO) = struct
+module Make_private (K : Key) (V : Value) (IO : IO) = struct
   type key = K.t
 
   type value = V.t
@@ -740,4 +726,26 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
                 t.log;
               may (fun (i : index) -> IO.close i.io) t.index;
               may (fun lock -> IO.unlock lock) t.writer_lock ))
+end
+
+module Make = Make_private
+
+module Private = struct
+  module Fan = Fan
+  module Io_array = Io_array
+  module Search = Search
+
+  module Hook = struct
+    type 'a t = 'a -> unit
+
+    let v f = f
+  end
+
+  module type S = sig
+    include S
+
+    val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> unit
+  end
+
+  module Make = Make_private
 end
