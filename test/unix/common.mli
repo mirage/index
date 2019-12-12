@@ -16,7 +16,7 @@ module Value : sig
   val v : unit -> t
 end
 
-module Index : Index.S with type key = Key.t and type value = Value.t
+module Index : Index.Private.S with type key = Key.t and type value = Value.t
 
 (** Helper constructors for fresh pre-initialised indices *)
 module Make_context (Config : sig

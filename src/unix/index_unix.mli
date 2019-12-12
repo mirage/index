@@ -22,4 +22,7 @@ module Make (K : Index.Key) (V : Index.Value) :
     purposes. *)
 module Private : sig
   module IO : Index.IO
+
+  module Make (K : Index.Key) (V : Index.Value) :
+    Index.Private.S with type key = K.t and type value = V.t
 end

@@ -64,7 +64,7 @@ module Value = struct
   let pp s = Fmt.fmt "%s" s
 end
 
-module Index = Index_unix.Make (Key) (Value)
+module Index = Index_unix.Private.Make (Key) (Value)
 
 module Make_context (Config : sig
   val root : string

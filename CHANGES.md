@@ -1,3 +1,11 @@
+# Unreleased
+
+## Removed
+
+ - Remove `iter` and `force_merge` from `Index.S`, due to difficulties with
+   guaranteeing sensible semantics for these functions under MRSW access
+   patterns. (#147)
+
 # 1.0.1 (2019-11-29)
 
 ## Added
