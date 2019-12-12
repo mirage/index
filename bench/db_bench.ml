@@ -7,6 +7,25 @@ let src = Logs.Src.create "db_bench"
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
+module Stats = Index.Stats
+
+let src =
+  let open Metrics in
+  let open Stats in
+  let tags = Tags.[] in
+  let data t =
+    Data.v
+      [
+        int "bytes_read" t.bytes_read;
+        int "bytes_written" t.bytes_written;
+        int "merge" t.nb_merge;
+        int "replace" t.nb_replace;
+      ]
+  in
+  Src.v "bench" ~tags ~data
+
+let no_tags x = x
+
 let seed = 1
 
 let () = Random.init seed
@@ -24,6 +43,8 @@ let log_size = 500_000
 let ( // ) = Filename.concat
 
 let root = ref "_bench"
+
+let with_metrics = ref false
 
 module Context = Make_context (struct
   let key_size = key_size
@@ -80,7 +101,7 @@ module Index = struct
   let print_results = print_results "index"
 
   let write_amplif () =
-    let stats = Index_unix.get_stats () in
+    let stats = Stats.get () in
     let ratio_bytes =
       float_of_int stats.bytes_written /. float_of_int (entry_size * nb_entries)
     in
@@ -90,7 +111,7 @@ module Index = struct
           ratio_bytes ratio_reads)
 
   let read_amplif nb_entries =
-    let stats = Index_unix.get_stats () in
+    let stats = Stats.get () in
     let ratio_bytes =
       float_of_int stats.bytes_read /. float_of_int (entry_size * nb_entries)
     in
@@ -113,7 +134,7 @@ module Index = struct
 
   let write_bench ~bench bench_name =
     if List.mem bench_name bench_list then (
-      Index_unix.reset_stats ();
+      Stats.reset_stats ();
       let rw = bench (namespace_v bench_name) in
       write_amplif ();
       rw )
@@ -135,9 +156,22 @@ module Index = struct
           files)
       bench_list
 
-  let write rw () = Array.iter (fun (k, v) -> Index.replace rw k v) random
+  let add_metrics () =
+    if !with_metrics then Metrics.add src no_tags (fun m -> m (Stats.get ()))
 
-  let read r () = Array.iter (fun (k, _) -> ignore (Index.find r k)) random
+  let write rw () =
+    Array.iter
+      (fun (k, v) ->
+        Index.replace rw k v;
+        add_metrics ())
+      random
+
+  let read r () =
+    Array.iter
+      (fun (k, _) ->
+        ignore (Index.find r k);
+        add_metrics ())
+      random
 
   let write_random () =
     let bench rw =
@@ -168,7 +202,11 @@ module Index = struct
       let hash e = Context.Key.hash (fst e) in
       Array.sort (fun a b -> compare (hash a) (hash b)) random;
       let write rw =
-        Array.fold_right (fun (k, v) () -> Index.replace rw k v) random
+        Array.fold_right
+          (fun (k, v) () ->
+            Index.replace rw k v;
+            add_metrics ())
+          random
       in
       print_results (write rw) nb_entries;
       Index.close rw
@@ -181,7 +219,8 @@ module Index = struct
         Array.iter
           (fun (k, v) ->
             Index.replace rw k v;
-            Index.flush rw)
+            Index.flush rw;
+            add_metrics ())
           random
       in
       print_results (write rw) nb_entries;
@@ -190,25 +229,31 @@ module Index = struct
     ignore (write_bench ~bench "fill_sync")
 
   let overwrite rw =
-    Index_unix.reset_stats ();
+    Stats.reset_stats ();
     print_results (write rw) nb_entries;
     write_amplif ()
 
   let read_random r =
-    Index_unix.reset_stats ();
+    Stats.reset_stats ();
     print_results (read r) nb_entries;
     read_amplif nb_entries
 
   let ro_read_random rw =
     Index.flush rw;
-    Index_unix.reset_stats ();
+    Stats.reset_stats ();
     let ro = namespace_v ~fresh:false ~readonly:true "fill_random" in
     print_results (read ro) nb_entries;
     read_amplif nb_entries
 
   let read_seq r =
-    Index_unix.reset_stats ();
-    let read () = Index.iter (fun _ _ -> ()) r in
+    Stats.reset_stats ();
+    let read () =
+      Index.iter
+        (fun _ _ ->
+          ();
+          add_metrics ())
+        r
+    in
     print_results read nb_entries;
     read_amplif nb_entries
 
@@ -216,10 +261,14 @@ module Index = struct
     let absents = populate_absents random 1000 in
     let read r () =
       Array.iter
-        (fun (k, _) -> try ignore (Index.find r k) with Not_found -> ())
+        (fun (k, _) ->
+          try
+            ignore (Index.find r k);
+            add_metrics ()
+          with Not_found -> ())
         absents
     in
-    Index_unix.reset_stats ();
+    Stats.reset_stats ();
     print_results (read r) 1000;
     read_amplif 1000
 
@@ -342,6 +391,10 @@ let lmdb_benchmarks () =
 
 let init () =
   Common.report ();
+  if !with_metrics then (
+    Metrics.enable_all ();
+    Metrics_gnuplot.set_reporter ();
+    Metrics_unix.monitor_gc 0.1 );
   Index.cleanup ();
   Lmdb.cleanup ();
   Log.app (fun l -> l "Keys: %d bytes each." key_size);
@@ -350,7 +403,8 @@ let init () =
   Log.app (fun l -> l "Log size: %d." log_size);
   populate ()
 
-let run input data_dir =
+let run input data_dir metrics_flag =
+  with_metrics := metrics_flag;
   root := data_dir // "db_bench";
   init ();
   Log.app (fun l -> l "\n");
@@ -432,9 +486,13 @@ let data_dir =
   let doc = "Set directory for the data files" in
   Arg.(value & opt dir !root & info [ "d"; "directory" ] ~doc)
 
+let metrics_flag =
+  let doc = "Use Metrics; note that it has an impact on performance" in
+  Arg.(value & flag & info [ "m"; "metrics" ] ~doc)
+
 let cmd =
   let doc = "Specify the benchmark you want to run." in
-  ( Term.(const run $ input $ data_dir),
+  ( Term.(const run $ input $ data_dir $ metrics_flag),
     Term.info "run" ~doc ~exits:Term.default_exits )
 
 let () = Term.(exit @@ eval cmd)

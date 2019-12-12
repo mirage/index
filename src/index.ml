@@ -27,6 +27,8 @@ module Private = struct
   end
 end
 
+module Stats = Stats
+
 module type Key = sig
   type t
 
@@ -572,6 +574,7 @@ module Make (K : Key) (V : Value) (IO : IO) = struct
   let merge ?hook ~witness t =
     IO.Mutex.lock t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
+    Stats.incr_nb_merge ();
     flush_instance t;
     let log_async =
       let io =

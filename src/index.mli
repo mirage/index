@@ -81,6 +81,8 @@ module Private : sig
   end
 end
 
+module Stats = Stats
+
 (** The input of [Make] for values. The same requirements as for [Key] apply. *)
 module type Value = sig
   type t

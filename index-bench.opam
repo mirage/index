@@ -22,6 +22,7 @@ depends: [
   "rresult"
   "lmdb"
   "cmdliner"
+  "metrics"
 ]
 
 pin-depends: [

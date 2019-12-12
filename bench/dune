@@ -7,7 +7,7 @@
  (name db_bench)
  (modules db_bench)
  (libraries fmt index.unix lmdb common bigstring rresult logs logs.fmt
-   cmdliner))
+   cmdliner metrics metrics-unix))
 
 (alias
  (name bench)
