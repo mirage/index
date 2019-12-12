@@ -161,7 +161,11 @@ module Private : sig
     include S
 
     val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> unit
-    (** [force_merge t] forces a merge for [t]. *)
+    (** [force_merge t] forces a merge for [t]. Optionally, a hook can be passed
+        that will be called twice:
+
+        - [`Before]: immediately before merging (while holding the merge lock);
+        - [`After]: immediately after merging (while holding the merge lock). *)
   end
 
   module Make (K : Key) (V : Value) (IO : IO) :
