@@ -1,22 +1,21 @@
 (executable
- (name main)
+ (public_name main)
  (modules main)
+ (package index-bench)
  (libraries fmt index.unix common cmdliner))
 
 (executable
- (name db_bench)
+ (public_name db_bench)
  (modules db_bench)
+ (package index-bench)
  (libraries fmt index.unix lmdb common bigstring rresult logs logs.fmt
    cmdliner metrics metrics-unix))
 
 (alias
  (name bench)
+ (package index-bench)
  (action
   (run ./main.exe)))
-
-(alias
- (name runtest)
- (deps main.exe))
 
 (library
  (name common)
