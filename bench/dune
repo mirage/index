@@ -20,4 +20,4 @@
 (library
  (name common)
  (modules common)
- (libraries index.unix logs logs.fmt))
+ (libraries index.unix logs logs.fmt yojson))
