@@ -70,8 +70,6 @@ module type S = sig
 
   val replace : t -> key -> value -> unit
 
-  val iter : (key -> value -> unit) -> t -> unit
-
   val flush : t -> unit
 
   val close : t -> unit
@@ -192,13 +190,13 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
 
   let page_size = Int64.mul entry_sizeL 1_000L
 
-  let iter_io_off ?(min = 0L) ?max f io =
-    let max = match max with None -> IO.offset io | Some m -> m in
+  let iter_io_off ?min:(min_off = 0L) ?max:max_off f io =
+    let max_off = match max_off with None -> IO.offset io | Some m -> m in
     let rec aux offset =
-      let remaining = Int64.sub max offset in
+      let remaining = Int64.sub max_off offset in
       if remaining <= 0L then ()
       else
-        let len = Int64.to_int (Stdlib.min remaining page_size) in
+        let len = Int64.to_int (min remaining page_size) in
         let raw = Bytes.create len in
         let n = IO.read io ~off:offset ~len raw in
         let rec read_page page off =
@@ -211,7 +209,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
         read_page raw 0;
         (aux [@tailcall]) Int64.(add offset page_size)
     in
-    (aux [@tailcall]) min
+    (aux [@tailcall]) min_off
 
   let iter_io ?min ?max f io = iter_io_off ?min ?max (fun _ e -> f e) io
 
@@ -743,6 +741,8 @@ module Private = struct
 
   module type S = sig
     include S
+
+    val iter : (key -> value -> unit) -> t -> unit
 
     val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> unit
   end

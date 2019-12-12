@@ -96,7 +96,7 @@ let populate_absents ar nb_entries =
   loop 0
 
 module Index = struct
-  module Index = Index_unix.Make (Context.Key) (Context.Value)
+  module Index = Index_unix.Private.Make (Context.Key) (Context.Value)
 
   let print_results = print_results "index"
 
