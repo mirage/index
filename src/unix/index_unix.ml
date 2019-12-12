@@ -377,7 +377,7 @@ module IO : Index.IO = struct
         raise e
   end
 
-  type async_type = Thread.t option
+  type async = Thread.t option
 
   let async f = Some (Thread.create f ())
 

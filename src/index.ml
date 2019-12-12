@@ -691,7 +691,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
           Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
     in
     if do_merge then
-      ignore (merge ~witness:{ key; key_hash = K.hash key; value } t)
+      ignore (merge ~witness:{ key; key_hash = K.hash key; value } t : async)
 
   let iter f t =
     let t = check_open t in
