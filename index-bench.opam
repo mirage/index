@@ -23,6 +23,7 @@ depends: [
   "lmdb"
   "cmdliner"
   "metrics"
+  "metrics-unix"
 ]
 
 pin-depends: [
