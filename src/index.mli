@@ -160,12 +160,18 @@ module Private : sig
         recent replacements of existing values (after the last merge), this will
         hit both the new and old bindings. *)
 
-    val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> unit
+    type async
+    (** The type of asynchronous computation. *)
+
+    val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> async
     (** [force_merge t] forces a merge for [t]. Optionally, a hook can be passed
         that will be called twice:
 
         - [`Before]: immediately before merging (while holding the merge lock);
         - [`After]: immediately after merging (while holding the merge lock). *)
+
+    val await : async -> unit
+    (** Wait for an asynchronous computation to finish. *)
   end
 
   module Make (K : Key) (V : Value) (IO : IO) :

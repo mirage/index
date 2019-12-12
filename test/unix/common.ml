@@ -116,3 +116,17 @@ let ignore_value (_ : Value.t) = ()
 let ignore_bool (_ : bool) = ()
 
 let ignore_index (_ : Index.t) = ()
+
+module Threads : sig
+  val with_thread : (unit -> unit) -> unit
+
+  val await : Index.async -> unit
+end = struct
+  let catch_exn = ref []
+
+  let with_thread f = try f () with exn -> catch_exn := exn :: !catch_exn
+
+  let await thread =
+    Index.await thread;
+    match !catch_exn with [] -> () | e :: _ -> raise e
+end

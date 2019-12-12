@@ -377,7 +377,13 @@ module IO : Index.IO = struct
         raise e
   end
 
-  let async f = ignore (Thread.create f ())
+  type async = Thread.t option
+
+  let async f = Some (Thread.create f ())
+
+  let return () = None
+
+  let await t = match t with None -> () | Some t -> ignore (Thread.join t)
 end
 
 module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO)
