@@ -69,7 +69,7 @@ let populate () =
   in
   loop 0
 
-let print_results db f nb_entries =
+let print_results db f nb_entries operation =
   let _, time = with_timer f in
   let micros = time *. 1_000_000. in
   let sec_op = micros /. float_of_int nb_entries in
@@ -77,7 +77,15 @@ let print_results db f nb_entries =
   let ops_sec = float_of_int nb_entries /. time in
   Log.app (fun l ->
       l "%s: %f micros/op; \t %f op/s; \t %f MB/s; \t total time = %fs." db
-        sec_op ops_sec mb time)
+        sec_op ops_sec mb time);
+  ( operation,
+    `Assoc
+      [
+        ("microsec_per_op", `Float micros);
+        ("ops_per_sec", `Float sec_op);
+        ("mb_per_sec", `Float mb);
+        ("total_time", `Float ops_sec);
+      ] )
 
 let rec random_new_key ar =
   let k = Context.Key.v () in
@@ -122,11 +130,11 @@ module Index = struct
 
   let bench_list =
     [
-      "fill_random";
-      "fill_seq";
-      "fill_seq_hash";
-      "fill_rev_seq_hash";
-      "fill_sync";
+      "write_random";
+      "write_seq";
+      "write_seq_hash";
+      "write_rev_seq_hash";
+      "write_sync";
     ]
 
   let namespace_v ?(fresh = true) ?(readonly = false) bench_name =
@@ -135,9 +143,9 @@ module Index = struct
   let write_bench ~bench bench_name =
     if List.mem bench_name bench_list then (
       Stats.reset_stats ();
-      let rw = bench (namespace_v bench_name) in
+      let rw, output = bench (namespace_v bench_name) in
       write_amplif ();
-      rw )
+      (rw, output) )
     else failwith "Add the bench name to bench_list"
 
   let cleanup () =
@@ -173,31 +181,34 @@ module Index = struct
         add_metrics ())
       random
 
-  let write_random () =
+  let write_random name =
     let bench rw =
-      print_results (write rw) nb_entries;
-      rw
+      let output = print_results (write rw) nb_entries name in
+      (rw, output)
     in
-    write_bench ~bench "fill_random"
+    let rw, output = write_bench ~bench name in
+    (rw, [ output ])
 
-  let write_seq () =
+  let write_seq name =
     let bench rw =
       Array.sort (fun a b -> String.compare (fst a) (fst b)) random;
-      print_results (write rw) nb_entries;
-      Index.close rw
+      let output = print_results (write rw) nb_entries name in
+      Index.close rw;
+      ((), output)
     in
-    ignore (write_bench ~bench "fill_seq")
+    [ snd (write_bench ~bench name) ]
 
-  let write_seq_hash () =
+  let write_seq_hash name =
     let bench rw =
       let hash e = Context.Key.hash (fst e) in
       Array.sort (fun a b -> compare (hash a) (hash b)) random;
-      print_results (write rw) nb_entries;
-      Index.close rw
+      let output = print_results (write rw) nb_entries name in
+      Index.close rw;
+      ((), output)
     in
-    ignore (write_bench ~bench "fill_seq_hash")
+    [ snd (write_bench ~bench name) ]
 
-  let write_rev_seq_hash () =
+  let write_rev_seq_hash name =
     let bench rw =
       let hash e = Context.Key.hash (fst e) in
       Array.sort (fun a b -> compare (hash a) (hash b)) random;
@@ -208,12 +219,13 @@ module Index = struct
             add_metrics ())
           random
       in
-      print_results (write rw) nb_entries;
-      Index.close rw
+      let output = print_results (write rw) nb_entries name in
+      Index.close rw;
+      ((), output)
     in
-    ignore (write_bench ~bench "fill_rev_seq_hash")
+    [ snd (write_bench ~bench name) ]
 
-  let write_sync () =
+  let write_sync name =
     let bench rw =
       let write rw () =
         Array.iter
@@ -223,29 +235,33 @@ module Index = struct
             add_metrics ())
           random
       in
-      print_results (write rw) nb_entries;
-      Index.close rw
+      let output = print_results (write rw) nb_entries name in
+      Index.close rw;
+      ((), output)
     in
-    ignore (write_bench ~bench "fill_sync")
+    [ snd (write_bench ~bench name) ]
 
-  let overwrite rw =
+  let overwrite rw name =
     Stats.reset_stats ();
-    print_results (write rw) nb_entries;
-    write_amplif ()
+    let output = print_results (write rw) nb_entries name in
+    write_amplif ();
+    [ output ]
 
-  let read_random r =
+  let read_random r name =
     Stats.reset_stats ();
-    print_results (read r) nb_entries;
-    read_amplif nb_entries
+    let output = print_results (read r) nb_entries name in
+    read_amplif nb_entries;
+    [ output ]
 
-  let ro_read_random rw =
+  let ro_read_random rw name =
     Index.flush rw;
     Stats.reset_stats ();
-    let ro = namespace_v ~fresh:false ~readonly:true "fill_random" in
-    print_results (read ro) nb_entries;
-    read_amplif nb_entries
+    let ro = namespace_v ~fresh:false ~readonly:true "write_random" in
+    let output = print_results (read ro) nb_entries name in
+    read_amplif nb_entries;
+    [ output ]
 
-  let read_seq r =
+  let read_seq r name =
     Stats.reset_stats ();
     let read () =
       Index.iter
@@ -254,10 +270,11 @@ module Index = struct
           add_metrics ())
         r
     in
-    print_results read nb_entries;
-    read_amplif nb_entries
+    let output = print_results read nb_entries name in
+    read_amplif nb_entries;
+    [ output ]
 
-  let read_absent r =
+  let read_absent r name =
     let absents = populate_absents random 1000 in
     let read r () =
       Array.iter
@@ -269,8 +286,9 @@ module Index = struct
         absents
     in
     Stats.reset_stats ();
-    print_results (read r) 1000;
-    read_amplif 1000
+    let output = print_results (read r) 1000 name in
+    read_amplif 1000;
+    [ output ]
 
   let close rw = Index.close rw
 end
@@ -296,7 +314,9 @@ module Lmdb = struct
     ListLabels.iter files ~f:(fun fn -> Sys.(if file_exists fn then remove fn))
 
   let fail_on_error f =
-    match f () with Ok _ -> () | Error err -> failwith (string_of_error err)
+    match f () with
+    | Ok output -> output
+    | Error err -> failwith (string_of_error err)
 
   let flags = [ Lmdb.NoRdAhead; Lmdb.NoSync; Lmdb.NoMetaSync; Lmdb.NoTLS ]
 
@@ -321,15 +341,16 @@ module Lmdb = struct
 
   let write_random () =
     get_wtxn root flags >>| fun (rw, env) ->
-    print_results (write rw) nb_entries;
+    let output = print_results (write rw) nb_entries "write" in
     print_stats rw;
-    (rw, env)
+    (rw, env, output)
 
   let write_seq () =
     Array.sort (fun a b -> String.compare (fst a) (fst b)) random;
     get_wtxn root flags >>| fun (rw, env) ->
-    print_results (write rw) nb_entries;
-    closedir env
+    let output = print_results (write rw) nb_entries "sequential_writes" in
+    closedir env;
+    output
 
   let write_sync () =
     get_wtxn root [ Lmdb.NoRdAhead ] >>| fun (rw, env) ->
@@ -340,12 +361,15 @@ module Lmdb = struct
               Lmdb.put_string txn ddb k v >>= fun () -> sync env))
         ls
     in
-    print_results (write rw env random) nb_entries;
-    closedir env
+    let output =
+      print_results (write rw env random) nb_entries "write_and_sync"
+    in
+    closedir env;
+    output
 
-  let overwrite rw = print_results (write rw) nb_entries
+  let overwrite rw = print_results (write rw) nb_entries "overwrite"
 
-  let read_random r = print_results (read r) nb_entries
+  let read_random r = print_results (read r) nb_entries "read"
 
   (*use a new db, created without the flag Lmdb.NoRdAhead*)
   let read_seq () =
@@ -367,27 +391,30 @@ module Lmdb = struct
       >>| fun () -> cursor_close cursor
     in
     let aux_read r () = fail_on_error (read r) in
-    print_results (aux_read rw) nb_entries;
-    closedir env
+    let output = print_results (aux_read rw) nb_entries "sequential_read" in
+    closedir env;
+    output
 
   let close env = closedir env
 end
 
 let lmdb_benchmarks () =
   Log.app (fun l -> l "\n Fill in increasing order of keys");
-  Lmdb.fail_on_error Lmdb.write_seq;
+  let output_json = [ Lmdb.fail_on_error Lmdb.write_seq ] in
   populate ();
   Log.app (fun l -> l "\n Fill in random order and sync after each write");
-  Lmdb.fail_on_error Lmdb.write_sync;
+  let output_json = Lmdb.fail_on_error Lmdb.write_sync :: output_json in
   Log.app (fun l -> l "\n Fill in random order");
-  let lmdb, env = R.get_ok (Lmdb.write_random ()) in
+  let lmdb, env, json_element = R.get_ok (Lmdb.write_random ()) in
+  let output_json = json_element :: output_json in
   Log.app (fun l -> l "\n Read in random order ");
-  Lmdb.read_random lmdb;
+  let output_json = Lmdb.read_random lmdb :: output_json in
   Log.app (fun l -> l "\n Read in increasing order of keys");
-  Lmdb.read_seq ();
+  let output_json = Lmdb.read_seq () :: output_json in
   Log.app (fun l -> l "\n Overwrite");
-  Lmdb.overwrite lmdb;
-  Lmdb.close env
+  let output_json = Lmdb.overwrite lmdb :: output_json in
+  Lmdb.close env;
+  output_json
 
 let init () =
   Common.report ();
@@ -403,53 +430,63 @@ let init () =
   Log.app (fun l -> l "Log size: %d." log_size);
   populate ()
 
-let run input data_dir metrics_flag =
+let run input json_file_name data_dir metrics_flag =
   with_metrics := metrics_flag;
   root := data_dir // "db_bench";
   init ();
   Log.app (fun l -> l "\n");
   Log.app (fun l -> l "Fill in random order");
-  let rw = Index.write_random () in
+  let rw, json_element = Index.write_random "write_random" in
+  let output_json = [ json_element ] in
   let bench_list =
     [
-      ( (fun () -> Index.read_random rw),
+      ( (fun () -> Index.read_random rw "read_random"),
         [ `Read `RW; `All; `Minimal; `Index ],
         "RW Read in random order" );
-      ( (fun () -> Index.ro_read_random rw),
+      ( (fun () -> Index.ro_read_random rw "read_only_random"),
         [ `Read `Ro; `All; `Minimal; `Index ],
         "RO Read in random order" );
-      ( (fun () -> Index.read_absent rw),
+      ( (fun () -> Index.read_absent rw "read_absent"),
         [ `Read `Absent; `All; `Minimal; `Index ],
         "Read 1000 absent values" );
-      ( (fun () -> Index.read_seq rw),
+      ( (fun () -> Index.read_seq rw "read_seq"),
         [ `Read `Seq; `All; `Index ],
         "Read in sequential order (increasing order of hashes for index" );
-      ( Index.write_seq,
+      ( (fun () -> Index.write_seq "write_seq"),
         [ `Write `IncKey; `All; `Index ],
         "Fill in increasing order of keys" );
-      ( Index.write_seq_hash,
+      ( (fun () -> Index.write_seq_hash "write_seq_hash"),
         [ `Write `IncHash; `All; `Index ],
         "Fill in increasing order of hashes" );
-      ( Index.write_rev_seq_hash,
+      ( (fun () -> Index.write_rev_seq_hash "write_rev_seq_hash"),
         [ `Write `DecHash; `All; `Index ],
         "Fill in decreasing order of hashes" );
-      ( Index.write_sync,
+      ( (fun () -> Index.write_sync "write_sync"),
         [ `Write `Sync; `All; `Index ],
         "Fill in random order and sync after each write" );
-      ((fun () -> Index.overwrite rw), [ `OverWrite; `All; `Index ], "OverWrite");
-      ((fun () -> lmdb_benchmarks ()), [ `Lmdb ], "Run lmdb benchmarks");
+      ( (fun () -> Index.overwrite rw "overwrite"),
+        [ `OverWrite; `All; `Index ],
+        "OverWrite" );
+      ((fun () -> lmdb_benchmarks ()), [ `Lmdb; `All ], "Run lmdb benchmarks");
     ]
   in
   let match_input ~bench ~triggers ~message =
     if List.mem input triggers then
       let () = Log.app (fun l -> l "\n %s" message) in
       bench ()
-    else ()
+    else []
+  in
+  let output_json =
+    List.fold_left
+      (fun accu (bench, triggers, message) ->
+        match_input ~bench ~triggers ~message :: accu)
+      output_json bench_list
   in
   let () =
-    List.iter
-      (fun (bench, triggers, message) -> match_input ~bench ~triggers ~message)
-      bench_list
+    match json_file_name with
+    | None -> ()
+    | Some json_file_name ->
+        print_json json_file_name (List.flatten output_json)
   in
   Index.close rw
 
@@ -490,9 +527,13 @@ let metrics_flag =
   let doc = "Use Metrics; note that it has an impact on performance" in
   Arg.(value & flag & info [ "m"; "metrics" ] ~doc)
 
+let json_output =
+  let doc = "Filename where json output should be written" in
+  Arg.(value & opt (some non_dir_file) None & info [ "j"; "json" ] ~doc)
+
 let cmd =
   let doc = "Specify the benchmark you want to run." in
-  ( Term.(const run $ input $ data_dir $ metrics_flag),
+  ( Term.(const run $ input $ json_output $ data_dir $ metrics_flag),
     Term.info "run" ~doc ~exits:Term.default_exits )
 
 let () = Term.(exit @@ eval cmd)

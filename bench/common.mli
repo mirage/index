@@ -23,3 +23,5 @@ end
 
 val with_timer : (unit -> 'a) -> 'a * float
 (** [with_timer f] returns the execution time of f in seconds *)
+
+val print_json : string -> (string * Yojson.Basic.t) list -> unit

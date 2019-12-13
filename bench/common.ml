@@ -77,3 +77,8 @@ let with_timer f =
   let x = f () in
   let t1 = Sys.time () -. t0 in
   (x, t1)
+
+let print_json file json_output =
+  let oc = open_out file in
+  Yojson.Basic.pretty_to_channel oc (`Assoc json_output);
+  close_out oc

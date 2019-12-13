@@ -24,6 +24,7 @@ depends: [
   "cmdliner"
   "metrics"
   "metrics-unix"
+  "yojson"
 ]
 
 pin-depends: [
