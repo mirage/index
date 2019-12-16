@@ -70,6 +70,8 @@ module type S = sig
 
   val replace : t -> key -> value -> unit
 
+  val iter : (key -> value -> unit) -> t -> unit
+
   val flush : t -> unit
 
   val close : t -> unit
@@ -739,8 +741,6 @@ module Private = struct
 
   module type S = sig
     include S
-
-    val iter : (key -> value -> unit) -> t -> unit
 
     type async
 
