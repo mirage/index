@@ -290,6 +290,35 @@ module Index = struct
     read_amplif 1000;
     [ output ]
 
+  let merge log_nb_entries name =
+    let rw = namespace_v ~fresh:false ~readonly:false name in
+    let t = Index.force_merge rw in
+    Index.await t;
+    Stats.reset_stats ();
+    let rec loop i =
+      if i = log_nb_entries then ()
+      else
+        let k = Context.Key.v () in
+        let v = Context.Value.v () in
+        Index.replace rw k v;
+        loop (i + 1)
+    in
+    loop 0;
+    let stats = Stats.get () in
+    assert (stats.nb_merge = 0);
+    let output =
+      print_results
+        (fun () ->
+          let t = Index.force_merge rw in
+          Index.await t)
+        log_nb_entries "merge"
+    in
+    write_amplif ();
+    let stats = Stats.get () in
+    assert (stats.nb_merge = 1);
+    Index.close rw;
+    [ output ]
+
   let close rw = Index.close rw
 end
 
@@ -468,6 +497,9 @@ let run input json_file_name data_dir metrics_flag =
         [ `OverWrite; `All; `Index ],
         "OverWrite" );
       ((fun () -> lmdb_benchmarks ()), [ `Lmdb; `All ], "Run lmdb benchmarks");
+      ( (fun () -> Index.merge 450_000 "write_random"),
+        [ `Merge; `All; `Index ],
+        "Force merge of \"write_random\" with 450_000/500_000 entries in log" );
     ]
   in
   let match_input ~bench ~triggers ~message =
@@ -496,8 +528,8 @@ let input =
   let doc =
     "Select which benchmark(s) to run. Available options are: `write`, \
      `write-keys`, `write-hashes`, `write-dec`, `read-rw`, `read-ro` , \
-     `read-seq`,  `read-absent`, `overwrite`, `minimal`, `index`, `lmdb` or \
-     `all`. Default option is `minimal`"
+     `read-seq`,  `read-absent`, `overwrite`, `minimal`, `index`, `lmdb` \
+     `merge` or `all`. Default option is `minimal`"
   in
   let options =
     Arg.enum
@@ -515,6 +547,7 @@ let input =
         ("write-dec", `Write `DecHash);
         ("write-sync", `Write `Sync);
         ("overwrite", `OverWrite);
+        ("merge", `Merge);
       ]
   in
   Arg.(value & opt options `Minimal & info [ "b"; "bench" ] ~doc)
