@@ -128,9 +128,13 @@ module type S = sig
       [k]. *)
 
   val iter : (key -> value -> unit) -> t -> unit
-  (** Iterates over the index bindings. Order is not specified. In case of
-      recent replacements of existing values (after the last merge), this will
-      hit both the new and old bindings. *)
+  (** Iterates over the index bindings. Limitations:
+
+      - Order is not specified.
+      - In case of recent replacements of existing values (since the last
+        merge), this will hit both the new and old bindings.
+      - May not observe recent concurrent updates to the index by other
+        processes. *)
 
   val flush : t -> unit
   (** Flushes all buffers to the supplied [IO] instance. *)
