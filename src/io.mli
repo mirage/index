@@ -81,4 +81,6 @@ module type S = sig
   val await : async -> unit
 
   val return : unit -> async
+
+  val yield : unit -> unit
 end

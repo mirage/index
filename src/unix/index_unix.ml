@@ -376,6 +376,8 @@ module IO : Index.IO = struct
 
   let async f = Some (Thread.create f ())
 
+  let yield = Thread.yield
+
   let return () = None
 
   let await t = match t with None -> () | Some t -> Thread.join t
