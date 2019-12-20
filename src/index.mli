@@ -127,6 +127,15 @@ module type S = sig
   (** [replace t k v] binds [k] to [v] in [t], replacing any existing binding of
       [k]. *)
 
+  val iter : (key -> value -> unit) -> t -> unit
+  (** Iterates over the index bindings. Limitations:
+
+      - Order is not specified.
+      - In case of recent replacements of existing values (since the last
+        merge), this will hit both the new and old bindings.
+      - May not observe recent concurrent updates to the index by other
+        processes. *)
+
   val flush : t -> unit
   (** Flushes all buffers to the supplied [IO] instance. *)
 
@@ -154,11 +163,6 @@ module Private : sig
 
   module type S = sig
     include S
-
-    val iter : (key -> value -> unit) -> t -> unit
-    (** Iterates over the index bindings. Order is not specified. In case of
-        recent replacements of existing values (after the last merge), this will
-        hit both the new and old bindings. *)
 
     type async
     (** The type of asynchronous computation. *)
