@@ -1,4 +1,11 @@
-# Unreleased
+# 1.0.2 (2019-12-20)
+
+## Changed
+
+- Improve the cooperativeness of the `merge` operation, allowing concurrent read
+  operations to share CPU resources with ongoing merges. (#152)
+  
+- Improve speed of read operations for read-only instances. (#141)
 
 ## Removed
 
