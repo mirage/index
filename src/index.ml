@@ -533,6 +533,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
         let key_e = K.decode buf_str 0 in
         let hash_e = K.hash key_e in
         let log_i = merge_from_log fan_out log log_i hash_e dst_io in
+        IO.yield ();
         if
           log_i >= Array.length log
           ||
