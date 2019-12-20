@@ -55,7 +55,8 @@ let run input file_name =
         (bindings, [ ("write", `Float t1) ])
     | _ -> (replaces rw [] index_size, [])
   in
-  Fmt.epr "Finding %d bindings.\n%!" index_size;
+  Index.flush rw;
+  Fmt.epr "Finding %d bindings (RW instance).\n%!" index_size;
   let output_json =
     match input with
     | `Find `RW | `All ->
@@ -64,6 +65,7 @@ let run input file_name =
         [ ("read_write", `Float t2) ] @ output_json
     | _ -> output_json
   in
+  Fmt.epr "Finding %d bindings (RO instance).\n%!" index_size;
   let output_json =
     match input with
     | `Find `RO | `All ->
