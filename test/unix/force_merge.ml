@@ -211,17 +211,13 @@ let replace_while_merge () =
   let hook =
     before (fun () ->
         Index.replace w k2 v2;
+        Index.flush w;
         test_one_entry w k2 v2)
   in
   let t = Index.force_merge ~hook w in
   test_one_entry r1 k1 v1;
+  test_one_entry r1 k2 v2;
   Threads.await t
-
-(* note that here we cannot do
-   `test_one_entry r1 k2 v2`
-   as there is no way to guarantee that the latests value
-   added by a RW instance is found by a RO instance
-*)
 
 let find_while_merge () =
   let { Context.rw; clone; _ } = Context.full_index () in
