@@ -3,5 +3,5 @@
  (package index-bench)
  (preprocess
   (pps ppx_deriving_yojson))
- (libraries index.unix lmdb logs logs.fmt cmdliner metrics metrics-unix
-   stdlib-shims yojson fmt re))
+ (libraries index.unix cmdliner metrics metrics-unix yojson fmt re
+   stdlib-shims))

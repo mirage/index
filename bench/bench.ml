@@ -1,29 +1,3 @@
-let reporter ?(prefix = "") () =
-  let report src level ~over k msgf =
-    let k _ =
-      over ();
-      k ()
-    in
-    let with_stamp h _tags k fmt =
-      match level with
-      | Logs.App -> Fmt.kpf k Fmt.stdout (fmt ^^ "@.%!")
-      | _ ->
-          let ppf = Fmt.stderr in
-          let dt = Unix.gettimeofday () in
-          Fmt.kpf k ppf
-            ("%s%+04.0fus %a %a @[" ^^ fmt ^^ "@]@.")
-            prefix dt
-            Fmt.(styled `Magenta string)
-            (Logs.Src.name src) Logs_fmt.pp_header (level, h)
-    in
-    msgf @@ fun ?header ?tags fmt -> with_stamp header tags k fmt
-  in
-  { Logs.report }
-
-let src = Logs.Src.create "db_bench"
-
-module Log = (val Logs.src_log src : Logs.LOG)
-
 module Stats = Index.Stats
 
 let src =
@@ -43,15 +17,9 @@ let src =
 
 let key_size = 32
 
-let hash_size = 30
-
 let value_size = 13
 
 let entry_size = key_size + value_size
-
-let nb_entries = 1_000_000
-
-let log_size = 500_000
 
 let ( // ) = Filename.concat
 
@@ -68,7 +36,7 @@ module Context = struct
 
     let hash = Hashtbl.hash
 
-    let hash_size = hash_size
+    let hash_size = 30
 
     let encode s = s
 
@@ -116,7 +84,7 @@ module Benchmark = struct
   }
   [@@deriving yojson]
 
-  let run ~with_metrics f =
+  let run ~with_metrics ~nb_entries f =
     let _, time, stats = with_stats (fun () -> f ~with_metrics ()) in
     let nb_entriesf = Float.of_int nb_entries in
     let entry_sizef = Float.of_int entry_size in
@@ -154,12 +122,9 @@ module Benchmark = struct
       result.mbs_per_sec result.read_amplification_calls
       result.read_amplification_size result.write_amplification_calls
       result.write_amplification_size
-
-  let _pp_result_json fmt result =
-    Yojson.Safe.pretty_print fmt (result_to_yojson result)
 end
 
-let make_bindings_pool () =
+let make_bindings_pool nb_entries =
   Array.init nb_entries (fun _ ->
       let k = Context.Key.v () in
       let v = Context.Value.v () in
@@ -198,9 +163,7 @@ module Index = struct
   let read_absent ~with_metrics bindings r =
     Array.iter
       (fun (k, _) ->
-        try
-          ignore (Index.find r k : Context.Value.t);
-          failwith "Absent value found"
+        try ignore (Index.find r k : Context.Value.t)
         with Not_found -> if with_metrics then add_metrics ())
       bindings
 
@@ -248,18 +211,20 @@ module Index = struct
 
   let run :
       with_metrics:bool ->
+      nb_entries:int ->
+      log_size:int ->
       root:string ->
       name:string ->
       benchmark ->
       Benchmark.result =
-   fun ~with_metrics ~root ~name b ->
+   fun ~with_metrics ~nb_entries ~log_size ~root ~name b ->
     let indices = ref [] in
     let index_v ~fresh ~readonly n =
       let i = Index.v ~fresh ~readonly ~log_size (root // name // n) in
       indices := i :: !indices;
       i
     in
-    let result = Benchmark.run ~with_metrics (b index_v) in
+    let result = Benchmark.run ~with_metrics ~nb_entries (b index_v) in
     !indices |> List.iter (fun i -> Index.close i);
     result
 
@@ -362,34 +327,81 @@ let schedule p s =
   let r = List.filter fst !init |> List.map snd in
   r
 
-let init with_metrics seed =
-  Logs.set_level (Some Logs.App);
-  Logs.set_reporter (reporter ());
-  Random.init seed;
-  if with_metrics then (
+type config = {
+  key_size : int;
+  value_size : int;
+  nb_entries : int;
+  log_size : int;
+  seed : int;
+  with_metrics : bool;
+}
+[@@deriving yojson]
+
+let pp_config fmt config =
+  Format.fprintf fmt
+    "Key size: %d@\n\
+     Value size: %d@\n\
+     Number of bindings: %d@\n\
+     Log size: %d@\n\
+     Seed: %d@\n\
+     Metrics: %b" config.key_size config.value_size config.nb_entries
+    config.log_size config.seed config.with_metrics
+
+let init config =
+  Printexc.record_backtrace true;
+  Random.init config.seed;
+  if config.with_metrics then (
     Metrics.enable_all ();
     Metrics_gnuplot.set_reporter ();
     Metrics_unix.monitor_gc 0.1 );
-  Log.app (fun l -> l "Size of keys: %d bytes." key_size);
-  Log.app (fun l -> l "Size of values: %d bytes." value_size);
-  Log.app (fun l -> l "Number of bindings: %d." nb_entries);
-  Log.app (fun l -> l "Log size: %d." log_size);
-  Log.app (fun l -> l "Initializing data with seed %d.\n" seed);
-  bindings_pool := make_bindings_pool ();
-  absent_bindings := make_bindings_pool ()
+  bindings_pool := make_bindings_pool config.nb_entries;
+  absent_bindings := make_bindings_pool config.nb_entries
 
-let run filter data_dir seed with_metrics =
-  init with_metrics seed;
+let print fmt (config, results) =
+  let pp_bench fmt (b, result) =
+    Format.fprintf fmt "%s@\n    @[%a@]" b.Index.synopsis Benchmark.pp_result
+      result
+  in
+  Format.fprintf fmt
+    "Configuration:@\n    @[%a@]@\n@\nResults:@\n    @[%a@]@\n" pp_config config
+    Fmt.(list ~sep:Fmt.(any "@\n@\n") pp_bench)
+    results
+
+let print_json fmt (config, results) =
+  let open Yojson.Safe in
+  let obj =
+    `Assoc
+      [
+        ("config", config_to_yojson config);
+        ( "results",
+          `Assoc
+            (List.map
+               (fun (b, result) ->
+                 (b.Index.name, Benchmark.result_to_yojson result))
+               results) );
+      ]
+  in
+  pretty_print fmt obj
+
+let run filter root seed with_metrics log_size nb_entries json =
+  let config =
+    { key_size; value_size; nb_entries; log_size; seed; with_metrics }
+  in
+  init config;
   let name_filter =
     match filter with None -> fun _ -> true | Some re -> Re.execp re
   in
   Index.suite
   |> schedule name_filter
-  |> List.iter (fun Index.{ synopsis; name; benchmark; dependency } ->
-         let name = match dependency with None -> name | Some name -> name in
-         let result = Index.run ~with_metrics ~root:data_dir ~name benchmark in
-         Logs.app (fun l ->
-             l "%s@\n    @[%a@]@\n" synopsis Benchmark.pp_result result))
+  |> List.map (fun (b : Index.suite_elt) ->
+         let name =
+           match b.dependency with None -> b.name | Some name -> name
+         in
+         ( b,
+           Index.run ~with_metrics ~nb_entries ~log_size ~root ~name b.benchmark
+         ))
+  |> fun results ->
+  Fmt.pr "%a" (if json then print_json else print) (config, results)
 
 open Cmdliner
 
@@ -421,13 +433,33 @@ let metrics_flag =
   let doc = "Use Metrics; note that it has an impact on performance" in
   Arg.(value & flag & info [ "m"; "with_metrics" ] ~doc)
 
+let log_size =
+  let doc = "The log size of the index." in
+  Arg.(value & opt int 500_000 & info [ "log_size" ] ~doc)
+
+let nb_entries =
+  let doc = "The number of bindings." in
+  Arg.(value & opt int 10_000_000 & info [ "nb_entries" ] ~doc)
+
 let list_cmd =
   let doc = "List all available benchmarks." in
   (Term.(pure list_benchs $ const ()), Term.info "list" ~doc)
 
+let json_flag =
+  let doc = "Output the results as a json object." in
+  Arg.(value & flag & info [ "j"; "json" ] ~doc)
+
 let cmd =
   let doc = "Run all the benchmarks." in
-  ( Term.(const run $ name_filter $ data_dir $ seed $ metrics_flag),
+  ( Term.(
+      const run
+      $ name_filter
+      $ data_dir
+      $ seed
+      $ metrics_flag
+      $ log_size
+      $ nb_entries
+      $ json_flag),
     Term.info "run" ~doc ~exits:Term.default_exits )
 
 let () =
