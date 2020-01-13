@@ -347,6 +347,18 @@ let pp_config fmt config =
      Metrics: %b" config.key_size config.value_size config.nb_entries
     config.log_size config.seed config.with_metrics
 
+let cleanup root =
+  let files = [ "data"; "log"; "lock"; "log_async"; "merge" ] in
+  List.iter
+    (fun (b : Index.suite_elt) ->
+      let dir = root // b.name // "index" in
+      List.iter
+        (fun file ->
+          let file = dir // file in
+          if Sys.file_exists file then Unix.unlink file)
+        files)
+    Index.suite
+
 let init config =
   Printexc.record_backtrace true;
   Random.init config.seed;
@@ -387,6 +399,7 @@ let run filter root seed with_metrics log_size nb_entries json =
   let config =
     { key_size; value_size; nb_entries; log_size; seed; with_metrics }
   in
+  cleanup root;
   init config;
   let name_filter =
     match filter with None -> fun _ -> true | Some re -> Re.execp re
