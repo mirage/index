@@ -165,7 +165,7 @@ module IO : Index.IO = struct
     buf : Buffer.t;
   }
 
-  let sync t =
+  let sync ?(with_fsync = false) t =
     if t.readonly then raise RO_not_allowed;
     let buf = Buffer.contents t.buf in
     let offset = t.offset in
@@ -176,7 +176,7 @@ module IO : Index.IO = struct
       Raw.Offset.set t.raw offset;
       assert (t.flushed ++ Int64.of_int (String.length buf) = t.header ++ offset);
       t.flushed <- offset ++ t.header );
-    Raw.fsync t.raw
+    if with_fsync then Raw.fsync t.raw
 
   let name t = t.file
 
