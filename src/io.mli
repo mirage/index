@@ -38,7 +38,7 @@ module type S = sig
 
   val clear : ?keep_generation:bool -> t -> unit
 
-  val sync : t -> unit
+  val sync : ?with_fsync:bool -> t -> unit
 
   val version : t -> string
 

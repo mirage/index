@@ -72,7 +72,7 @@ module type S = sig
 
   val iter : (key -> value -> unit) -> t -> unit
 
-  val flush : t -> unit
+  val flush : ?with_fsync:bool -> t -> unit
 
   val close : t -> unit
 end
@@ -168,17 +168,17 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
         t.index <- None;
         t.log_async <- None)
 
-  let flush_instance instance =
+  let flush_instance ?(with_fsync = false) instance =
     Log.debug (fun l ->
         l "[%s] flushing instance" (Filename.basename instance.root));
     if instance.config.readonly then raise RO_not_allowed;
-    may (fun log -> IO.sync log.io) instance.log;
-    may (fun log -> IO.sync log.io) instance.log_async
+    may (fun log -> IO.sync ~with_fsync log.io) instance.log;
+    may (fun log -> IO.sync ~with_fsync log.io) instance.log_async
 
-  let flush t =
+  let flush ?(with_fsync = false) t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
-    IO.Mutex.with_lock t.rename_lock (fun () -> flush_instance t)
+    IO.Mutex.with_lock t.rename_lock (fun () -> flush_instance ~with_fsync t)
 
   let ( // ) = Filename.concat
 
@@ -557,7 +557,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
     IO.Mutex.lock t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
     Stats.incr_nb_merge ();
-    flush_instance t;
+    flush_instance ~with_fsync:true t;
     let log_async =
       let io =
         let log_async_path = log_async_path t.root in
@@ -716,7 +716,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
               Log.debug (fun l ->
                   l "[%s] last open instance: closing the file descriptor"
                     (Filename.basename t.root));
-              if not t.config.readonly then flush_instance t;
+              if not t.config.readonly then flush_instance ~with_fsync:true t;
               may
                 (fun l ->
                   Tbl.clear l.mem;
