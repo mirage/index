@@ -25,6 +25,7 @@ depends: [
   "metrics"
   "metrics-unix"
   "yojson"
+  "stdlib-shims"
 ]
 
 pin-depends: [

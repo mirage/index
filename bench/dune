@@ -2,14 +2,14 @@
  (public_name main)
  (modules main)
  (package index-bench)
- (libraries fmt index.unix common cmdliner))
+ (libraries fmt index index.unix common cmdliner stdlib-shims yojson))
 
 (executable
  (public_name db_bench)
  (modules db_bench)
  (package index-bench)
- (libraries fmt index.unix lmdb common bigstring rresult logs logs.fmt
-   cmdliner metrics metrics-unix))
+ (libraries fmt index index.unix common bigstring rresult logs logs.fmt
+   cmdliner metrics metrics-unix lmdb stdlib-shims yojson))
 
 (alias
  (name bench)
@@ -20,4 +20,4 @@
 (library
  (name common)
  (modules common)
- (libraries index.unix logs logs.fmt yojson))
+ (libraries fmt index index.unix logs logs.fmt stdlib-shims yojson))
