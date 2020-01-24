@@ -137,7 +137,7 @@ let absent_bindings = ref [||]
 module Index = struct
   module Index = Index_unix.Private.Make (Context.Key) (Context.Value)
 
-  type index_v = fresh:bool -> readonly:bool -> string -> Index.t
+  type index_v = fresh:bool -> readonly:bool -> Index.t
 
   type benchmark = with_metrics:bool -> index_v -> unit -> unit
 
@@ -155,7 +155,7 @@ module Index = struct
 
   let read ~with_metrics bindings r =
     Array.iter
-      (fun (k, (_ : Context.Value.t)) ->
+      (fun (k, _) ->
         ignore (Index.find r k : Context.Value.t);
         if with_metrics then add_metrics ())
       bindings
@@ -168,46 +168,44 @@ module Index = struct
       bindings
 
   let write_random ~with_metrics v () =
-    v ~fresh:true ~readonly:false "" |> write ~with_metrics !bindings_pool
+    v ~fresh:true ~readonly:false |> write ~with_metrics !bindings_pool
 
   let write_seq ~with_metrics v =
     let bindings = Array.copy !bindings_pool in
     Array.sort (fun a b -> String.compare (fst a) (fst b)) bindings;
-    fun () -> v ~fresh:true ~readonly:false "" |> write ~with_metrics bindings
+    fun () -> v ~fresh:true ~readonly:false |> write ~with_metrics bindings
 
   let write_seq_hash ~with_metrics v =
     let hash e = Context.Key.hash (fst e) in
     let bindings = Array.copy !bindings_pool in
     Array.sort (fun a b -> Int.compare (hash a) (hash b)) bindings;
-    fun () -> v ~fresh:true ~readonly:false "" |> write ~with_metrics bindings
+    fun () -> v ~fresh:true ~readonly:false |> write ~with_metrics bindings
 
   let write_rev_seq_hash ~with_metrics v =
     let hash e = Context.Key.hash (fst e) in
     let bindings = Array.copy !bindings_pool in
     Array.sort (fun a b -> -Int.compare (hash a) (hash b)) bindings;
-    fun () -> v ~fresh:true ~readonly:false "" |> write ~with_metrics bindings
+    fun () -> v ~fresh:true ~readonly:false |> write ~with_metrics bindings
 
   let write_sync ~with_metrics v () =
-    v ~fresh:true ~readonly:false ""
+    v ~fresh:true ~readonly:false
     |> write ~with_metrics ~with_flush:true !bindings_pool
 
   let iter ~with_metrics v () =
-    v ~fresh:false ~readonly:true ""
+    v ~fresh:false ~readonly:true
     |> Index.iter (fun _ _ -> if with_metrics then add_metrics ())
 
   let find_random ~with_metrics v () =
-    v ~fresh:false ~readonly:false "" |> read ~with_metrics !bindings_pool
+    v ~fresh:false ~readonly:false |> read ~with_metrics !bindings_pool
 
   let find_random_ro ~with_metrics v () =
-    v ~fresh:false ~readonly:true "" |> read ~with_metrics !bindings_pool
+    v ~fresh:false ~readonly:true |> read ~with_metrics !bindings_pool
 
   let find_absent ~with_metrics v () =
-    v ~fresh:false ~readonly:false ""
-    |> read_absent ~with_metrics !absent_bindings
+    v ~fresh:false ~readonly:false |> read_absent ~with_metrics !absent_bindings
 
   let find_absent_ro ~with_metrics v () =
-    v ~fresh:false ~readonly:true ""
-    |> read_absent ~with_metrics !absent_bindings
+    v ~fresh:false ~readonly:true |> read_absent ~with_metrics !absent_bindings
 
   let run :
       with_metrics:bool ->
@@ -219,8 +217,8 @@ module Index = struct
       Benchmark.result =
    fun ~with_metrics ~nb_entries ~log_size ~root ~name b ->
     let indices = ref [] in
-    let index_v ~fresh ~readonly n =
-      let i = Index.v ~fresh ~readonly ~log_size (root // name // n) in
+    let index_v ~fresh ~readonly =
+      let i = Index.v ~fresh ~readonly ~log_size (root // name) in
       indices := i :: !indices;
       i
     in
