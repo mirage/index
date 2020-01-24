@@ -86,17 +86,17 @@ module Benchmark = struct
 
   let run ~with_metrics ~nb_entries f =
     let _, time, stats = with_stats (fun () -> f ~with_metrics ()) in
-    let nb_entriesf = Float.of_int nb_entries in
-    let entry_sizef = Float.of_int entry_size in
+    let nb_entriesf = float_of_int nb_entries in
+    let entry_sizef = float_of_int entry_size in
     let read_amplification_size =
-      Float.of_int stats.bytes_read /. (entry_sizef *. nb_entriesf)
+      float_of_int stats.bytes_read /. (entry_sizef *. nb_entriesf)
     in
-    let read_amplification_calls = Float.of_int stats.nb_reads /. nb_entriesf in
+    let read_amplification_calls = float_of_int stats.nb_reads /. nb_entriesf in
     let write_amplification_size =
-      Float.of_int stats.bytes_written /. (entry_sizef *. nb_entriesf)
+      float_of_int stats.bytes_written /. (entry_sizef *. nb_entriesf)
     in
     let write_amplification_calls =
-      Float.of_int stats.nb_writes /. nb_entriesf
+      float_of_int stats.nb_writes /. nb_entriesf
     in
     let ops_per_sec = nb_entriesf /. time in
     let mbs_per_sec = entry_sizef *. nb_entriesf /. 1_048_576. /. time in
@@ -178,13 +178,13 @@ module Index = struct
   let write_seq_hash ~with_metrics v =
     let hash e = Context.Key.hash (fst e) in
     let bindings = Array.copy !bindings_pool in
-    Array.sort (fun a b -> Int.compare (hash a) (hash b)) bindings;
+    Array.sort (fun a b -> compare (hash a) (hash b)) bindings;
     fun () -> v ~fresh:true ~readonly:false |> write ~with_metrics bindings
 
   let write_rev_seq_hash ~with_metrics v =
     let hash e = Context.Key.hash (fst e) in
     let bindings = Array.copy !bindings_pool in
-    Array.sort (fun a b -> -Int.compare (hash a) (hash b)) bindings;
+    Array.sort (fun a b -> -compare (hash a) (hash b)) bindings;
     fun () -> v ~fresh:true ~readonly:false |> write ~with_metrics bindings
 
   let write_sync ~with_metrics v () =
@@ -298,7 +298,7 @@ module Index = struct
     ]
 end
 
-let list_benchs () =
+let list_benches () =
   let pp_bench ppf b = Fmt.pf ppf "%s\t-- %s" b.Index.name b.synopsis in
   Index.suite |> Fmt.(pr "%a" (list ~sep:Fmt.(const string "\n") pp_bench))
 
@@ -374,7 +374,7 @@ let print fmt (config, results) =
   in
   Format.fprintf fmt
     "Configuration:@\n    @[%a@]@\n@\nResults:@\n    @[%a@]@\n" pp_config config
-    Fmt.(list ~sep:Fmt.(any "@\n@\n") pp_bench)
+    Fmt.(list ~sep:(any "@\n@\n") pp_bench)
     results
 
 let print_json fmt (config, results) =
@@ -462,7 +462,7 @@ let nb_entries =
 
 let list_cmd =
   let doc = "List all available benchmarks." in
-  (Term.(pure list_benchs $ const ()), Term.info "list" ~doc)
+  (Term.(pure list_benches $ const ()), Term.info "list" ~doc)
 
 let json_flag =
   let doc = "Output the results as a json object." in

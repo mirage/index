@@ -14,22 +14,16 @@ build: [
 
 depends: [
   "ocaml"   {>= "4.03.0"}
-  "dune"    {>= "1.11.0"}
-  "index"
-  "fmt"
-  "logs"    {>= "0.7.0"}
-  "bigstring"
-  "rresult"
-  "lmdb"
   "cmdliner"
+  "dune"    {>= "1.11.0"}
+  "fmt"
+  "index"
   "metrics"
   "metrics-unix"
-  "yojson"
+  "ppx_deriving_yojson"
+  "re"
   "stdlib-shims"
-]
-
-pin-depends: [
-  [ "lmdb.dev" "git+https://github.com/vbmithr/ocaml-lmdb#6f1f8cc802cbdd633c62e33b814436210f539f02" ]
+  "yojson"
 ]
 
 synopsis: "Index benchmarking suite"
