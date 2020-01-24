@@ -416,6 +416,8 @@ let run filter root seed with_metrics log_size nb_entries json =
 
 open Cmdliner
 
+let env_var s = Arg.env_var ("INDEX_BENCH_" ^ s)
+
 let regex =
   let parse s =
     try Ok Re.(compile @@ Pcre.re s) with
@@ -427,30 +429,36 @@ let regex =
 
 let name_filter =
   let doc = "A regular expression matching the names of benchmarks to run" in
+  let env = env_var "NAME_FILTER" in
   Arg.(
     value
     & opt (some regex) None
-    & info [ "f"; "filter" ] ~doc ~docv:"NAME_REGEX")
+    & info [ "f"; "filter" ] ~env ~doc ~docv:"NAME_REGEX")
 
 let data_dir =
   let doc = "Set directory for the data files" in
-  Arg.(value & opt dir "_bench" & info [ "d"; "directory" ] ~doc)
+  let env = env_var "DATA_DIR" in
+  Arg.(value & opt dir "_bench" & info [ "d"; "data_dir" ] ~env ~doc)
 
 let seed =
   let doc = "The seed used to generate random data." in
-  Arg.(value & opt int 0 & info [ "s"; "seed" ] ~doc)
+  let env = env_var "SEED" in
+  Arg.(value & opt int 0 & info [ "s"; "seed" ] ~env ~doc)
 
 let metrics_flag =
   let doc = "Use Metrics; note that it has an impact on performance" in
-  Arg.(value & flag & info [ "m"; "with_metrics" ] ~doc)
+  let env = env_var "WITH_METRICS" in
+  Arg.(value & flag & info [ "m"; "with_metrics" ] ~env ~doc)
 
 let log_size =
   let doc = "The log size of the index." in
-  Arg.(value & opt int 500_000 & info [ "log_size" ] ~doc)
+  let env = env_var "LOG_SIZE" in
+  Arg.(value & opt int 500_000 & info [ "log_size" ] ~env ~doc)
 
 let nb_entries =
   let doc = "The number of bindings." in
-  Arg.(value & opt int 10_000_000 & info [ "nb_entries" ] ~doc)
+  let env = env_var "NB_ENTRIES" in
+  Arg.(value & opt int 10_000_000 & info [ "nb_entries" ] ~env ~doc)
 
 let list_cmd =
   let doc = "List all available benchmarks." in
@@ -458,7 +466,8 @@ let list_cmd =
 
 let json_flag =
   let doc = "Output the results as a json object." in
-  Arg.(value & flag & info [ "j"; "json" ] ~doc)
+  let env = env_var "JSON" in
+  Arg.(value & flag & info [ "j"; "json" ] ~env ~doc)
 
 let cmd =
   let doc = "Run all the benchmarks." in
