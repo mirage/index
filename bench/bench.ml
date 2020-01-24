@@ -84,8 +84,8 @@ module Benchmark = struct
   }
   [@@deriving yojson]
 
-  let run ~with_metrics ~nb_entries f =
-    let _, time, stats = with_stats (fun () -> f ~with_metrics ()) in
+  let run ~nb_entries f =
+    let _, time, stats = with_stats (fun () -> f ()) in
     let nb_entriesf = float_of_int nb_entries in
     let entry_sizef = float_of_int entry_size in
     let read_amplification_size =
@@ -137,10 +137,6 @@ let absent_bindings = ref [||]
 module Index = struct
   module Index = Index_unix.Private.Make (Context.Key) (Context.Value)
 
-  type index_v = fresh:bool -> readonly:bool -> Index.t
-
-  type benchmark = with_metrics:bool -> index_v -> unit -> unit
-
   let add_metrics =
     let no_tags x = x in
     fun () -> Metrics.add src no_tags (fun m -> m (Stats.get ()))
@@ -167,69 +163,48 @@ module Index = struct
         with Not_found -> if with_metrics then add_metrics ())
       bindings
 
-  let write_random ~with_metrics v () =
-    v ~fresh:true ~readonly:false |> write ~with_metrics !bindings_pool
+  let write_random ~with_metrics t () = write ~with_metrics !bindings_pool t
 
-  let write_seq ~with_metrics v =
+  let write_seq ~with_metrics t =
     let bindings = Array.copy !bindings_pool in
     Array.sort (fun a b -> String.compare (fst a) (fst b)) bindings;
-    fun () -> v ~fresh:true ~readonly:false |> write ~with_metrics bindings
+    fun () -> write ~with_metrics bindings t
 
-  let write_seq_hash ~with_metrics v =
+  let write_seq_hash ~with_metrics t =
     let hash e = Context.Key.hash (fst e) in
     let bindings = Array.copy !bindings_pool in
     Array.sort (fun a b -> compare (hash a) (hash b)) bindings;
-    fun () -> v ~fresh:true ~readonly:false |> write ~with_metrics bindings
+    fun () -> write ~with_metrics bindings t
 
-  let write_rev_seq_hash ~with_metrics v =
+  let write_rev_seq_hash ~with_metrics t =
     let hash e = Context.Key.hash (fst e) in
     let bindings = Array.copy !bindings_pool in
     Array.sort (fun a b -> -compare (hash a) (hash b)) bindings;
-    fun () -> v ~fresh:true ~readonly:false |> write ~with_metrics bindings
+    fun () -> write ~with_metrics bindings t
 
-  let write_sync ~with_metrics v () =
-    v ~fresh:true ~readonly:false
-    |> write ~with_metrics ~with_flush:true !bindings_pool
+  let write_sync ~with_metrics t () =
+    write ~with_metrics ~with_flush:true !bindings_pool t
 
-  let iter ~with_metrics v () =
-    v ~fresh:false ~readonly:true
-    |> Index.iter (fun _ _ -> if with_metrics then add_metrics ())
+  let iter ~with_metrics t () =
+    Index.iter (fun _ _ -> if with_metrics then add_metrics ()) t
 
-  let find_random ~with_metrics v () =
-    v ~fresh:false ~readonly:false |> read ~with_metrics !bindings_pool
+  let find_random ~with_metrics t () = read ~with_metrics !bindings_pool t
 
-  let find_random_ro ~with_metrics v () =
-    v ~fresh:false ~readonly:true |> read ~with_metrics !bindings_pool
+  let find_absent ~with_metrics t () =
+    read_absent ~with_metrics !absent_bindings t
 
-  let find_absent ~with_metrics v () =
-    v ~fresh:false ~readonly:false |> read_absent ~with_metrics !absent_bindings
-
-  let find_absent_ro ~with_metrics v () =
-    v ~fresh:false ~readonly:true |> read_absent ~with_metrics !absent_bindings
-
-  let run :
-      with_metrics:bool ->
-      nb_entries:int ->
-      log_size:int ->
-      root:string ->
-      name:string ->
-      benchmark ->
-      Benchmark.result =
-   fun ~with_metrics ~nb_entries ~log_size ~root ~name b ->
-    let indices = ref [] in
-    let index_v ~fresh ~readonly =
-      let i = Index.v ~fresh ~readonly ~log_size (root // name) in
-      indices := i :: !indices;
-      i
-    in
-    let result = Benchmark.run ~with_metrics ~nb_entries (b index_v) in
-    !indices |> List.iter (fun i -> Index.close i);
+  let run ~with_metrics ~nb_entries ~log_size ~root ~name ~fresh ~readonly b =
+    let index = Index.v ~fresh ~readonly ~log_size (root // name) in
+    let result = Benchmark.run ~nb_entries (b ~with_metrics index) in
+    Index.close index;
     result
 
   type suite_elt = {
     name : string;
     synopsis : string;
-    benchmark : benchmark;
+    readonly : bool;
+    fresh : bool;
+    benchmark : with_metrics:bool -> Index.t -> unit -> unit;
     dependency : string option;
   }
 
@@ -238,60 +213,80 @@ module Index = struct
       {
         name = "replace_random";
         synopsis = "Replace in random order";
+        readonly = false;
+        fresh = true;
         benchmark = write_random;
         dependency = None;
       };
       {
         name = "replace_random_sync";
         synopsis = "Replace in random order with sync";
+        readonly = false;
+        fresh = true;
         benchmark = write_sync;
         dependency = None;
       };
       {
         name = "replace_increasing_keys";
         synopsis = "Replace in increasing order of keys";
+        readonly = false;
+        fresh = true;
         benchmark = write_seq;
         dependency = None;
       };
       {
         name = "replace_increasing_hash";
         synopsis = "Replace in increasing order of hash";
+        readonly = false;
+        fresh = true;
         benchmark = write_seq_hash;
         dependency = None;
       };
       {
         name = "replace_decreasing_hash";
         synopsis = "Replace in decreasing order of hashes";
+        readonly = false;
+        fresh = true;
         benchmark = write_rev_seq_hash;
         dependency = None;
       };
       {
         name = "iter_rw";
         synopsis = "[RW] Iter";
+        readonly = false;
+        fresh = false;
         benchmark = iter;
         dependency = Some "replace_random";
       };
       {
         name = "find_random_ro";
         synopsis = "[RO] Find in random order";
-        benchmark = find_random_ro;
+        readonly = true;
+        fresh = false;
+        benchmark = find_random;
         dependency = Some "replace_random";
       };
       {
         name = "find_random_rw";
         synopsis = "[RW] Find in random order";
+        readonly = false;
+        fresh = false;
         benchmark = find_random;
         dependency = Some "replace_random";
       };
       {
         name = "find_absent_ro";
         synopsis = "[RO] Find absent values";
-        benchmark = find_absent_ro;
+        readonly = true;
+        fresh = false;
+        benchmark = find_absent;
         dependency = Some "replace_random";
       };
       {
         name = "find_absent_rw";
         synopsis = "[RW] Find absent values";
+        readonly = false;
+        fresh = false;
         benchmark = find_absent;
         dependency = Some "replace_random";
       };
@@ -408,9 +403,11 @@ let run filter root seed with_metrics log_size nb_entries json =
          let name =
            match b.dependency with None -> b.name | Some name -> name
          in
-         ( b,
-           Index.run ~with_metrics ~nb_entries ~log_size ~root ~name b.benchmark
-         ))
+         let result =
+           Index.run ~with_metrics ~nb_entries ~log_size ~root ~name
+             ~fresh:b.fresh ~readonly:b.readonly b.benchmark
+         in
+         (b, result))
   |> fun results ->
   Fmt.pr "%a" (if json then print_json else print) (config, results)
 
