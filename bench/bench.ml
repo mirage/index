@@ -429,7 +429,7 @@ let new_file =
 
 let regex =
   let parse s =
-    try Ok Re.(compile @@ Pcre.re s) with
+    try Ok Re.(compile @@ Pcre.re ~flags:[ `ANCHORED ] s) with
     | Re.Perl.Parse_error -> Error (`Msg "Perl-compatible regexp parse error")
     | Re.Perl.Not_supported -> Error (`Msg "unsupported regexp feature")
   in
@@ -437,7 +437,11 @@ let regex =
   Arg.conv (parse, print)
 
 let name_filter =
-  let doc = "A regular expression matching the names of benchmarks to run" in
+  let doc =
+    "A regular expression matching the names of benchmarks to run. For more \
+     information about the regexp syntax, please visit \
+     https://perldoc.perl.org/perlre.html#Regular-Expressions."
+  in
   let env = env_var "NAME_FILTER" in
   Arg.(
     value
@@ -447,7 +451,7 @@ let name_filter =
 let data_dir =
   let doc = "Set directory for the data files" in
   let env = env_var "DATA_DIR" in
-  Arg.(value & opt dir "_bench" & info [ "d"; "data_dir" ] ~env ~doc)
+  Arg.(value & opt dir "_bench" & info [ "d"; "data-dir" ] ~env ~doc)
 
 let output =
   let doc = "Specify an output file where the results should be written" in
@@ -462,17 +466,17 @@ let seed =
 let metrics_flag =
   let doc = "Use Metrics; note that it has an impact on performance" in
   let env = env_var "WITH_METRICS" in
-  Arg.(value & flag & info [ "m"; "with_metrics" ] ~env ~doc)
+  Arg.(value & flag & info [ "m"; "with-metrics" ] ~env ~doc)
 
 let log_size =
   let doc = "The log size of the index." in
   let env = env_var "LOG_SIZE" in
-  Arg.(value & opt int 500_000 & info [ "log_size" ] ~env ~doc)
+  Arg.(value & opt int 500_000 & info [ "log-size" ] ~env ~doc)
 
 let nb_entries =
   let doc = "The number of bindings." in
   let env = env_var "NB_ENTRIES" in
-  Arg.(value & opt int 10_000_000 & info [ "nb_entries" ] ~env ~doc)
+  Arg.(value & opt int 10_000_000 & info [ "nb-entries" ] ~env ~doc)
 
 let list_cmd =
   let doc = "List all available benchmarks." in
