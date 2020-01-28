@@ -67,10 +67,10 @@ end
 let with_stats f =
   Stats.reset_stats ();
   let t0 = Sys.time () in
-  let x = f () in
+  let _ = f () in
   let t1 = Sys.time () -. t0 in
   let stats = Stats.get () in
-  (x, t1, stats)
+  (t1, stats)
 
 module Benchmark = struct
   type result = {
@@ -85,7 +85,7 @@ module Benchmark = struct
   [@@deriving yojson]
 
   let run ~nb_entries f =
-    let _, time, stats = with_stats (fun () -> f ()) in
+    let time, stats = with_stats (fun () -> f ()) in
     let nb_entriesf = float_of_int nb_entries in
     let entry_sizef = float_of_int entry_size in
     let read_amplification_size =
