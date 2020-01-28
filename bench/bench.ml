@@ -236,7 +236,7 @@ module Index = struct
       };
       {
         name = "replace_increasing_hash";
-        synopsis = "Replace in increasing order of hash";
+        synopsis = "Replace in increasing order of hashes";
         readonly = false;
         fresh = true;
         benchmark = write_seq_hash;
@@ -388,7 +388,7 @@ let print_json fmt (config, results) =
   in
   pretty_print fmt obj
 
-let run filter root seed with_metrics log_size nb_entries json =
+let run filter root output seed with_metrics log_size nb_entries json =
   let config =
     { key_size; value_size; nb_entries; log_size; seed; with_metrics }
   in
@@ -409,11 +409,23 @@ let run filter root seed with_metrics log_size nb_entries json =
          in
          (b, result))
   |> fun results ->
-  Fmt.pr "%a" (if json then print_json else print) (config, results)
+  let fmt =
+    (match output with None -> stdout | Some filename -> open_out filename)
+    |> Format.formatter_of_out_channel
+  in
+  Fmt.pf fmt "%a@." (if json then print_json else print) (config, results)
 
 open Cmdliner
 
 let env_var s = Arg.env_var ("INDEX_BENCH_" ^ s)
+
+let new_file =
+  let parse s =
+    match Sys.file_exists s with
+    | false -> `Ok s
+    | true -> `Error (Printf.sprintf "`%s' already exists" s)
+  in
+  (parse, Format.pp_print_string)
 
 let regex =
   let parse s =
@@ -436,6 +448,11 @@ let data_dir =
   let doc = "Set directory for the data files" in
   let env = env_var "DATA_DIR" in
   Arg.(value & opt dir "_bench" & info [ "d"; "data_dir" ] ~env ~doc)
+
+let output =
+  let doc = "Specify an output file where the results should be written" in
+  let env = env_var "OUTPUT" in
+  Arg.(value & opt (some new_file) None & info [ "o"; "output" ] ~env ~doc)
 
 let seed =
   let doc = "The seed used to generate random data." in
@@ -472,6 +489,7 @@ let cmd =
       const run
       $ name_filter
       $ data_dir
+      $ output
       $ seed
       $ metrics_flag
       $ log_size
