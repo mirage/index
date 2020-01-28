@@ -132,7 +132,9 @@ let make_bindings_pool nb_entries =
 
 let bindings_pool = ref [||]
 
-let absent_bindings = ref [||]
+let absent_bindings_pool = ref [||]
+
+let sorted_bindings_pool = ref [||]
 
 module Index = struct
   module Index = Index_unix.Private.Make (Context.Key) (Context.Value)
@@ -166,21 +168,18 @@ module Index = struct
   let write_random ~with_metrics t () = write ~with_metrics !bindings_pool t
 
   let write_seq ~with_metrics t =
-    let bindings = Array.copy !bindings_pool in
-    Array.sort (fun a b -> String.compare (fst a) (fst b)) bindings;
-    fun () -> write ~with_metrics bindings t
+    Array.sort (fun a b -> String.compare (fst a) (fst b)) !sorted_bindings_pool;
+    fun () -> write ~with_metrics !sorted_bindings_pool t
 
   let write_seq_hash ~with_metrics t =
     let hash e = Context.Key.hash (fst e) in
-    let bindings = Array.copy !bindings_pool in
-    Array.sort (fun a b -> compare (hash a) (hash b)) bindings;
-    fun () -> write ~with_metrics bindings t
+    Array.sort (fun a b -> compare (hash a) (hash b)) !sorted_bindings_pool;
+    fun () -> write ~with_metrics !sorted_bindings_pool t
 
   let write_rev_seq_hash ~with_metrics t =
     let hash e = Context.Key.hash (fst e) in
-    let bindings = Array.copy !bindings_pool in
-    Array.sort (fun a b -> -compare (hash a) (hash b)) bindings;
-    fun () -> write ~with_metrics bindings t
+    Array.sort (fun a b -> -compare (hash a) (hash b)) !sorted_bindings_pool;
+    fun () -> write ~with_metrics !sorted_bindings_pool t
 
   let write_sync ~with_metrics t () =
     write ~with_metrics ~with_flush:true !bindings_pool t
@@ -191,7 +190,7 @@ module Index = struct
   let find_random ~with_metrics t () = read ~with_metrics !bindings_pool t
 
   let find_absent ~with_metrics t () =
-    read_absent ~with_metrics !absent_bindings t
+    read_absent ~with_metrics !absent_bindings_pool t
 
   let run ~with_metrics ~nb_entries ~log_size ~root ~name ~fresh ~readonly b =
     let index = Index.v ~fresh ~readonly ~log_size (root // name) in
@@ -360,7 +359,8 @@ let init config =
     Metrics_gnuplot.set_reporter ();
     Metrics_unix.monitor_gc 0.1 );
   bindings_pool := make_bindings_pool config.nb_entries;
-  absent_bindings := make_bindings_pool config.nb_entries
+  absent_bindings_pool := make_bindings_pool config.nb_entries;
+  sorted_bindings_pool := Array.copy !bindings_pool
 
 let print fmt (config, results) =
   let pp_bench fmt (b, result) =
