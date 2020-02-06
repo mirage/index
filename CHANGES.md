@@ -1,16 +1,23 @@
+# Unreleased
+
+## Changed
+
+- Parameterise `Index.Make` over an arbitrary mutex implementation (and remove
+  the obligation for `IO` to provide this functionality). (#160)
+
 # 1.1.0 (2019-12-21)
 
 ## Changed
 
 - Improve the cooperativeness of the `merge` operation, allowing concurrent read
   operations to share CPU resources with ongoing merges. (#152)
-  
+
 - Improve speed of read operations for read-only instances. (#141)
 
 ## Removed
 
- - Remove `force_merge` from `Index.S`, due to difficulties with guaranteeing
-   sensible semantics to this function under MRSW access patterns. (#147, #150)
+- Remove `force_merge` from `Index.S`, due to difficulties with guaranteeing
+  sensible semantics to this function under MRSW access patterns. (#147, #150)
 
 # 1.0.1 (2019-11-29)
 

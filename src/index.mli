@@ -82,6 +82,27 @@ end
 
 module type IO = Io.S
 
+module type MUTEX = sig
+  (** Locks for mutual exclusion *)
+
+  type t
+  (** The type of mutual-exclusion locks. *)
+
+  val create : unit -> t
+  (** Return a fresh mutex. *)
+
+  val lock : t -> unit
+  (** Lock the given mutex. Locks are not assumed to be re-entrant. *)
+
+  val unlock : t -> unit
+  (** Unlock the mutex. If any threads are attempting to lock the mutex, exactly
+      one of them will gain access to the lock. *)
+
+  val with_lock : t -> (unit -> 'a) -> 'a
+  (** [with_lock t f] first obtains [t], then computes [f ()], and finally
+      unlocks [t]. *)
+end
+
 exception RO_not_allowed
 (** The exception raised when a write operation is attempted on a read_only
     index. *)
@@ -144,7 +165,7 @@ module type S = sig
   (** Closes all resources used by [t]. *)
 end
 
-module Make (K : Key) (V : Value) (IO : IO) :
+module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) :
   S with type key = K.t and type value = V.t
 
 (** These modules should not be used. They are exposed purely for testing
@@ -179,6 +200,6 @@ module Private : sig
     (** Wait for an asynchronous computation to finish. *)
   end
 
-  module Make (K : Key) (V : Value) (IO : IO) :
+  module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) :
     S with type key = K.t and type value = V.t
 end
