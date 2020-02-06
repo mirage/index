@@ -362,16 +362,6 @@ module IO : Index.IO = struct
   let unlock { path; fd } =
     Log.debug (fun l -> l "Unlocking %s" path);
     Unix.close fd
-
-  type async = Thread.t option
-
-  let async f = Some (Thread.create f ())
-
-  let yield = Thread.yield
-
-  let return () = None
-
-  let await t = match t with None -> () | Some t -> Thread.join t
 end
 
 module Mutex = struct
@@ -388,10 +378,23 @@ module Mutex = struct
       raise e
 end
 
-module Make (K : Index.Key) (V : Index.Value) = Index.Make (K) (V) (IO) (Mutex)
+module Thread = struct
+  type t = Thread.t option
+
+  let async f = Some (Thread.create f ())
+
+  let yield = Thread.yield
+
+  let return () = None
+
+  let await t = match t with None -> () | Some t -> Thread.join t
+end
+
+module Make (K : Index.Key) (V : Index.Value) =
+  Index.Make (K) (V) (IO) (Mutex) (Thread)
 
 module Private = struct
   module IO = IO
   module Make (K : Index.Key) (V : Index.Value) =
-    Index.Private.Make (K) (V) (IO) (Mutex)
+    Index.Private.Make (K) (V) (IO) (Mutex) (Thread)
 end

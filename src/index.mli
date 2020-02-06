@@ -103,6 +103,27 @@ module type MUTEX = sig
       unlocks [t]. *)
 end
 
+module type THREAD = sig
+  (** Cooperative threads. *)
+
+  type t
+  (** The type of thread handles. *)
+
+  val async : (unit -> 'a) -> t
+  (** [async f] creates a new thread of control which executes [f ()] and
+      returns the corresponding thread handle. The thread terminates whenever
+      [f ()] returns a value or raises an exception. *)
+
+  val await : t -> unit
+  (** [await t] blocks on the termination of [t]. *)
+
+  val return : unit -> t
+  (** [return ()] is a pre-terminated thread handle. *)
+
+  val yield : unit -> unit
+  (** Re-schedule the calling thread without suspending it. *)
+end
+
 exception RO_not_allowed
 (** The exception raised when a write operation is attempted on a read_only
     index. *)
@@ -165,7 +186,7 @@ module type S = sig
   (** Closes all resources used by [t]. *)
 end
 
-module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) :
+module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :
   S with type key = K.t and type value = V.t
 
 (** These modules should not be used. They are exposed purely for testing
@@ -200,6 +221,6 @@ module Private : sig
     (** Wait for an asynchronous computation to finish. *)
   end
 
-  module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) :
+  module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :
     S with type key = K.t and type value = V.t
 end

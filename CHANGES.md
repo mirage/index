@@ -2,8 +2,9 @@
 
 ## Changed
 
-- Parameterise `Index.Make` over an arbitrary mutex implementation (and remove
-  the obligation for `IO` to provide this functionality). (#160)
+- Parameterise `Index.Make` over arbitrary mutex and thread implementations
+  (and remove the obligation for `IO` to provide this functionality). (#160,
+  #161)
 
 # 1.1.0 (2019-12-21)
 
