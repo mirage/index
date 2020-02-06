@@ -421,9 +421,9 @@ let env_var s = Arg.env_var ("INDEX_BENCH_" ^ s)
 
 let new_file =
   let parse s =
-    match Sys.file_exists s with
+    match Sys.file_exists s && Sys.is_directory s with
     | false -> `Ok s
-    | true -> `Error (Printf.sprintf "`%s' already exists" s)
+    | true -> `Error (Printf.sprintf "Error: `%s' is a directory" s)
   in
   (parse, Format.pp_print_string)
 
