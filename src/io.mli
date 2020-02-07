@@ -61,14 +61,4 @@ module type S = sig
   val lock : string -> lock
 
   val unlock : lock -> unit
-
-  type async
-
-  val async : (unit -> 'a) -> async
-
-  val await : async -> unit
-
-  val return : unit -> async
-
-  val yield : unit -> unit
 end

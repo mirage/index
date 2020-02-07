@@ -61,6 +61,18 @@ module type MUTEX = sig
   val with_lock : t -> (unit -> 'a) -> 'a
 end
 
+module type THREAD = sig
+  type t
+
+  val async : (unit -> 'a) -> t
+
+  val await : t -> unit
+
+  val return : unit -> t
+
+  val yield : unit -> unit
+end
+
 module type S = sig
   type t
 
@@ -97,10 +109,16 @@ exception RO_not_allowed
 
 exception Closed
 
-module Make_private (K : Key) (V : Value) (IO : IO) (Mutex : MUTEX) = struct
-  type async = IO.async
+module Make_private
+    (K : Key)
+    (V : Value)
+    (IO : IO)
+    (Mutex : MUTEX)
+    (Thread : THREAD) =
+struct
+  type async = Thread.t
 
-  let await = IO.await
+  let await = Thread.await
 
   type key = K.t
 
@@ -547,7 +565,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) (Mutex : MUTEX) = struct
         let key_e = K.decode buf_str 0 in
         let hash_e = K.hash key_e in
         let log_i = merge_from_log fan_out log log_i hash_e dst_io in
-        IO.yield ();
+        Thread.yield ();
         if
           log_i >= Array.length log
           ||
@@ -647,7 +665,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) (Mutex : MUTEX) = struct
       IO.close log_async.io;
       Mutex.unlock t.merge_lock
     in
-    IO.async go
+    Thread.async go
 
   let get_witness t =
     match t.log with
@@ -677,7 +695,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) (Mutex : MUTEX) = struct
     match witness with
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
-        IO.return ()
+        Thread.return ()
     | Some witness -> merge ?hook ~witness t
 
   let replace t key value =
