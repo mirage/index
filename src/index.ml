@@ -49,6 +49,18 @@ end
 
 module type IO = Io.S
 
+module type MUTEX = sig
+  type t
+
+  val create : unit -> t
+
+  val lock : t -> unit
+
+  val unlock : t -> unit
+
+  val with_lock : t -> (unit -> 'a) -> 'a
+end
+
 module type S = sig
   type t
 
@@ -85,7 +97,7 @@ exception RO_not_allowed
 
 exception Closed
 
-module Make_private (K : Key) (V : Value) (IO : IO) = struct
+module Make_private (K : Key) (V : Value) (IO : IO) (Mutex : MUTEX) = struct
   type async = IO.async
 
   let await = IO.await
@@ -137,8 +149,8 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
     mutable log_async : log option;
     mutable open_instances : int;
     writer_lock : IO.lock option;
-    mutable merge_lock : IO.Mutex.t;
-    mutable rename_lock : IO.Mutex.t;
+    mutable merge_lock : Mutex.t;
+    mutable rename_lock : Mutex.t;
   }
 
   type t = instance option ref
@@ -151,7 +163,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
     Log.debug (fun l -> l "clear %S" t.root);
     if t.config.readonly then raise RO_not_allowed;
     t.generation <- 0L;
-    IO.Mutex.with_lock t.merge_lock (fun () ->
+    Mutex.with_lock t.merge_lock (fun () ->
         let log = assert_and_get t.log in
         IO.clear log.io;
         Tbl.clear log.mem;
@@ -178,7 +190,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
   let flush ?(with_fsync = false) t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
-    IO.Mutex.with_lock t.rename_lock (fun () -> flush_instance ~with_fsync t)
+    Mutex.with_lock t.rename_lock (fun () -> flush_instance ~with_fsync t)
 
   let ( // ) = Filename.concat
 
@@ -367,8 +379,8 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
       root;
       index;
       open_instances = 1;
-      merge_lock = IO.Mutex.create ();
-      rename_lock = IO.Mutex.create ();
+      merge_lock = Mutex.create ();
+      rename_lock = Mutex.create ();
       writer_lock;
     }
 
@@ -473,7 +485,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
       find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
       @~ find_if_exists ~name:"index" ~find:interpolation_search t.index
     in
-    IO.Mutex.with_lock t.rename_lock (fun () ->
+    Mutex.with_lock t.rename_lock (fun () ->
         if t.config.readonly then sync_log t;
         find_if_exists ~name:"log_async"
           ~find:(fun log -> Tbl.find log.mem)
@@ -554,7 +566,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
     (go [@tailcall]) 0L 0 0
 
   let merge ?hook ~witness t =
-    IO.Mutex.lock t.merge_lock;
+    Mutex.lock t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
     Stats.incr_nb_merge ();
     flush_instance ~with_fsync:true t;
@@ -615,7 +627,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
       in
       Fan.finalize index.fan_out;
       IO.set_fanout merge (Fan.export index.fan_out);
-      IO.Mutex.with_lock t.rename_lock (fun () ->
+      Mutex.with_lock t.rename_lock (fun () ->
           IO.rename ~src:merge ~dst:index.io;
           t.index <- Some index;
           IO.clear ~keep_generation:true log.io;
@@ -633,7 +645,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
       may (fun f -> f `After) hook;
       IO.clear log_async.io;
       IO.close log_async.io;
-      IO.Mutex.unlock t.merge_lock
+      Mutex.unlock t.merge_lock
     in
     IO.async go
 
@@ -661,7 +673,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
   let force_merge ?hook t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
-    let witness = IO.Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
+    let witness = Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
     match witness with
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
@@ -674,7 +686,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
         l "[%s] replace %a %a" (Filename.basename t.root) K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
     let do_merge =
-      IO.Mutex.with_lock t.rename_lock (fun () ->
+      Mutex.with_lock t.rename_lock (fun () ->
           let log =
             match t.log_async with
             | Some async_log -> async_log
@@ -696,7 +708,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
     | Some log ->
         Tbl.iter f log.mem;
         may (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io) t.index;
-        IO.Mutex.with_lock t.rename_lock (fun () ->
+        Mutex.with_lock t.rename_lock (fun () ->
             ( match t.log_async with
             | None -> ()
             | Some log -> Tbl.iter f log.mem );
@@ -709,7 +721,7 @@ module Make_private (K : Key) (V : Value) (IO : IO) = struct
     | None -> Log.info (fun l -> l "close: instance already closed")
     | Some t ->
         Log.info (fun l -> l "[%s] close" (Filename.basename t.root));
-        IO.Mutex.with_lock t.merge_lock (fun () ->
+        Mutex.with_lock t.merge_lock (fun () ->
             it := None;
             t.open_instances <- t.open_instances - 1;
             if t.open_instances = 0 then (

@@ -62,18 +62,6 @@ module type S = sig
 
   val unlock : lock -> unit
 
-  module Mutex : sig
-    type t
-
-    val create : unit -> t
-
-    val lock : t -> unit
-
-    val unlock : t -> unit
-
-    val with_lock : t -> (unit -> 'a) -> 'a
-  end
-
   type async
 
   val async : (unit -> 'a) -> async
