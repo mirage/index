@@ -367,8 +367,8 @@ let print fmt (config, results) =
     Format.fprintf fmt "%s@\n    @[%a@]" b.Index.synopsis Benchmark.pp_result
       result
   in
-  Format.fprintf fmt
-    "Configuration:@\n    @[%a@]@\n@\nResults:@\n    @[%a@]@\n" pp_config config
+  Format.fprintf fmt "Configuration:@\n    @[%a@]@\n@\nResults:@\n    @[%a@]@\n"
+    pp_config config
     Fmt.(list ~sep:(any "@\n@\n") pp_bench)
     results
 
