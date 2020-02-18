@@ -362,6 +362,52 @@ module Close = struct
     ]
 end
 
+(* Create two indexes using two different calls of Make. *)
+module Make = struct
+  (* Open both at the same time if one is RO.*)
+  let use_make_twice_ro () =
+    let module Index1 = Index_unix.Private.Make (Common.Key) (Common.Value) in
+    let reuse_name = Context.fresh_name "empty_index" in
+    let rw = Index.v ~fresh:true ~readonly:false ~log_size:4 reuse_name in
+    let ro = Index1.v ~fresh:false ~readonly:true ~log_size:4 reuse_name in
+    let k1, v1 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    check_index_entry rw k1 v1;
+    Index.flush rw;
+    match Index1.find ro k1 with
+    | v' when v' = v1 -> ()
+    | v' (* v =/= v' *) ->
+        Alcotest.failf "Wrong insertion: found %s when expected %s at key %s."
+          v' v1 k1
+    | exception Not_found ->
+        Alcotest.failf "Wrong insertion: %s key is missing." k1
+
+  (* If one is opened in RW then a second RW can be opened only after the first
+     one is closed .*)
+  let use_make_twice_rw () =
+    let module Index1 = Index_unix.Private.Make (Common.Key) (Common.Value) in
+    let reuse_name = Context.fresh_name "empty_index" in
+    let rw = Index.v ~fresh:true ~readonly:false ~log_size:4 reuse_name in
+    let k1, v1 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    check_index_entry rw k1 v1;
+    Index.close rw;
+    let rw1 = Index1.v ~fresh:false ~readonly:false ~log_size:4 reuse_name in
+    match Index1.find rw1 k1 with
+    | v' when v' = v1 -> ()
+    | v' (* v =/= v' *) ->
+        Alcotest.failf "Wrong insertion: found %s when expected %s at key %s."
+          v' v1 k1
+    | exception Not_found ->
+        Alcotest.failf "Wrong insertion: %s key is missing." k1
+
+  let tests =
+    [
+      ("use make twice with ro", `Quick, use_make_twice_ro);
+      ("use make twice with rw", `Quick, use_make_twice_rw);
+    ]
+end
+
 let () =
   Common.report ();
   Alcotest.run "index.unix"
@@ -372,4 +418,5 @@ let () =
       ("on restart", DuplicateInstance.tests);
       ("readonly", Readonly.tests);
       ("close", Close.tests);
+      ("make", Make.tests);
     ]
