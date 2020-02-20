@@ -362,6 +362,21 @@ module Close = struct
     ]
 end
 
+module Filter = struct
+  let filter_none () =
+    let Context.{ rw; tbl; _ } = Context.full_index () in
+    Index.filter rw (fun _ -> true);
+    check_equivalence rw tbl
+
+  let filter_all () =
+    let Context.{ rw; _ } = Context.full_index () in
+    Index.filter rw (fun _ -> false);
+    check_equivalence rw (Hashtbl.create 0)
+
+  let tests =
+    [ ("filter none", `Quick, filter_none); ("filter all", `Quick, filter_all) ]
+end
+
 let () =
   Common.report ();
   Alcotest.run "index.unix"
@@ -372,4 +387,5 @@ let () =
       ("on restart", DuplicateInstance.tests);
       ("readonly", Readonly.tests);
       ("close", Close.tests);
+      ("filter", Filter.tests);
     ]
