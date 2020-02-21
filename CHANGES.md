@@ -1,5 +1,9 @@
 # Unreleased
 
+## Added
+
+- Added `filter`, removing bindings depending on a predicate (#165, @pascutto)
+
 ## Changed
 
 - Parameterise `Index.Make` over arbitrary mutex and thread implementations
