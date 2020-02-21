@@ -379,10 +379,14 @@ let print_json fmt (config, results) =
       [
         ("config", config_to_yojson config);
         ( "results",
-          `Assoc
+          `List
             (List.map
                (fun (b, result) ->
-                 (b.Index.name, Benchmark.result_to_yojson result))
+                 `Assoc
+                   [
+                     ("name", `String b.Index.name);
+                     ("metrics", Benchmark.result_to_yojson result);
+                   ])
                results) );
       ]
   in
