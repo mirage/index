@@ -12,12 +12,15 @@ end)
 let main = Context.full_index ()
 
 (* Helper functions *)
+
+(** [random_new_key tbl] returns a random key which is not in [tbl]. *)
 let rec random_new_key tbl =
   let r = Key.v () in
   if Hashtbl.mem tbl r then random_new_key tbl else r
 
 exception Found of string
 
+(** [random_existing_key tbl] returns a random key from [tbl]. *)
 let random_existing_key tbl =
   try
     Hashtbl.iter (fun k _ -> raise (Found k)) tbl;
@@ -370,19 +373,24 @@ module Close = struct
     ]
 end
 
+(* Tests of {Index.filter} *)
 module Filter = struct
+  (** Test that all bindings are kept when using [filter] with a true predicate. *)
   let filter_none () =
     let Context.{ rw; tbl; _ } = Context.full_index () in
     Index.filter rw (fun _ -> true);
     check_equivalence rw tbl;
     Index.close rw
 
+  (** Test that all bindings are removed when using [filter] with a false
+      predicate. *)
   let filter_all () =
     let Context.{ rw; _ } = Context.full_index () in
     Index.filter rw (fun _ -> false);
     check_equivalence rw (Hashtbl.create 0);
     Index.close rw
 
+  (** Test that [filter] can be used to remove exactly a single binding. *)
   let filter_one () =
     let Context.{ rw; tbl; _ } = Context.full_index () in
     let k = random_existing_key tbl in
@@ -391,6 +399,8 @@ module Filter = struct
     check_equivalence rw tbl;
     Index.close rw
 
+  (** Test that the results of [filter] are propagated to a clone which was
+      created before. *)
   let clone_then_filter () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
     let k = random_existing_key tbl in
@@ -402,6 +412,8 @@ module Filter = struct
     Index.close rw;
     Index.close rw2
 
+  (** Test that the results of [filter] are propagated to a clone which was
+      created after. *)
   let filter_then_clone () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
     let k = random_existing_key tbl in
@@ -413,7 +425,9 @@ module Filter = struct
     Index.close rw;
     Index.close rw2
 
-  let empty_after_filter_then_fresh () =
+  (** Test that using [filter] doesn't affect fresh clones created later at the
+      same path. *)
+  let empty_after_filter_and_fresh () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
@@ -431,7 +445,7 @@ module Filter = struct
       ("filter one", `Quick, filter_one);
       ("clone then filter", `Quick, clone_then_filter);
       ("filter then clone", `Quick, filter_then_clone);
-      ("empty after filter+fresh", `Quick, empty_after_filter_then_fresh);
+      ("empty after filter+fresh", `Quick, empty_after_filter_and_fresh);
     ]
 end
 
