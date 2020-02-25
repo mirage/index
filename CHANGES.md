@@ -1,8 +1,8 @@
-# Unreleased
+# 1.2.0 (2020-02-25)
 
 ## Added
 
-- Added `filter`, removing bindings depending on a predicate (#165, @pascutto)
+- Added `filter`, removing bindings depending on a predicate (#165)
 
 ## Changed
 
