@@ -94,6 +94,8 @@ module type S = sig
 
   val replace : t -> key -> value -> unit
 
+  val filter : t -> (key * value -> bool) -> unit
+
   val iter : (key -> value -> unit) -> t -> unit
 
   val flush : ?with_fsync:bool -> t -> unit
@@ -547,8 +549,9 @@ struct
       append_entry_fanout fan_out log.(log_i) dst_io
     done
 
-  (* Merge [log] with [t] into [dst_io]. [log] must be sorted by key hashes. *)
-  let merge_with log (index : index) dst_io =
+  (* Merge [log] with [index] into [dst_io], ignoring bindings that do not
+     satisfy [filter (k, v)]. [log] must be sorted by key hashes. *)
+  let merge_with ~filter log (index : index) dst_io =
     let entries = 10_000 in
     let len = entries * entry_size in
     let buf = Bytes.create len in
@@ -560,18 +563,19 @@ struct
       if index_offset >= index_end then
         append_remaining_log fan_out log log_i dst_io
       else
-        let buf_str = Bytes.sub_string buf buf_offset entry_size in
+        let buf_str = Bytes.sub buf buf_offset entry_size in
         let index_offset = Int64.add index_offset entry_sizeL in
-        let key_e = K.decode buf_str 0 in
-        let hash_e = K.hash key_e in
-        let log_i = merge_from_log fan_out log log_i hash_e dst_io in
+        let e = Entry.decode buf_str 0 in
+        let log_i = merge_from_log fan_out log log_i e.key_hash dst_io in
         Thread.yield ();
         if
-          log_i >= Array.length log
+          ( log_i >= Array.length log
           ||
           let key = log.(log_i).key in
-          not (K.equal key key_e)
-        then append_buf_fanout fan_out hash_e buf_str dst_io;
+          not (K.equal key e.key) )
+          && filter (e.key, e.value)
+        then
+          append_buf_fanout fan_out e.key_hash (Bytes.to_string buf_str) dst_io;
         let buf_offset =
           let n = buf_offset + entry_size in
           if n >= Bytes.length buf then (
@@ -583,7 +587,7 @@ struct
     in
     (go [@tailcall]) 0L 0 0
 
-  let merge ?hook ~witness t =
+  let merge ?(blocking = false) ?(filter = fun _ -> true) ?hook ~witness t =
     Mutex.lock t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
     Stats.incr_nb_merge ();
@@ -605,6 +609,9 @@ struct
       let generation = Int64.succ t.generation in
       let log_array =
         let compare_entry e e' = compare e.key_hash e'.key_hash in
+        Tbl.filter_map_inplace
+          (fun key value -> if filter (key, value) then Some value else None)
+          log.mem;
         let b = Array.make (Tbl.length log.mem) witness in
         Tbl.fold
           (fun key value i ->
@@ -640,7 +647,7 @@ struct
             { io; fan_out }
         | Some index ->
             let index = { index with fan_out } in
-            merge_with log_array index merge;
+            merge_with ~filter log_array index merge;
             index
       in
       Fan.finalize index.fan_out;
@@ -665,7 +672,10 @@ struct
       IO.close log_async.io;
       Mutex.unlock t.merge_lock
     in
-    Thread.async go
+    if blocking then (
+      go ();
+      Thread.return () )
+    else Thread.async go
 
   let get_witness t =
     match t.log with
@@ -716,6 +726,16 @@ struct
     in
     if do_merge then
       ignore (merge ~witness:{ key; key_hash = K.hash key; value } t : async)
+
+  let filter t f =
+    let t = check_open t in
+    Log.info (fun l -> l "[%s] filter" (Filename.basename t.root));
+    if t.config.readonly then raise RO_not_allowed;
+    let witness = Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
+    match witness with
+    | None ->
+        Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
+    | Some witness -> Thread.await (merge ~blocking:true ~filter:f ~witness t)
 
   let iter f t =
     let t = check_open t in
