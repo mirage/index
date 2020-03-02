@@ -459,7 +459,7 @@ struct
         let new_log_offset = IO.force_offset log.io in
         let add_log_entry e = add_log_entry log e in
         sync_log_async ~generation_change:(t.generation <> generation) ();
-        if t.generation <> generation then (
+        if t.generation <> generation || t.generation = 0L then (
           Log.debug (fun l ->
               l "[%s] generation has changed, reading log and index from disk"
                 (Filename.basename t.root));
