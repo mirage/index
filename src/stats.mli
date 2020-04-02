@@ -5,6 +5,7 @@ type t = {
   mutable nb_writes : int;
   mutable nb_merge : int;
   mutable nb_replace : int;
+  mutable replace_times : float list;
 }
 
 val reset_stats : unit -> unit
@@ -16,3 +17,9 @@ val add_read : int -> unit
 val add_write : int -> unit
 
 val incr_nb_merge : unit -> unit
+
+val incr_nb_replace : unit -> unit
+
+val start_replace : unit -> unit
+
+val end_replace : unit -> unit

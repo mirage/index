@@ -5,6 +5,7 @@ type t = {
   mutable nb_writes : int;
   mutable nb_merge : int;
   mutable nb_replace : int;
+  mutable replace_times : float list;
 }
 
 let fresh_stats () =
@@ -15,6 +16,7 @@ let fresh_stats () =
     nb_writes = 0;
     nb_merge = 0;
     nb_replace = 0;
+    replace_times = [];
   }
 
 let stats = fresh_stats ()
@@ -25,7 +27,8 @@ let reset_stats () =
   stats.bytes_written <- 0;
   stats.nb_writes <- 0;
   stats.nb_merge <- 0;
-  stats.nb_replace <- 0
+  stats.nb_replace <- 0;
+  stats.replace_times <- []
 
 let get () = stats
 
@@ -39,6 +42,8 @@ let incr_nb_writes () = stats.nb_writes <- succ stats.nb_writes
 
 let incr_nb_merge () = stats.nb_merge <- succ stats.nb_merge
 
+let incr_nb_replace () = stats.nb_replace <- succ stats.nb_replace
+
 let add_read n =
   incr_bytes_read n;
   incr_nb_reads ()
@@ -46,3 +51,12 @@ let add_read n =
 let add_write n =
   incr_bytes_written n;
   incr_nb_writes ()
+
+let replace_timer = ref 0.0
+
+let start_replace () = replace_timer := Sys.time ()
+
+let end_replace () =
+  let time = Sys.time () -. !replace_timer in
+  replace_timer := 0.0;
+  stats.replace_times <- time :: stats.replace_times

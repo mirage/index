@@ -223,6 +223,9 @@ module Private : sig
 
     val await : async -> unit
     (** Wait for an asynchronous computation to finish. *)
+
+    val replace_with_timer : ?with_timer:bool -> t -> key -> value -> unit
+    (** Time each replace operation.*)
   end
 
   module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :

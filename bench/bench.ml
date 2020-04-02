@@ -2,6 +2,14 @@ module Stats = Index.Stats
 
 let src =
   let open Metrics in
+  let string_of_head ls =
+    if List.length ls <> 0 then string_of_float (List.hd ls) else "0"
+  in
+  let head k v =
+    field ~doc:"Time of the latest replace" k
+      (Other (Fmt.of_to_string string_of_head))
+      v
+  in
   let open Stats in
   let tags = Tags.[] in
   let data t =
@@ -11,6 +19,7 @@ let src =
         int "bytes_written" t.bytes_written;
         int "merge" t.nb_merge;
         int "replace" t.nb_replace;
+        head "replace_time" t.replace_times;
       ]
   in
   Src.v "bench" ~tags ~data
@@ -143,10 +152,11 @@ module Index = struct
     let no_tags x = x in
     fun () -> Metrics.add src no_tags (fun m -> m (Stats.get ()))
 
-  let write ~with_metrics ?(with_flush = false) bindings rw =
+  let write ~with_metrics ?(with_flush = false) ?(with_timer = false) bindings
+      rw =
     Array.iter
       (fun (k, v) ->
-        Index.replace rw k v;
+        Index.replace_with_timer ~with_timer rw k v;
         if with_flush then Index.flush rw;
         if with_metrics then add_metrics ())
       bindings
@@ -166,6 +176,9 @@ module Index = struct
       bindings
 
   let write_random ~with_metrics t () = write ~with_metrics !bindings_pool t
+
+  let write_random_with_timer ~with_metrics t () =
+    write ~with_timer:true ~with_metrics !bindings_pool t
 
   let write_seq ~with_metrics t =
     Array.sort (fun a b -> String.compare (fst a) (fst b)) !sorted_bindings_pool;
@@ -215,6 +228,14 @@ module Index = struct
         readonly = false;
         fresh = true;
         benchmark = write_random;
+        dependency = None;
+      };
+      {
+        name = "replace_random_with_timer";
+        synopsis = "Replace in random order and time each operation";
+        readonly = false;
+        fresh = true;
+        benchmark = write_random_with_timer;
         dependency = None;
       };
       {
