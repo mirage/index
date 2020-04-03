@@ -33,8 +33,8 @@ all copies or substantial portions of the Software. *)
 
 (** The input of [Make] for keys. *)
 module type Key = sig
-  type t
   (** The type for keys. *)
+  type t
 
   val equal : t -> t -> bool
   (** The equality function for keys. *)
@@ -85,8 +85,8 @@ module type IO = Io.S
 module type MUTEX = sig
   (** Locks for mutual exclusion *)
 
-  type t
   (** The type of mutual-exclusion locks. *)
+  type t
 
   val create : unit -> t
   (** Return a fresh mutex. *)
@@ -106,8 +106,8 @@ end
 module type THREAD = sig
   (** Cooperative threads. *)
 
-  type t
   (** The type of thread handles. *)
+  type t
 
   val async : (unit -> 'a) -> t
   (** [async f] creates a new thread of control which executes [f ()] and
@@ -124,24 +124,24 @@ module type THREAD = sig
   (** Re-schedule the calling thread without suspending it. *)
 end
 
-exception RO_not_allowed
 (** The exception raised when a write operation is attempted on a read_only
     index. *)
+exception RO_not_allowed
 
-exception Closed
 (** The exception raised when any operation is attempted on a closed index,
     except for [close], which is idempotent. *)
+exception Closed
 
 (** Index module signature. *)
 module type S = sig
-  type t
   (** The type for indexes. *)
+  type t
 
-  type key
   (** The type for keys. *)
+  type key
 
-  type value
   (** The type for values. *)
+  type value
 
   val v : ?fresh:bool -> ?readonly:bool -> log_size:int -> string -> t
   (** The constructor for indexes.
@@ -161,9 +161,9 @@ module type S = sig
 
   exception Invalid_key_size of key
 
-  exception Invalid_value_size of value
   (** The exceptions raised when trying to add a key or a value of different
       size than encoded_size *)
+  exception Invalid_value_size of value
 
   val replace : t -> key -> value -> unit
   (** [replace t k v] binds [k] to [v] in [t], replacing any existing binding of
@@ -211,8 +211,8 @@ module Private : sig
   module type S = sig
     include S
 
-    type async
     (** The type of asynchronous computation. *)
+    type async
 
     val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> async
     (** [force_merge t] forces a merge for [t]. Optionally, a hook can be passed
