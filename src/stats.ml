@@ -52,17 +52,18 @@ let add_write n =
   incr_bytes_written n;
   incr_nb_writes ()
 
-let replace_timer = ref 0.0
+let replace_timer = ref (Mtime_clock.counter ())
 
 let nb_replace = ref 0
 
-let start_replace () = if !nb_replace = 0 then replace_timer := Sys.time ()
+let start_replace () =
+  if !nb_replace = 0 then replace_timer := Mtime_clock.counter ()
 
-let end_replace ~freq =
+let end_replace ~sampling_interval =
   nb_replace := !nb_replace + 1;
-  if !nb_replace = freq then (
-    let time = Sys.time () -. !replace_timer in
-    let average = time /. float_of_int !nb_replace in
+  if !nb_replace = sampling_interval then (
+    let span = Mtime_clock.count !replace_timer in
+    let average = Mtime.Span.to_us span /. float_of_int !nb_replace in
     stats.replace_times <- average :: stats.replace_times;
-    replace_timer := 0.0;
+    replace_timer := Mtime_clock.counter ();
     nb_replace := 0 )

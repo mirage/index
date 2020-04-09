@@ -708,10 +708,9 @@ struct
         Thread.return ()
     | Some witness -> merge ?hook ~witness t
 
-  let replace_with_timer ?with_timer t key value =
+  let replace t key value =
     let t = check_open t in
     Stats.incr_nb_replace ();
-    if with_timer <> None then Stats.start_replace ();
     Log.info (fun l ->
         l "[%s] replace %a %a" (Filename.basename t.root) K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
@@ -727,10 +726,14 @@ struct
           Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
     in
     if do_merge then
-      ignore (merge ~witness:{ key; key_hash = K.hash key; value } t : async);
-    match with_timer with None -> () | Some freq -> Stats.end_replace ~freq
+      ignore (merge ~witness:{ key; key_hash = K.hash key; value } t : async)
 
-  let replace t key value = replace_with_timer t key value
+  let replace_with_timer ?sampling_interval t key value =
+    if sampling_interval <> None then Stats.start_replace ();
+    replace t key value;
+    match sampling_interval with
+    | None -> ()
+    | Some sampling_interval -> Stats.end_replace ~sampling_interval
 
   let filter t f =
     let t = check_open t in
@@ -803,7 +806,7 @@ module Private = struct
 
     val await : async -> unit
 
-    val replace_with_timer : ?with_timer:int -> t -> key -> value -> unit
+    val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit
   end
 
   module Make = Make_private

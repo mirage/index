@@ -224,8 +224,10 @@ module Private : sig
     val await : async -> unit
     (** Wait for an asynchronous computation to finish. *)
 
-    val replace_with_timer : ?with_timer:int -> t -> key -> value -> unit
-    (** Time each replace operation.*)
+    val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit
+    (** Time replace operations. The reported time is an average on an number of
+        consecutive operations, which can be specified by [sampling_interval].
+        If [sampling_interval] is not set, no operation is timed. *)
   end
 
   module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :

@@ -1,6 +1,5 @@
 (executable
  (public_name bench)
- (modules bench)
  (package index-bench)
  (preprocess
   (pps ppx_deriving_yojson))
@@ -15,7 +14,3 @@
  (name runbench)
  (action
   (run ./bench.exe)))
-
-(executable
- (name accuracy)
- (modules accuracy))
