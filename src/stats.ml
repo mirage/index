@@ -54,9 +54,15 @@ let add_write n =
 
 let replace_timer = ref 0.0
 
-let start_replace () = replace_timer := Sys.time ()
+let nb_replace = ref 0
 
-let end_replace () =
-  let time = Sys.time () -. !replace_timer in
-  replace_timer := 0.0;
-  stats.replace_times <- time :: stats.replace_times
+let start_replace () = if !nb_replace = 0 then replace_timer := Sys.time ()
+
+let end_replace ~freq =
+  nb_replace := !nb_replace + 1;
+  if !nb_replace = freq then (
+    let time = Sys.time () -. !replace_timer in
+    let average = time /. float_of_int !nb_replace in
+    stats.replace_times <- average :: stats.replace_times;
+    replace_timer := 0.0;
+    nb_replace := 0 )

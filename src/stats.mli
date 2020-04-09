@@ -22,4 +22,4 @@ val incr_nb_replace : unit -> unit
 
 val start_replace : unit -> unit
 
-val end_replace : unit -> unit
+val end_replace : freq:int -> unit
