@@ -710,6 +710,7 @@ struct
 
   let replace t key value =
     let t = check_open t in
+    Stats.incr_nb_replace ();
     Log.info (fun l ->
         l "[%s] replace %a %a" (Filename.basename t.root) K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
@@ -726,6 +727,13 @@ struct
     in
     if do_merge then
       ignore (merge ~witness:{ key; key_hash = K.hash key; value } t : async)
+
+  let replace_with_timer ?sampling_interval t key value =
+    if sampling_interval <> None then Stats.start_replace ();
+    replace t key value;
+    match sampling_interval with
+    | None -> ()
+    | Some sampling_interval -> Stats.end_replace ~sampling_interval
 
   let filter t f =
     let t = check_open t in
@@ -797,6 +805,8 @@ module Private = struct
     val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> async
 
     val await : async -> unit
+
+    val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit
   end
 
   module Make = Make_private

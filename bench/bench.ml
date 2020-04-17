@@ -2,6 +2,14 @@ module Stats = Index.Stats
 
 let src =
   let open Metrics in
+  let string_of_head ls =
+    if List.length ls <> 0 then string_of_float (List.hd ls) else "0"
+  in
+  let head k v =
+    field ~doc:"Time of the latest replace" k
+      (Other (Fmt.of_to_string string_of_head))
+      v
+  in
   let open Stats in
   let tags = Tags.[] in
   let data t =
@@ -11,6 +19,7 @@ let src =
         int "bytes_written" t.bytes_written;
         int "merge" t.nb_merge;
         int "replace" t.nb_replace;
+        head "replace_time" t.replace_times;
       ]
   in
   Src.v "bench" ~tags ~data
@@ -27,6 +36,8 @@ let random_char () = char_of_int (33 + Random.int 94)
 
 let random_string string_size =
   String.init string_size (fun _i -> random_char ())
+
+let replace_sampling_interval = ref 0
 
 module Context = struct
   module Key = struct
@@ -81,6 +92,7 @@ module Benchmark = struct
     read_amplification_size : float;
     write_amplification_calls : float;
     write_amplification_size : float;
+    replace_times : float list;
   }
   [@@deriving yojson]
 
@@ -100,6 +112,7 @@ module Benchmark = struct
     in
     let ops_per_sec = nb_entriesf /. time in
     let mbs_per_sec = entry_sizef *. nb_entriesf /. 1_048_576. /. time in
+    let replace_times = stats.replace_times in
     {
       time;
       ops_per_sec;
@@ -108,6 +121,7 @@ module Benchmark = struct
       read_amplification_size;
       write_amplification_calls;
       write_amplification_size;
+      replace_times;
     }
 
   let pp_result fmt result =
@@ -143,10 +157,10 @@ module Index = struct
     let no_tags x = x in
     fun () -> Metrics.add src no_tags (fun m -> m (Stats.get ()))
 
-  let write ~with_metrics ?(with_flush = false) bindings rw =
+  let write ~with_metrics ?(with_flush = false) ?sampling_interval bindings rw =
     Array.iter
       (fun (k, v) ->
-        Index.replace rw k v;
+        Index.replace_with_timer ?sampling_interval rw k v;
         if with_flush then Index.flush rw;
         if with_metrics then add_metrics ())
       bindings
@@ -166,6 +180,10 @@ module Index = struct
       bindings
 
   let write_random ~with_metrics t () = write ~with_metrics !bindings_pool t
+
+  let write_random_with_timer ~with_metrics t () =
+    write ~with_metrics ~sampling_interval:!replace_sampling_interval
+      !bindings_pool t
 
   let write_seq ~with_metrics t =
     Array.sort (fun a b -> String.compare (fst a) (fst b)) !sorted_bindings_pool;
@@ -215,6 +233,14 @@ module Index = struct
         readonly = false;
         fresh = true;
         benchmark = write_random;
+        dependency = None;
+      };
+      {
+        name = "replace_random_with_timer";
+        synopsis = "Replace in random order and time each operation";
+        readonly = false;
+        fresh = true;
+        benchmark = write_random_with_timer;
         dependency = None;
       };
       {
@@ -326,6 +352,7 @@ type config = {
   log_size : int;
   seed : int;
   with_metrics : bool;
+  sampling_interval : int;
 }
 [@@deriving yojson]
 
@@ -336,8 +363,9 @@ let pp_config fmt config =
      Number of bindings: %d@\n\
      Log size: %d@\n\
      Seed: %d@\n\
-     Metrics: %b" config.key_size config.value_size config.nb_entries
-    config.log_size config.seed config.with_metrics
+     Metrics: %b@\n\
+     Sampling interval: %d" config.key_size config.value_size config.nb_entries
+    config.log_size config.seed config.with_metrics config.sampling_interval
 
 let cleanup root =
   let files = [ "data"; "log"; "lock"; "log_async"; "merge" ] in
@@ -360,7 +388,8 @@ let init config =
     Metrics_unix.monitor_gc 0.1 );
   bindings_pool := make_bindings_pool config.nb_entries;
   absent_bindings_pool := make_bindings_pool config.nb_entries;
-  sorted_bindings_pool := Array.copy !bindings_pool
+  sorted_bindings_pool := Array.copy !bindings_pool;
+  replace_sampling_interval := config.sampling_interval
 
 let print fmt (config, results) =
   let pp_bench fmt (b, result) =
@@ -392,9 +421,18 @@ let print_json fmt (config, results) =
   in
   pretty_print fmt obj
 
-let run filter root output seed with_metrics log_size nb_entries json =
+let run filter root output seed with_metrics log_size nb_entries json
+    sampling_interval =
   let config =
-    { key_size; value_size; nb_entries; log_size; seed; with_metrics }
+    {
+      key_size;
+      value_size;
+      nb_entries;
+      log_size;
+      seed;
+      with_metrics;
+      sampling_interval;
+    }
   in
   cleanup root;
   init config;
@@ -491,6 +529,11 @@ let json_flag =
   let env = env_var "JSON" in
   Arg.(value & flag & info [ "j"; "json" ] ~env ~doc)
 
+let sampling_interval =
+  let doc = "Sampling interval for the duration of replace operations." in
+  let env = env_var "REPLACE_DURATION_SAMPLING_INTERVAL" in
+  Arg.(value & opt int 10 & info [ "sampling-interval" ] ~env ~doc)
+
 let cmd =
   let doc = "Run all the benchmarks." in
   ( Term.(
@@ -502,7 +545,8 @@ let cmd =
       $ metrics_flag
       $ log_size
       $ nb_entries
-      $ json_flag),
+      $ json_flag
+      $ sampling_interval),
     Term.info "run" ~doc ~exits:Term.default_exits )
 
 let () =
