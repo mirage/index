@@ -128,6 +128,10 @@ exception RO_not_allowed
 (** The exception raised when a write operation is attempted on a read_only
     index. *)
 
+exception RW_not_allowed
+(** The exception is raised when a ro_sync operation is attempted on a
+    read-write index. *)
+
 exception Closed
 (** The exception raised when any operation is attempted on a closed index,
     except for [close], which is idempotent. *)
@@ -178,9 +182,7 @@ module type S = sig
 
       - Order is not specified.
       - In case of recent replacements of existing values (since the last
-        merge), this will hit both the new and old bindings.
-      - May not observe recent concurrent updates to the index by other
-        processes. *)
+        merge), this will hit both the new and old bindings. *)
 
   val flush : ?with_fsync:bool -> t -> unit
   (** Flushes all internal buffers of the [IO] instances. If [with_fsync] is
@@ -188,6 +190,10 @@ module type S = sig
 
   val close : t -> unit
   (** Closes all resources used by [t]. *)
+
+  val ro_sync : t -> unit
+  (** [ro_sync t] syncs a read-only index with the files on disk. Raises
+      [RW_not_allowed] if called by an read-write index. *)
 end
 
 module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :
