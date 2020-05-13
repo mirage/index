@@ -47,8 +47,6 @@ module type Value = sig
   val pp : t Fmt.t
 end
 
-module type IO = Io.S
-
 module type MUTEX = sig
   type t
 
@@ -114,10 +112,12 @@ exception Closed
 module Make_private
     (K : Key)
     (V : Value)
-    (IO : IO)
+    (IO_Provider : Io.Provider)
     (Mutex : MUTEX)
     (Thread : THREAD) =
 struct
+  module IO = Io.Make (IO_Provider)
+
   type async = Thread.t
 
   let await = Thread.await
@@ -312,7 +312,8 @@ struct
           raise Not_found );
         let t = Hashtbl.find roots (root, readonly) in
         if t.open_instances <> 0 then (
-          Logger.debug (fun l -> l "[%s] found in cache" (Filename.basename root));
+          Logger.debug (fun l ->
+              l "[%s] found in cache" (Filename.basename root));
           t.open_instances <- t.open_instances + 1;
           let t = ref (Some t) in
           if fresh then clear t;
@@ -704,7 +705,8 @@ struct
     let witness = Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
     match witness with
     | None ->
-        Logger.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
+        Logger.debug (fun l ->
+            l "[%s] index is empty" (Filename.basename t.root));
         Thread.return ()
     | Some witness -> merge ?hook ~witness t
 
@@ -742,7 +744,8 @@ struct
     let witness = Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
     match witness with
     | None ->
-        Logger.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
+        Logger.debug (fun l ->
+            l "[%s] index is empty" (Filename.basename t.root))
     | Some witness -> Thread.await (merge ~blocking:true ~filter:f ~witness t)
 
   let iter f t =
@@ -799,6 +802,8 @@ module Private = struct
 
   module type S = sig
     include S
+
+    module IO : Io.S
 
     type async
 

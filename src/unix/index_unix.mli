@@ -21,8 +21,6 @@ module Make (K : Index.Key) (V : Index.Value) :
 (** These modules should not be used. They are exposed purely for testing
     purposes. *)
 module Private : sig
-  module IO : Index.IO
-
   module Make (K : Index.Key) (V : Index.Value) :
     Index.Private.S with type key = K.t and type value = V.t
 end

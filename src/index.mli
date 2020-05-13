@@ -80,8 +80,6 @@ module type Value = sig
   val pp : t Fmt.t
 end
 
-module type IO = Io.S
-
 module type MUTEX = sig
   (** Locks for mutual exclusion *)
 
@@ -190,7 +188,7 @@ module type S = sig
   (** Closes all resources used by [t]. *)
 end
 
-module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :
+module Make (K : Key) (V : Value) (IO : Io.Provider) (M : MUTEX) (T : THREAD) :
   S with type key = K.t and type value = V.t
 
 (** These modules should not be used. They are exposed purely for testing
@@ -211,6 +209,8 @@ module Private : sig
   module type S = sig
     include S
 
+    module IO : Io.S
+
     type async
     (** The type of asynchronous computation. *)
 
@@ -230,6 +230,6 @@ module Private : sig
         If [sampling_interval] is not set, no operation is timed. *)
   end
 
-  module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :
+  module Make (K : Key) (V : Value) (IO : Io.Provider) (M : MUTEX) (T : THREAD) :
     S with type key = K.t and type value = V.t
 end

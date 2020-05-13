@@ -15,6 +15,42 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
+module type Provider = sig
+  type file_descr
+
+  type file_perm = int
+
+  type open_flag = Unix.open_flag
+
+  type error = Unix.error
+
+  type lock_command = Unix.lock_command
+
+  exception Error of error * string * string
+
+  val openfile : string -> open_flag list -> file_perm -> file_descr
+
+  val close : file_descr -> unit
+
+  val rename : string -> string -> unit
+
+  val mkdir : string -> file_perm -> unit
+
+  val unlink : string -> unit
+
+  val read : file_descr -> int64 -> Bytes.t -> int -> int -> int
+
+  val write : file_descr -> int64 -> Bytes.t -> int -> int -> int
+
+  val single_write_substring : file_descr -> string -> int -> int -> int
+
+  val fsync : file_descr -> unit
+
+  val getpid : unit -> int
+
+  val lockf : file_descr -> lock_command -> int -> unit
+end
+
 module type S = sig
   type t
 
@@ -62,3 +98,5 @@ module type S = sig
 
   val unlock : lock -> unit
 end
+
+module Make : functor (_ : Provider) -> S

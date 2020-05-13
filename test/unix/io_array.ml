@@ -1,4 +1,5 @@
-module IO = Index_unix.Private.IO
+module I = Index_unix.Private.Make (Common.Key) (Common.Value)
+module IO = I.IO
 
 let ( // ) = Filename.concat
 
