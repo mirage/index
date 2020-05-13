@@ -180,7 +180,7 @@ struct
 
   let clear t =
     let t = check_open t in
-    Log.debug (fun l -> l "clear %S" t.root);
+    Logger.debug (fun l -> l "clear %S" t.root);
     if t.config.readonly then raise RO_not_allowed;
     t.generation <- 0L;
     Mutex.with_lock t.merge_lock (fun () ->
@@ -201,7 +201,7 @@ struct
         t.log_async <- None)
 
   let flush_instance ?(with_fsync = false) instance =
-    Log.debug (fun l ->
+    Logger.debug (fun l ->
         l "[%s] flushing instance" (Filename.basename instance.root));
     if instance.config.readonly then raise RO_not_allowed;
     may (fun log -> IO.sync ~with_fsync log.io) instance.log;
@@ -209,7 +209,7 @@ struct
 
   let flush ?(with_fsync = false) t =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
+    Logger.info (fun l -> l "[%s] flush" (Filename.basename t.root));
     Mutex.with_lock t.rename_lock (fun () -> flush_instance ~with_fsync t)
 
   let ( // ) = Filename.concat
@@ -299,12 +299,12 @@ struct
   let with_cache ~v ~clear =
     let roots = Hashtbl.create 0 in
     let f ?(fresh = false) ?(readonly = false) ~log_size root =
-      Log.info (fun l ->
+      Logger.info (fun l ->
           l "[%s] v fresh=%b readonly=%b log_size=%d" (Filename.basename root)
             fresh readonly log_size);
       try
         if not (Sys.file_exists (index_dir root)) then (
-          Log.debug (fun l ->
+          Logger.debug (fun l ->
               l "[%s] does not exist anymore, cleaning up the fd cache"
                 (Filename.basename root));
           Hashtbl.remove roots (root, true);
@@ -312,7 +312,7 @@ struct
           raise Not_found );
         let t = Hashtbl.find roots (root, readonly) in
         if t.open_instances <> 0 then (
-          Log.debug (fun l -> l "[%s] found in cache" (Filename.basename root));
+          Logger.debug (fun l -> l "[%s] found in cache" (Filename.basename root));
           t.open_instances <- t.open_instances + 1;
           let t = ref (Some t) in
           if fresh then clear t;
@@ -328,7 +328,7 @@ struct
     `Staged f
 
   let v_no_cache ~fresh ~readonly ~log_size root =
-    Log.debug (fun l ->
+    Logger.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
     let writer_lock =
@@ -341,7 +341,7 @@ struct
       else
         let io = IO.v ~fresh ~readonly ~generation:0L ~fan_size:0L log_path in
         let entries = Int64.div (IO.offset io) entry_sizeL in
-        Log.debug (fun l ->
+        Logger.debug (fun l ->
             l "[%s] log file detected. Loading %Ld entries"
               (Filename.basename root) entries);
         let mem = Tbl.create (Int64.to_int entries) in
@@ -356,7 +356,7 @@ struct
         IO.v ~fresh ~readonly:false ~generation:0L ~fan_size:0L log_async_path
       in
       let entries = Int64.div (IO.offset io) entry_sizeL in
-      Log.debug (fun l ->
+      Logger.debug (fun l ->
           l "[%s] log_async file detected. Loading %Ld entries"
             (Filename.basename root) entries);
       (* If we are not in fresh mode, we move the contents of log_async to
@@ -381,13 +381,13 @@ struct
       if Sys.file_exists index_path then (
         let io = IO.v ~fresh ~readonly ~generation ~fan_size:0L index_path in
         let entries = Int64.div (IO.offset io) entry_sizeL in
-        Log.debug (fun l ->
+        Logger.debug (fun l ->
             l "[%s] index file detected. Loading %Ld entries"
               (Filename.basename root) entries);
         let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
         Some { fan_out; io } )
       else (
-        Log.debug (fun l ->
+        Logger.debug (fun l ->
             l "[%s] no index file detected." (Filename.basename root));
         None )
     in
@@ -415,7 +415,7 @@ struct
     Search.interpolation_search (IOArray.v index.io) key ~low ~high
 
   let try_load_log t path =
-    Log.debug (fun l ->
+    Logger.debug (fun l ->
         l "[%s] checking on-disk %s file" (Filename.basename t.root)
           (Filename.basename path));
     if Sys.file_exists path then (
@@ -428,10 +428,10 @@ struct
     else None
 
   let sync_log t =
-    Log.debug (fun l ->
+    Logger.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
     let no_changes () =
-      Log.debug (fun l ->
+      Logger.debug (fun l ->
           l "[%s] no changes detected" (Filename.basename t.root))
     in
     let add_log_entry log e = Tbl.replace log.mem e.key e.value in
@@ -458,7 +458,7 @@ struct
         let add_log_entry e = add_log_entry log e in
         sync_log_async ~generation_change:(t.generation <> generation) ();
         if t.generation <> generation then (
-          Log.debug (fun l ->
+          Logger.debug (fun l ->
               l "[%s] generation has changed, reading log and index from disk"
                 (Filename.basename t.root));
           Tbl.clear log.mem;
@@ -477,7 +477,7 @@ struct
             t.index <- Some { fan_out; io };
             t.generation <- generation )
         else if log_offset < new_log_offset then (
-          Log.debug (fun l ->
+          Logger.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
                 (Filename.basename t.root));
           iter_io add_log_entry log.io ~min:log_offset )
@@ -491,12 +491,12 @@ struct
     let find_if_exists ~name ~find db () =
       match db with
       | None ->
-          Log.debug (fun l ->
+          Logger.debug (fun l ->
               l "[%s] %s is not present" (Filename.basename t.root) name);
           raise Not_found
       | Some e ->
           let ans = find e key in
-          Log.debug (fun l ->
+          Logger.debug (fun l ->
               l "[%s] found in %s" (Filename.basename t.root) name);
           ans
     in
@@ -519,12 +519,12 @@ struct
 
   let find t key =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] find %a" (Filename.basename t.root) K.pp key);
+    Logger.info (fun l -> l "[%s] find %a" (Filename.basename t.root) K.pp key);
     find_instance t key
 
   let mem t key =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] mem %a" (Filename.basename t.root) K.pp key);
+    Logger.info (fun l -> l "[%s] mem %a" (Filename.basename t.root) K.pp key);
     match find_instance t key with _ -> true | exception Not_found -> false
 
   let append_buf_fanout fan_out hash buf_str dst_io =
@@ -589,7 +589,7 @@ struct
 
   let merge ?(blocking = false) ?(filter = fun _ -> true) ?hook ~witness t =
     Mutex.lock t.merge_lock;
-    Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
+    Logger.info (fun l -> l "[%s] merge" (Filename.basename t.root));
     Stats.incr_nb_merge ();
     flush_instance ~with_fsync:true t;
     let log_async =
@@ -700,18 +700,18 @@ struct
 
   let force_merge ?hook t =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
+    Logger.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
     let witness = Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
     match witness with
     | None ->
-        Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
+        Logger.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
         Thread.return ()
     | Some witness -> merge ?hook ~witness t
 
   let replace t key value =
     let t = check_open t in
     Stats.incr_nb_replace ();
-    Log.info (fun l ->
+    Logger.info (fun l ->
         l "[%s] replace %a %a" (Filename.basename t.root) K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
     let do_merge =
@@ -737,17 +737,17 @@ struct
 
   let filter t f =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] filter" (Filename.basename t.root));
+    Logger.info (fun l -> l "[%s] filter" (Filename.basename t.root));
     if t.config.readonly then raise RO_not_allowed;
     let witness = Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
     match witness with
     | None ->
-        Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
+        Logger.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
     | Some witness -> Thread.await (merge ~blocking:true ~filter:f ~witness t)
 
   let iter f t =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] iter" (Filename.basename t.root));
+    Logger.info (fun l -> l "[%s] iter" (Filename.basename t.root));
     if t.config.readonly then sync_log t;
     match t.log with
     | None -> ()
@@ -764,14 +764,14 @@ struct
 
   let close it =
     match !it with
-    | None -> Log.info (fun l -> l "close: instance already closed")
+    | None -> Logger.info (fun l -> l "close: instance already closed")
     | Some t ->
-        Log.info (fun l -> l "[%s] close" (Filename.basename t.root));
+        Logger.info (fun l -> l "[%s] close" (Filename.basename t.root));
         Mutex.with_lock t.merge_lock (fun () ->
             it := None;
             t.open_instances <- t.open_instances - 1;
             if t.open_instances = 0 then (
-              Log.debug (fun l ->
+              Logger.debug (fun l ->
                   l "[%s] last open instance: closing the file descriptor"
                     (Filename.basename t.root));
               if not t.config.readonly then flush_instance ~with_fsync:true t;

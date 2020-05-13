@@ -92,10 +92,10 @@ module Make (IO : Io.S) (Elt : ELT) :
   let pre_fetch t ~low ~high =
     let range = Elt.encoded_size * (1 + Int64.to_int (high -- low)) in
     if Int64.compare low high > 0 then
-      Log.warn (fun m ->
+      Logger.warn (fun m ->
           m "Requested pre-fetch region is empty: [%Ld, %Ld]" low high)
     else if range > max_buffer_size then
-      Log.warn (fun m ->
+      Logger.warn (fun m ->
           m "Requested pre-fetch [%Ld, %Ld] is larger than %d" low high
             max_buffer_size)
     else
@@ -106,20 +106,20 @@ module Make (IO : Io.S) (Elt : ELT) :
               (div b.low_off Elt.encoded_sizeL, div b.high_off Elt.encoded_sizeL)
           in
           if low >= low_buf && high <= high_buf then
-            Log.debug (fun m ->
+            Logger.debug (fun m ->
                 m
                   "Pre-existing buffer [%Ld, %Ld] encloses requested pre-fetch \
                    [%Ld, %Ld]"
                   low_buf high_buf low high)
           else (
-            Log.warn (fun m ->
+            Logger.warn (fun m ->
                 m
                   "Current buffer [%Ld, %Ld] insufficient. Prefetching in \
                    range [%Ld, %Ld]"
                   low_buf high_buf low high);
             set_buffer t ~low ~high )
       | None ->
-          Log.debug (fun m ->
+          Logger.debug (fun m ->
               m "No existing buffer. Prefetching in range [%Ld, %Ld]" low high);
           set_buffer t ~low ~high
 end
