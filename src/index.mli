@@ -234,6 +234,9 @@ module Private : sig
     (** Time replace operations. The reported time is an average on an number of
         consecutive operations, which can be specified by [sampling_interval].
         If [sampling_interval] is not set, no operation is timed. *)
+
+    val ro_sync_with_timer : t -> unit
+    (** Time ro_sync operations. *)
   end
 
   module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :

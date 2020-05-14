@@ -792,9 +792,12 @@ struct
               may (fun lock -> IO.unlock lock) t.writer_lock ))
 
   let ro_sync t =
+    Stats.incr_nb_ro_sync ();
     let t = check_open t in
     Log.info (fun l -> l "[%s] ro_sync" (Filename.basename t.root));
     if t.config.readonly then sync_log t else raise RW_not_allowed
+
+  let ro_sync_with_timer t = Stats.ro_sync_with_timer (fun () -> ro_sync t)
 end
 
 module Make = Make_private
@@ -820,6 +823,8 @@ module Private = struct
     val await : async -> unit
 
     val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit
+
+    val ro_sync_with_timer : t -> unit
   end
 
   module Make = Make_private

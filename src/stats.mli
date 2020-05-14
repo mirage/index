@@ -6,6 +6,8 @@ type t = {
   mutable nb_merge : int;
   mutable nb_replace : int;
   mutable replace_times : float list;
+  mutable nb_ro_sync : int;
+  mutable ro_sync_times : float list;
 }
 (** The type for stats for an index I.
 
@@ -31,6 +33,10 @@ val incr_nb_merge : unit -> unit
 
 val incr_nb_replace : unit -> unit
 
+val incr_nb_ro_sync : unit -> unit
+
 val start_replace : unit -> unit
 
 val end_replace : sampling_interval:int -> unit
+
+val ro_sync_with_timer : (unit -> unit) -> unit
