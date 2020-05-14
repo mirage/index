@@ -6,6 +6,8 @@ type t = {
   mutable nb_merge : int;
   mutable nb_replace : int;
   mutable replace_times : float list;
+  mutable nb_ro_sync : int;
+  mutable time_ro_sync : float;
 }
 (** The type for stats for an index I.
 
@@ -17,7 +19,8 @@ type t = {
     - [nb_replace] is the number of calls to [I.replace];
     - [replace_times] lists how much time replace operations took. Each element
       is an average of [n] consecutive replaces, where [n] is the
-      [sampling_interval] specified when calling [end_replace]. *)
+      [sampling_interval] specified when calling [end_replace].
+    - [time_ro_sync] is the duration of the latest call to ro_sync. *)
 
 val reset_stats : unit -> unit
 
@@ -31,6 +34,10 @@ val incr_nb_merge : unit -> unit
 
 val incr_nb_replace : unit -> unit
 
+val incr_nb_ro_sync : unit -> unit
+
 val start_replace : unit -> unit
 
 val end_replace : sampling_interval:int -> unit
+
+val ro_sync_with_timer : (unit -> unit) -> unit

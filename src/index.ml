@@ -735,9 +735,13 @@ struct
   let close = close' ~hook:(fun _ -> ())
 
   let ro_sync t =
-    let t = check_open t in
-    Log.info (fun l -> l "[%s] ro_sync" (Filename.basename t.root));
-    if t.config.readonly then sync_log t else raise RW_not_allowed
+    let f t =
+      Stats.incr_nb_ro_sync ();
+      let t = check_open t in
+      Log.info (fun l -> l "[%s] ro_sync" (Filename.basename t.root));
+      if t.config.readonly then sync_log t else raise RW_not_allowed
+    in
+    Stats.ro_sync_with_timer (fun () -> f t)
 end
 
 module Make = Make_private
