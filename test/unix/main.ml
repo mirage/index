@@ -264,7 +264,9 @@ module Readonly = struct
     Index.close rw;
     Index.close ro
 
-  (* Tests that the entries that are not flushed cannot be read by a readonly index. The test relies on the fact that, for log_size > 0, adding one entry into an empty index does not lead to flush/merge. *)
+  (** Tests that the entries that are not flushed cannot be read by a readonly
+      index. The test relies on the fact that, for log_size > 0, adding one
+      entry into an empty index does not lead to flush/merge. *)
   let fail_readonly_read () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
     let ro = clone ~readonly:true () in
@@ -287,6 +289,8 @@ module Readonly = struct
     Index.close rw;
     Index.close ro
 
+  (** Readonly finds value in log before and after clear. Before ro_sync the
+      deleted value is still found. *)
   let readonly_add_log_before_clear () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
     let ro = clone ~readonly:true () in
@@ -296,12 +300,15 @@ module Readonly = struct
     Index.ro_sync ro;
     check_index_entry ro k1 v1;
     Index.clear rw;
+    check_index_entry ro k1 v1;
     Index.ro_sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1));
     Index.close rw;
     Index.close ro
 
+  (** Readonly finds value in index before and after clear. Before ro_sync the
+      deleted value is still found. *)
   let readonly_add_index_before_clear () =
     let Context.{ rw; clone; _ } = Context.full_index () in
     let ro = clone ~readonly:true () in
@@ -313,12 +320,15 @@ module Readonly = struct
     Index.ro_sync ro;
     check_index_entry ro k1 v1;
     Index.clear rw;
+    check_index_entry ro k1 v1;
     Index.ro_sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1));
     Index.close rw;
     Index.close ro
 
+  (** Readonly finds old value in log after clear and after new values are
+      added, before a sync. *)
   let readonly_add_after_clear () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
     let ro = clone ~readonly:true () in
@@ -331,12 +341,40 @@ module Readonly = struct
     let k2, v2 = (Key.v (), Value.v ()) in
     Index.replace rw k2 v2;
     Index.flush rw;
+    check_index_entry ro k1 v1;
     Index.ro_sync ro;
     check_index_entry ro k2 v2;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find rw k1));
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1));
+    Index.close rw;
+    Index.close ro
+
+  (** Readonly finds old value in index after clear and after new values are
+      added, before a sync. This is because the readonly instance still uses the
+      old index file, before being replaced by the merge. *)
+  let readonly_add_index_after_clear () =
+    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let ro = clone ~readonly:true () in
+    Index.clear rw;
+    let k1, v1 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    let t = Index.force_merge rw in
+    Index.await t |> check_completed;
+    Index.ro_sync ro;
+    Index.clear rw;
+    let k2, v2 = (Key.v (), Value.v ()) in
+    Index.replace rw k2 v2;
+    let t = Index.force_merge rw in
+    Index.await t |> check_completed;
+    check_index_entry ro k1 v1;
+    Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
+      Not_found (fun () -> ignore_value (Index.find rw k1));
+    Index.ro_sync ro;
+    Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
+      Not_found (fun () -> ignore_value (Index.find ro k1));
+    check_index_entry ro k2 v2;
     Index.close rw;
     Index.close ro
 
@@ -363,7 +401,10 @@ module Readonly = struct
       ( "read values added in index before clear",
         `Quick,
         readonly_add_index_before_clear );
-      ("read values added after clear", `Quick, readonly_add_after_clear);
+      ("read old values in log after clear", `Quick, readonly_add_after_clear);
+      ( "read old values in index after clear",
+        `Quick,
+        readonly_add_index_after_clear );
       ("readonly open after clear", `Quick, readonly_open_after_clear);
     ]
 end
