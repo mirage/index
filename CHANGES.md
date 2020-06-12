@@ -4,6 +4,9 @@
 
 - Added `filter`, removing bindings depending on a predicate (#165)
 
+- Added `Irmin_unix.Syscalls`, a module exposing various Unix bindings for
+  interacting with file-systems.
+
 ## Changed
 
 - Parameterise `Index.Make` over arbitrary mutex and thread implementations
