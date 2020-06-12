@@ -1,11 +1,15 @@
+# Unreleased
+
+## Added
+
+- Added `Index_unix.Syscalls`, a module exposing various Unix bindings for
+  interacting with file-systems.
+
 # 1.2.0 (2020-02-25)
 
 ## Added
 
 - Added `filter`, removing bindings depending on a predicate (#165)
-
-- Added `Index_unix.Syscalls`, a module exposing various Unix bindings for
-  interacting with file-systems.
 
 ## Changed
 
