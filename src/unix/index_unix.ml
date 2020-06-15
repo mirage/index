@@ -159,7 +159,6 @@ module IO : Index.IO = struct
     mutable flushed : int64;
     mutable fan_size : int64;
     readonly : bool;
-    version : string;
     buf : Buffer.t;
   }
 
@@ -212,7 +211,7 @@ module IO : Index.IO = struct
     t.offset <- Raw.Offset.get t.raw;
     t.offset
 
-  let version t = t.version
+  let version _ = current_version
 
   let get_generation t =
     let i = Raw.Generation.get t.raw in
@@ -274,10 +273,9 @@ module IO : Index.IO = struct
   let () = assert (String.length current_version = 8)
 
   let v ~readonly ~fresh ~generation ~fan_size file =
-    let v ~fan_size ~offset ~version raw =
+    let v ~fan_size ~offset raw =
       let header = 8L ++ 8L ++ 8L ++ 8L ++ fan_size in
       {
-        version;
         header;
         file;
         offset;
@@ -298,7 +296,7 @@ module IO : Index.IO = struct
         Raw.Fan.set_size raw fan_size;
         Raw.Version.set raw;
         Raw.Generation.set raw generation;
-        v ~fan_size ~offset:0L ~version:current_version raw
+        v ~fan_size ~offset:0L raw
     | true ->
         let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; mode ] 0o644 in
         let raw = Raw.v x in
@@ -309,12 +307,16 @@ module IO : Index.IO = struct
           Raw.Fan.set_size raw fan_size;
           Raw.Version.set raw;
           Raw.Generation.set raw generation;
-          v ~fan_size ~offset:0L ~version:current_version raw )
+          v ~fan_size ~offset:0L raw )
         else
-          let offset = Raw.Offset.get raw in
           let version = Raw.Version.get raw in
+          if version <> current_version then
+            Fmt.failwith "Io.v: unsupported version %s (current version is %s)"
+              version current_version;
+
+          let offset = Raw.Offset.get raw in
           let fan_size = Raw.Fan.get_size raw in
-          v ~fan_size ~offset ~version raw
+          v ~fan_size ~offset raw
 
   type lock = { path : string; fd : Unix.file_descr }
 

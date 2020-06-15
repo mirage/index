@@ -5,6 +5,10 @@
 - Added `Index_unix.Syscalls`, a module exposing various Unix bindings for
   interacting with file-systems.
 
+## Fixed
+
+- Fail when `Index_unix.IO` file version number is not as expected.
+
 # 1.2.0 (2020-02-25)
 
 ## Added
