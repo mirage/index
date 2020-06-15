@@ -22,9 +22,9 @@ let decode_int64 buf =
   in
   get_uint64 buf 0
 
-type t = { fd : Unix.file_descr; mutable cursor : int64 }
+type t = { fd : Unix.file_descr } [@@unboxed]
 
-let v fd = { fd; cursor = 0L }
+let v fd = { fd }
 
 let really_write fd fd_offset buffer =
   let rec aux fd_offset buffer_offset length =
@@ -56,12 +56,10 @@ let close t = Unix.close t.fd
 let unsafe_write t ~off buf =
   let buf = Bytes.unsafe_of_string buf in
   really_write t.fd off buf;
-  t.cursor <- off ++ Int64.of_int (Bytes.length buf);
   Stats.add_write (Bytes.length buf)
 
 let unsafe_read t ~off ~len buf =
   let n = really_read t.fd off len buf in
-  t.cursor <- off ++ Int64.of_int n;
   Stats.add_read n;
   n
 
