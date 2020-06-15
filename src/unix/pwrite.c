@@ -4,7 +4,7 @@
 #include <caml/signals.h>
 #include <caml/unixsupport.h>
 
-CAMLprim value caml_pwrite
+CAMLprim value caml_index_pwrite
 (value v_fd, value v_fd_off, value v_buf, value v_buf_off, value v_len)
 {
   CAMLparam5(v_fd, v_fd_off, v_buf, v_buf_off, v_len);
