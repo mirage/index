@@ -55,32 +55,30 @@ module IO : Index.IO = struct
 
     let v fd = { fd; cursor = 0L }
 
-    external pread : Unix.file_descr -> int64 -> bytes -> int -> int -> int
-      = "caml_pread"
-
-    external pwrite : Unix.file_descr -> int64 -> bytes -> int -> int -> int
-      = "caml_pwrite"
-
-    external unix_fsync : Unix.file_descr -> unit = "unix_fsync"
-
-    let really_write fd off buf =
-      let rec aux fd_off buf_off len =
-        let w = pwrite fd fd_off buf buf_off len in
-        if w = 0 || w = len then ()
-        else (aux [@tailcall]) (fd_off ++ Int64.of_int w) (buf_off + w) (len - w)
+    let really_write fd fd_offset buffer =
+      let rec aux fd_offset buffer_offset length =
+        let w = Syscalls.pwrite ~fd ~fd_offset ~buffer ~buffer_offset ~length in
+        if w = 0 || w = length then ()
+        else
+          (aux [@tailcall])
+            (fd_offset ++ Int64.of_int w)
+            (buffer_offset + w) (length - w)
       in
-      (aux [@tailcall]) off 0 (Bytes.length buf)
+      (aux [@tailcall]) fd_offset 0 (Bytes.length buffer)
 
-    let really_read fd off len buf =
-      let rec aux fd_off buf_off len =
-        let r = pread fd fd_off buf buf_off len in
-        if r = 0 then buf_off (* end of file *)
-        else if r = len then buf_off + r
-        else (aux [@tailcall]) (fd_off ++ Int64.of_int r) (buf_off + r) (len - r)
+    let really_read fd fd_offset length buffer =
+      let rec aux fd_offset buffer_offset length =
+        let r = Syscalls.pread ~fd ~fd_offset ~buffer ~buffer_offset ~length in
+        if r = 0 then buffer_offset (* end of file *)
+        else if r = length then buffer_offset + r
+        else
+          (aux [@tailcall])
+            (fd_offset ++ Int64.of_int r)
+            (buffer_offset + r) (length - r)
       in
-      (aux [@tailcall]) off 0 len
+      (aux [@tailcall]) fd_offset 0 length
 
-    let fsync t = unix_fsync t.fd
+    let fsync t = Syscalls.fsync t.fd
 
     let unsafe_write t ~off buf =
       let buf = Bytes.unsafe_of_string buf in
@@ -392,6 +390,7 @@ end
 
 module Make (K : Index.Key) (V : Index.Value) =
   Index.Make (K) (V) (IO) (Mutex) (Thread)
+module Syscalls = Syscalls
 
 module Private = struct
   module IO = IO
