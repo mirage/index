@@ -30,127 +30,6 @@ module IO : Index.IO = struct
 
   let ( -- ) = Int64.sub
 
-  external set_64 : Bytes.t -> int -> int64 -> unit = "%caml_string_set64u"
-
-  external get_64 : string -> int -> int64 = "%caml_string_get64"
-
-  external swap64 : int64 -> int64 = "%bswap_int64"
-
-  let encode_int64 i =
-    let set_uint64 s off v =
-      if not Sys.big_endian then set_64 s off (swap64 v) else set_64 s off v
-    in
-    let b = Bytes.create 8 in
-    set_uint64 b 0 i;
-    Bytes.unsafe_to_string b
-
-  let decode_int64 buf =
-    let get_uint64 s off =
-      if not Sys.big_endian then swap64 (get_64 s off) else get_64 s off
-    in
-    get_uint64 buf 0
-
-  module Raw = struct
-    type t = { fd : Unix.file_descr; mutable cursor : int64 }
-
-    let v fd = { fd; cursor = 0L }
-
-    let really_write fd fd_offset buffer =
-      let rec aux fd_offset buffer_offset length =
-        let w = Syscalls.pwrite ~fd ~fd_offset ~buffer ~buffer_offset ~length in
-        if w = 0 || w = length then ()
-        else
-          (aux [@tailcall])
-            (fd_offset ++ Int64.of_int w)
-            (buffer_offset + w) (length - w)
-      in
-      (aux [@tailcall]) fd_offset 0 (Bytes.length buffer)
-
-    let really_read fd fd_offset length buffer =
-      let rec aux fd_offset buffer_offset length =
-        let r = Syscalls.pread ~fd ~fd_offset ~buffer ~buffer_offset ~length in
-        if r = 0 then buffer_offset (* end of file *)
-        else if r = length then buffer_offset + r
-        else
-          (aux [@tailcall])
-            (fd_offset ++ Int64.of_int r)
-            (buffer_offset + r) (length - r)
-      in
-      (aux [@tailcall]) fd_offset 0 length
-
-    let fsync t = Syscalls.fsync t.fd
-
-    let unsafe_write t ~off buf =
-      let buf = Bytes.unsafe_of_string buf in
-      really_write t.fd off buf;
-      t.cursor <- off ++ Int64.of_int (Bytes.length buf);
-      Stats.add_write (Bytes.length buf)
-
-    let unsafe_read t ~off ~len buf =
-      let n = really_read t.fd off len buf in
-      t.cursor <- off ++ Int64.of_int n;
-      Stats.add_read n;
-      n
-
-    module Offset = struct
-      let set t n =
-        let buf = encode_int64 n in
-        unsafe_write t ~off:0L buf
-
-      let get t =
-        let buf = Bytes.create 8 in
-        let n = unsafe_read t ~off:0L ~len:8 buf in
-        assert (n = 8);
-        decode_int64 (Bytes.unsafe_to_string buf)
-    end
-
-    module Version = struct
-      let get t =
-        let buf = Bytes.create 8 in
-        let n = unsafe_read t ~off:8L ~len:8 buf in
-        assert (n = 8);
-        Bytes.unsafe_to_string buf
-
-      let set t = unsafe_write t ~off:8L current_version
-    end
-
-    module Generation = struct
-      let get t =
-        let buf = Bytes.create 8 in
-        let n = unsafe_read t ~off:16L ~len:8 buf in
-        assert (n = 8);
-        decode_int64 (Bytes.unsafe_to_string buf)
-
-      let set t gen =
-        let buf = encode_int64 gen in
-        unsafe_write t ~off:16L buf
-    end
-
-    module Fan = struct
-      let set t buf =
-        let size = encode_int64 (Int64.of_int (String.length buf)) in
-        unsafe_write t ~off:24L size;
-        if buf <> "" then unsafe_write t ~off:(24L ++ 8L) buf
-
-      let get_size t =
-        let size_buf = Bytes.create 8 in
-        let n = unsafe_read t ~off:24L ~len:8 size_buf in
-        assert (n = 8);
-        decode_int64 (Bytes.unsafe_to_string size_buf)
-
-      let set_size t size =
-        let buf = encode_int64 size in
-        unsafe_write t ~off:24L buf
-
-      let get t =
-        let size = Int64.to_int (get_size t) in
-        let buf = Bytes.create size in
-        let n = unsafe_read t ~off:(24L ++ 8L) ~len:size buf in
-        assert (n = size);
-        Bytes.unsafe_to_string buf
-    end
-  end
-
   type t = {
     file : string;
     mutable header : int64;
@@ -179,7 +58,7 @@ module IO : Index.IO = struct
 
   let rename ~src ~dst =
     sync ~with_fsync:true src;
-    Unix.close dst.raw.fd;
+    Raw.close dst.raw;
     Unix.rename src.file dst.file;
     Buffer.clear dst.buf;
     dst.header <- src.header;
@@ -190,7 +69,7 @@ module IO : Index.IO = struct
 
   let close t =
     if not t.readonly then Buffer.clear t.buf;
-    Unix.close t.raw.fd
+    Raw.close t.raw
 
   let auto_flush_limit = 1_000_000L
 
@@ -294,7 +173,7 @@ module IO : Index.IO = struct
         let raw = Raw.v x in
         Raw.Offset.set raw 0L;
         Raw.Fan.set_size raw fan_size;
-        Raw.Version.set raw;
+        Raw.Version.set raw current_version;
         Raw.Generation.set raw generation;
         v ~fan_size ~offset:0L raw
     | true ->
@@ -305,7 +184,7 @@ module IO : Index.IO = struct
         else if fresh then (
           Raw.Offset.set raw 0L;
           Raw.Fan.set_size raw fan_size;
-          Raw.Version.set raw;
+          Raw.Version.set raw current_version;
           Raw.Generation.set raw generation;
           v ~fan_size ~offset:0L raw )
         else
@@ -396,6 +275,7 @@ module Syscalls = Syscalls
 
 module Private = struct
   module IO = IO
+  module Raw = Raw
   module Make (K : Index.Key) (V : Index.Value) =
     Index.Private.Make (K) (V) (IO) (Mutex) (Thread)
 end
