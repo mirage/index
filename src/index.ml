@@ -218,12 +218,14 @@ struct
         IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
       in
       let mem = Tbl.create 0 in
-      iter_io (fun e -> Tbl.replace mem e.key e.value) io;
+      (* We use Tbl.add only in RO instances (here and in [sync_log]), as the RW
+         has to ensure that there are no duplicates in the log. *)
+      iter_io (fun e -> Tbl.add mem e.key e.value) io;
       Some { io; mem })
     else None
 
   let sync_log_entries ?min log =
-    let add_log_entry (e : Entry.t) = Tbl.replace log.mem e.key e.value in
+    let add_log_entry (e : Entry.t) = Tbl.add log.mem e.key e.value in
     if min = None then Tbl.clear log.mem;
     iter_io ?min add_log_entry log.io
 
@@ -790,7 +792,6 @@ struct
     | None -> ()
     | Some log ->
         Tbl.iter f log.mem;
-        may (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io) t.index;
         Semaphore.with_acquire t.rename_lock (fun () ->
             (match t.log_async with
             | None -> ()
