@@ -1,4 +1,4 @@
-# Unreleased
+# 1.2.1 (2020-06-24)
 
 ## Added
 
@@ -8,6 +8,7 @@
 ## Fixed
 
 - Fail when `Index_unix.IO` file version number is not as expected.
+- Fixed creation of an index when an empty `data` file exists.
 
 # 1.2.0 (2020-02-25)
 
