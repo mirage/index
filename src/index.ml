@@ -378,14 +378,16 @@ struct
     in
     let index =
       let index_path = index_path root in
-      if Sys.file_exists index_path then (
+      if Sys.file_exists index_path then
         let io = IO.v ~fresh ~readonly ~generation ~fan_size:0L index_path in
         let entries = Int64.div (IO.offset io) entry_sizeL in
-        Log.debug (fun l ->
-            l "[%s] index file detected. Loading %Ld entries"
-              (Filename.basename root) entries);
-        let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
-        Some { fan_out; io } )
+        if entries = 0L then None
+        else (
+          Log.debug (fun l ->
+              l "[%s] index file detected. Loading %Ld entries"
+                (Filename.basename root) entries);
+          let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
+          Some { fan_out; io } )
       else (
         Log.debug (fun l ->
             l "[%s] no index file detected." (Filename.basename root));
