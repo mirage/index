@@ -133,6 +133,15 @@ module Live = struct
       tbl ();
     Index.close rw
 
+  let open_after_clear () =
+    let Context.{ clone; rw; _ } = Context.full_index () in
+    Index.clear rw;
+    let rw2 = clone ~fresh:false ~readonly:false () in
+    Alcotest.check_raises "Finding absent should raise Not_found" Not_found
+      (fun () -> Key.v () |> Index.find rw2 |> ignore_value);
+    Index.close rw2;
+    Index.close rw
+
   let tests =
     [
       ("find (present)", `Quick, find_present_live);
@@ -143,6 +152,7 @@ module Live = struct
       ("membership", `Quick, membership);
       ("clear and iter", `Quick, iter_after_clear);
       ("clear and find", `Quick, find_after_clear);
+      ("open after clear", `Quick, open_after_clear);
     ]
 end
 
@@ -227,7 +237,8 @@ module Readonly = struct
     Index.close rw;
     Index.close ro;
     let rw = clone ~readonly:false () in
-    check_index_entry rw k v
+    check_index_entry rw k v;
+    Index.close rw
 
   let readonly_clear () =
     let Context.{ rw; tbl; clone } = Context.full_index () in
@@ -262,6 +273,56 @@ module Readonly = struct
     Index.close rw;
     Index.close ro
 
+  let readonly_add_log_before_clear () =
+    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let ro = clone ~readonly:true () in
+    let k1, v1 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    Index.flush rw;
+    check_index_entry ro k1 v1;
+    Index.clear rw;
+    Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
+      Not_found (fun () -> ignore_value (Index.find ro k1));
+    Index.close rw;
+    Index.close ro
+
+  let readonly_add_index_before_clear () =
+    let Context.{ rw; clone; _ } = Context.full_index () in
+    let ro = clone ~readonly:true () in
+    Index.clear rw;
+    let k1, v1 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    let thread = Index.force_merge rw in
+    Index.await thread;
+    check_index_entry ro k1 v1;
+    Index.clear rw;
+    Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
+      Not_found (fun () -> ignore_value (Index.find ro k1));
+    Index.close rw;
+    Index.close ro
+
+  let readonly_add_after_clear () =
+    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let ro = clone ~readonly:true () in
+    let k1, v1 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    Index.flush rw;
+    check_index_entry ro k1 v1;
+    Index.clear rw;
+    let k2, v2 = (Key.v (), Value.v ()) in
+    Index.replace rw k2 v2;
+    Index.flush rw;
+    check_index_entry ro k2 v2
+
+  let readonly_open_after_clear () =
+    let Context.{ clone; rw; _ } = Context.full_index () in
+    Index.clear rw;
+    let ro = clone ~fresh:false ~readonly:true () in
+    Alcotest.check_raises "Finding absent should raise Not_found" Not_found
+      (fun () -> Key.v () |> Index.find ro |> ignore_value);
+    Index.close ro;
+    Index.close rw
+
   let tests =
     [
       ("add", `Quick, readonly);
@@ -269,6 +330,14 @@ module Readonly = struct
       ("Readonly v after replace", `Quick, readonly_v_after_replace);
       ("add not allowed", `Quick, fail_readonly_add);
       ("fail read if no flush", `Quick, fail_readonly_read);
+      ( "read values added in log before clear",
+        `Quick,
+        readonly_add_log_before_clear );
+      ( "read values added in index before clear",
+        `Quick,
+        readonly_add_index_before_clear );
+      ("read values added after clear", `Quick, readonly_add_after_clear);
+      ("readonly open after clear", `Quick, readonly_open_after_clear);
     ]
 end
 

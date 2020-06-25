@@ -182,19 +182,22 @@ struct
     let t = check_open t in
     Log.debug (fun l -> l "clear %S" t.root);
     if t.config.readonly then raise RO_not_allowed;
-    t.generation <- 0L;
     Mutex.with_lock t.merge_lock (fun () ->
+        t.generation <- Int64.succ t.generation;
         let log = assert_and_get t.log in
-        IO.clear log.io;
+        IO.set_generation log.io t.generation;
+        IO.clear ~keep_generation:true log.io;
         Tbl.clear log.mem;
         may
           (fun l ->
-            IO.clear l.io;
+            IO.set_generation l.io t.generation;
+            IO.clear ~keep_generation:true l.io;
             IO.close l.io)
           t.log_async;
         may
           (fun (i : index) ->
-            IO.clear i.io;
+            IO.set_generation i.io t.generation;
+            IO.clear ~keep_generation:true i.io;
             IO.close i.io)
           t.index;
         t.index <- None;
@@ -463,12 +466,13 @@ struct
           Log.debug (fun l ->
               l "[%s] generation has changed, reading log and index from disk"
                 (Filename.basename t.root));
+          t.generation <- generation;
           Tbl.clear log.mem;
           iter_io add_log_entry log.io;
           may (fun (i : index) -> IO.close i.io) t.index;
-          if Int64.equal generation 0L then t.index <- None
+          let index_path = index_path t.root in
+          if not (Sys.file_exists index_path) then t.index <- None
           else
-            let index_path = index_path t.root in
             let io =
               IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L
                 index_path
@@ -476,8 +480,8 @@ struct
             let fan_out =
               Fan.import ~hash_size:K.hash_size (IO.get_fanout io)
             in
-            t.index <- Some { fan_out; io };
-            t.generation <- generation )
+            if IO.offset io = 0L then t.index <- None
+            else t.index <- Some { fan_out; io } )
         else if log_offset < new_log_offset then (
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
