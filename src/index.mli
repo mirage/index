@@ -211,10 +211,16 @@ module Private : sig
   module type S = sig
     include S
 
-    type async
+    val close' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
+    (** [`Abort_signalled]: after the cancellation signal has been sent to any
+        concurrent merge operations, but {i before} blocking on those
+        cancellations having completed. *)
+
+    type 'a async
     (** The type of asynchronous computation. *)
 
-    val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> async
+    val force_merge :
+      ?hook:[ `After | `Before ] Hook.t -> t -> [ `Completed | `Aborted ] async
     (** [force_merge t] forces a merge for [t]. Optionally, a hook can be passed
         that will be called twice:
 

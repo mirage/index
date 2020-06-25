@@ -364,6 +364,47 @@ module Close = struct
       Not_found (fun () -> ignore_value (Index.find rw k1));
     Index.close rw
 
+  (** [close] terminates an ongoing merge operation *)
+  let aborted_merge () =
+    let Context.{ rw; _ } = Context.full_index ~size:100 () in
+    let close_request, abort_signalled =
+      (* Both locks are initially held.
+         - [close_request] is dropped by the merge thread in the [`Before] hook
+           as a signal to the parent thread to issue the [close] operation.
+
+         - [abort_signalled] is dropped by the parent thread to signal to the
+           child to continue the merge operation (which must then abort prematurely).
+      *)
+      let m1, m2 = (Mutex.create (), Mutex.create ()) in
+      Mutex.lock m1;
+      Mutex.lock m2;
+      (m1, m2)
+    in
+    let hook = function
+      | `Before ->
+          Fmt.pr "Child: issuing request to close the index\n%!";
+          Mutex.unlock close_request
+      | `After -> Alcotest.fail "Merge completed despite concurrent close"
+    in
+    let merge_promise : _ Index.async =
+      Index.force_merge ~hook:(I.Private.Hook.v hook) rw
+    in
+    Fmt.pr "Parent: waiting for request to close the index\n%!";
+    Mutex.lock close_request;
+    Fmt.pr "Parent: closing the index\n%!";
+    Index.close'
+      ~hook:
+        (I.Private.Hook.v (fun `Abort_signalled -> Mutex.unlock abort_signalled))
+      rw;
+    Fmt.pr "Parent: awaiting merge result\n%!";
+    Index.await merge_promise |> function
+    | Ok `Completed ->
+        Alcotest.fail "Force_merge returned `Completed despite concurrent close"
+    | Error (`Async_exn exn) ->
+        Alcotest.failf "Asynchronous exception occurred during force_merge: %s"
+          (Printexc.to_string exn)
+    | Ok `Aborted -> ()
+
   let tests =
     [
       ("close and reopen", `Quick, close_reopen_rw);
@@ -374,6 +415,7 @@ module Close = struct
       ("non-close operations fail after close", `Quick, fail_api_after_close);
       ("double close", `Quick, check_double_close);
       ("double restart", `Quick, restart_twice);
+      ("aborted merge", `Quick, aborted_merge);
     ]
 end
 
