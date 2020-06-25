@@ -322,7 +322,11 @@ module Close = struct
         ( "force_merge",
           fun () ->
             let thread = Index.force_merge t in
-            Index.await thread );
+            Index.await thread |> function
+            | Ok `Completed -> ()
+            | Ok `Aborted | Error _ ->
+                Alcotest.fail
+                  "Unexpected return status from [force_merge] after close" );
         ("flush", fun () -> Index.flush t);
       ]
     in

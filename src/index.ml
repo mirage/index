@@ -62,13 +62,13 @@ module type MUTEX = sig
 end
 
 module type THREAD = sig
-  type t
+  type 'a t
 
-  val async : (unit -> 'a) -> t
+  val async : (unit -> 'a) -> 'a t
 
-  val await : t -> unit
+  val await : 'a t -> ('a, [ `Async_exn of exn ]) result
 
-  val return : unit -> t
+  val return : 'a -> 'a t
 
   val yield : unit -> unit
 end
@@ -118,7 +118,7 @@ module Make_private
     (Mutex : MUTEX)
     (Thread : THREAD) =
 struct
-  type async = Thread.t
+  type 'a async = 'a Thread.t
 
   let await = Thread.await
 
@@ -726,7 +726,7 @@ struct
           Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
     in
     if do_merge then
-      ignore (merge ~witness:{ key; key_hash = K.hash key; value } t : async)
+      ignore (merge ~witness:{ key; key_hash = K.hash key; value } t : _ async)
 
   let replace_with_timer ?sampling_interval t key value =
     if sampling_interval <> None then Stats.start_replace ();
@@ -804,7 +804,7 @@ module Private = struct
 
     val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> async
 
-    val await : async -> unit
+    val await : 'a async -> ('a, [ `Async_exn of exn ]) result
 
     val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit
   end
