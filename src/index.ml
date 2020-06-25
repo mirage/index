@@ -15,93 +15,8 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
+include Index_intf
 module Stats = Stats
-
-module type Key = sig
-  type t
-
-  val equal : t -> t -> bool
-
-  val hash : t -> int
-
-  val hash_size : int
-
-  val encode : t -> string
-
-  val encoded_size : int
-
-  val decode : string -> int -> t
-
-  val pp : t Fmt.t
-end
-
-module type Value = sig
-  type t
-
-  val encode : t -> string
-
-  val encoded_size : int
-
-  val decode : string -> int -> t
-
-  val pp : t Fmt.t
-end
-
-module type IO = Io.S
-
-module type MUTEX = sig
-  type t
-
-  val create : unit -> t
-
-  val lock : t -> unit
-
-  val unlock : t -> unit
-
-  val with_lock : t -> (unit -> 'a) -> 'a
-end
-
-module type THREAD = sig
-  type 'a t
-
-  val async : (unit -> 'a) -> 'a t
-
-  val await : 'a t -> ('a, [ `Async_exn of exn ]) result
-
-  val return : 'a -> 'a t
-
-  val yield : unit -> unit
-end
-
-module type S = sig
-  type t
-
-  type key
-
-  type value
-
-  val v : ?fresh:bool -> ?readonly:bool -> log_size:int -> string -> t
-
-  val clear : t -> unit
-
-  val find : t -> key -> value
-
-  val mem : t -> key -> bool
-
-  exception Invalid_key_size of key
-
-  exception Invalid_value_size of value
-
-  val replace : t -> key -> value -> unit
-
-  val filter : t -> (key * value -> bool) -> unit
-
-  val iter : (key -> value -> unit) -> t -> unit
-
-  val flush : ?with_fsync:bool -> t -> unit
-
-  val close : t -> unit
-end
 
 let may f = function None -> () | Some bf -> f bf
 
@@ -114,7 +29,7 @@ exception Closed
 module Make_private
     (K : Key)
     (V : Value)
-    (IO : IO)
+    (IO : Io.S)
     (Mutex : MUTEX)
     (Thread : THREAD) =
 struct
