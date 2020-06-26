@@ -15,6 +15,10 @@
 - `sync` has to be called by the read-only instance to synchronise with the
   files on disk. (#175)
 
+- Caching of `Index` instances is now explicit: `Index.Make` requires a cache
+  implementation, and `Index.v` may be passed a cache to be used for instance
+  sharing. The default behaviour is _not_ to share instances. (#188)
+
 ## Fixed
 
 - Added values after a clear are found by read-only instances. (#168)

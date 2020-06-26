@@ -64,7 +64,7 @@ module Value = struct
   let pp s = Fmt.fmt "%s" s
 end
 
-module Index = Index_unix.Private.Make (Key) (Value)
+module Index = Index_unix.Private.Make (Key) (Value) (Index.Cache.Unbounded)
 
 module Make_context (Config : sig
   val root : string
@@ -82,21 +82,24 @@ struct
   type t = {
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
+    cache : Index.cache;
     clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
   }
 
   let empty_index () =
     let name = fresh_name "empty_index" in
-    let rw = Index.v ~fresh:true ~log_size:4 name in
+    let cache = Index.empty_cache () in
+    let rw = Index.v ~cache ~fresh:true ~log_size:4 name in
     let tbl = Hashtbl.create 0 in
     let clone ?(fresh = false) ~readonly () =
-      Index.v ~fresh ~log_size:4 ~readonly name
+      Index.v ~cache ~fresh ~log_size:4 ~readonly name
     in
-    { rw; tbl; clone }
+    { rw; tbl; clone; cache }
 
   let full_index ?(size = 103) () =
     let name = fresh_name "full_index" in
-    let t = Index.v ~fresh:true ~log_size:4 name in
+    let cache = Index.empty_cache () in
+    let t = Index.v ~cache ~fresh:true ~log_size:4 name in
     let tbl = Hashtbl.create 0 in
     for _ = 1 to size do
       let k = Key.v () in
@@ -106,9 +109,9 @@ struct
     done;
     Index.flush t;
     let clone ?(fresh = false) ~readonly () =
-      Index.v ~fresh ~log_size:4 ~readonly name
+      Index.v ~cache ~fresh ~log_size:4 ~readonly name
     in
-    { rw = t; tbl; clone }
+    { rw = t; tbl; clone; cache }
 end
 
 let ignore_value (_ : Value.t) = ()

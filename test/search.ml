@@ -98,14 +98,10 @@ let interpolation_constant_metric () =
       |> Alcotest.(check string) "" v)
     array
 
-let () =
-  Random.self_init ();
-  Alcotest.run "search"
-    [
-      ( "interpolation",
-        [
-          Alcotest.test_case "unique" `Quick interpolation_unique;
-          Alcotest.test_case "constant metric" `Quick
-            interpolation_constant_metric;
-        ] );
-    ]
+let tests =
+  [
+    Alcotest.test_case "unique" `Quick interpolation_unique;
+    Alcotest.test_case "constant metric" `Quick interpolation_constant_metric;
+  ]
+
+let () = Random.self_init ()

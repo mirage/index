@@ -22,9 +22,10 @@ module Index : Index.Private.S with type key = Key.t and type value = Value.t
 module Make_context (Config : sig
   val root : string
 end) : sig
-  type t = {
+  type t = private {
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
+    cache : Index.cache;
     clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
   }
 

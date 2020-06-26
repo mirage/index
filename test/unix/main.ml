@@ -159,14 +159,14 @@ end
 (* Tests of behaviour after restarting the index *)
 module DuplicateInstance = struct
   let find_present () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     let rw2 = clone ~readonly:false () in
     check_equivalence rw tbl;
     Index.close rw;
     Index.close rw2
 
   let find_absent () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     let rw2 = clone ~readonly:false () in
     test_find_absent rw tbl;
     Index.close rw;
@@ -180,7 +180,7 @@ module DuplicateInstance = struct
     Index.close rw2
 
   let membership () =
-    let Context.{ tbl; clone; rw } = Context.full_index () in
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     let rw2 = clone ~readonly:false () in
     check_equivalence_mem rw2 tbl;
     Index.close rw;
@@ -188,10 +188,14 @@ module DuplicateInstance = struct
 
   let fail_restart_fresh () =
     let reuse_name = Context.fresh_name "empty_index" in
-    let rw = Index.v ~fresh:true ~readonly:false ~log_size:4 reuse_name in
+    let cache = Index.empty_cache () in
+    let rw =
+      Index.v ~cache ~fresh:true ~readonly:false ~log_size:4 reuse_name
+    in
     let exn = I.RO_not_allowed in
     Alcotest.check_raises "Index readonly cannot be fresh." exn (fun () ->
-        ignore_index (Index.v ~fresh:true ~readonly:true ~log_size:4 reuse_name));
+        ignore_index
+          (Index.v ~cache ~fresh:true ~readonly:true ~log_size:4 reuse_name));
     Index.close rw
 
   let sync () =
@@ -246,7 +250,7 @@ module Readonly = struct
       Alcotest.check_raises (Fmt.strf "Find %s key after clearing." k) Not_found
         (fun () -> ignore_value (Index.find index k))
     in
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     let ro = clone ~readonly:true () in
     check_equivalence ro tbl;
     Index.clear rw;
@@ -430,7 +434,7 @@ end
 (* Tests of {Index.close} *)
 module Close = struct
   let close_reopen_rw () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     Index.close rw;
     let w = clone ~readonly:false () in
     check_equivalence w tbl;
@@ -451,14 +455,14 @@ module Close = struct
     Index.close rw
 
   let open_readonly_close_rw () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     let ro = clone ~readonly:true () in
     Index.close rw;
     check_equivalence ro tbl;
     Index.close ro
 
   let close_reopen_readonly () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     Index.close rw;
     let ro = clone ~readonly:true () in
     check_equivalence ro tbl;
@@ -604,7 +608,7 @@ module Filter = struct
   (** Test that the results of [filter] are propagated to a clone which was
       created before. *)
   let clone_then_filter () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
     let rw2 = clone ~readonly:false () in
@@ -617,7 +621,7 @@ module Filter = struct
   (** Test that the results of [filter] are propagated to a clone which was
       created after. *)
   let filter_then_clone () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
     Index.filter rw (fun (k', _) -> not (String.equal k k'));
@@ -630,7 +634,7 @@ module Filter = struct
   (** Test that using [filter] doesn't affect fresh clones created later at the
       same path. *)
   let empty_after_filter_and_fresh () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
     Index.filter rw (fun (k', _) -> not (String.equal k k'));

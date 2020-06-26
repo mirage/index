@@ -162,7 +162,8 @@ let absent_bindings_pool = ref [||]
 let sorted_bindings_pool = ref [||]
 
 module Index = struct
-  module Index = Index_unix.Private.Make (Context.Key) (Context.Value)
+  module Index =
+    Index_unix.Private.Make (Context.Key) (Context.Value) (Index.Cache.Noop)
 
   let add_metrics =
     let no_tags x = x in
@@ -222,7 +223,10 @@ module Index = struct
     read_absent ~with_metrics !absent_bindings_pool t
 
   let run ~with_metrics ~nb_entries ~log_size ~root ~name ~fresh ~readonly b =
-    let index = Index.v ~fresh ~readonly ~log_size (root // name) in
+    let index =
+      Index.v ~cache:(Index.empty_cache ()) ~fresh ~readonly ~log_size
+        (root // name)
+    in
     let result = Benchmark.run ~nb_entries (b ~with_metrics index) in
     Index.close index;
     result
