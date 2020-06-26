@@ -106,18 +106,18 @@ end
 module type THREAD = sig
   (** Cooperative threads. *)
 
-  type t
+  type 'a t
   (** The type of thread handles. *)
 
-  val async : (unit -> 'a) -> t
+  val async : (unit -> 'a) -> 'a t
   (** [async f] creates a new thread of control which executes [f ()] and
       returns the corresponding thread handle. The thread terminates whenever
       [f ()] returns a value or raises an exception. *)
 
-  val await : t -> unit
+  val await : 'a t -> ('a, [ `Async_exn of exn ]) result
   (** [await t] blocks on the termination of [t]. *)
 
-  val return : unit -> t
+  val return : 'a -> 'a t
   (** [return ()] is a pre-terminated thread handle. *)
 
   val yield : unit -> unit
@@ -211,17 +211,23 @@ module Private : sig
   module type S = sig
     include S
 
-    type async
+    val close' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
+    (** [`Abort_signalled]: after the cancellation signal has been sent to any
+        concurrent merge operations, but {i before} blocking on those
+        cancellations having completed. *)
+
+    type 'a async
     (** The type of asynchronous computation. *)
 
-    val force_merge : ?hook:[ `After | `Before ] Hook.t -> t -> async
+    val force_merge :
+      ?hook:[ `After | `Before ] Hook.t -> t -> [ `Completed | `Aborted ] async
     (** [force_merge t] forces a merge for [t]. Optionally, a hook can be passed
         that will be called twice:
 
         - [`Before]: immediately before merging (while holding the merge lock);
         - [`After]: immediately after merging (while holding the merge lock). *)
 
-    val await : async -> unit
+    val await : 'a async -> ('a, [ `Async_exn of exn ]) result
     (** Wait for an asynchronous computation to finish. *)
 
     val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit

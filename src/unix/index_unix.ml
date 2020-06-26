@@ -258,15 +258,34 @@ module Mutex = struct
 end
 
 module Thread = struct
-  type t = Thread.t option
+  type 'a t =
+    | Async of { thread : Thread.t; result : ('a, exn) result option ref }
+    | Value of 'a
 
-  let async f = Some (Thread.create f ())
+  let async f =
+    let result = ref None in
+    let protected_f x =
+      try result := Some (Ok (f x))
+      with exn ->
+        result := Some (Error exn);
+        raise exn
+    in
+    let thread = Thread.create protected_f () in
+    Async { thread; result }
 
   let yield = Thread.yield
 
-  let return () = None
+  let return a = Value a
 
-  let await t = match t with None -> () | Some t -> Thread.join t
+  let await t =
+    match t with
+    | Value v -> Ok v
+    | Async { thread; result } -> (
+        let () = Thread.join thread in
+        match !result with
+        | Some (Ok _ as o) -> o
+        | Some (Error exn) -> Error (`Async_exn exn)
+        | None -> assert false )
 end
 
 module Make (K : Index.Key) (V : Index.Value) =

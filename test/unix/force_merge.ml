@@ -7,9 +7,16 @@ module Context = Common.Make_context (struct
   let root = root
 end)
 
-let after f = Hook.v (function `After -> Threads.with_thread f | _ -> ())
+let check_completed = function
+  | Ok `Completed -> ()
+  | Ok `Aborted -> Alcotest.fail "Unexpected asynchronous abort"
+  | Error (`Async_exn exn) ->
+      Alcotest.failf "Unexpected asynchronous exception: %s"
+        (Printexc.to_string exn)
 
-let before f = Hook.v (function `Before -> Threads.with_thread f | _ -> ())
+let after f = Hook.v (function `After -> f () | _ -> ())
+
+let before f = Hook.v (function `Before -> f () | _ -> ())
 
 let test_find_present t tbl =
   Hashtbl.iter
@@ -169,12 +176,12 @@ let readonly_and_merge () =
     test_one_entry w k2 v2;
     test_one_entry r2 k2 v2;
     test_one_entry r3 k2 v2;
-    Index.await t1;
-    Index.await t2;
-    Index.await t3;
-    Index.await t4;
-    Index.await t5;
-    Index.await t6
+    Index.await t1 |> check_completed;
+    Index.await t2 |> check_completed;
+    Index.await t3 |> check_completed;
+    Index.await t4 |> check_completed;
+    Index.await t5 |> check_completed;
+    Index.await t6 |> check_completed
   in
 
   for _ = 1 to 10 do
@@ -194,7 +201,7 @@ let write_after_merge () =
   Index.replace w k1 v1;
   let hook = after (fun () -> Index.replace w k2 v2) in
   let t = Index.force_merge ~hook w in
-  Threads.await t;
+  Index.await t |> check_completed;
   test_one_entry r1 k1 v1;
   Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k2)
     Not_found (fun () -> ignore_value (Index.find r1 k2))
@@ -215,7 +222,7 @@ let replace_while_merge () =
   in
   let t = Index.force_merge ~hook w in
   test_one_entry r1 k1 v1;
-  Threads.await t
+  Index.await t |> check_completed
 
 (* note that here we cannot do
    `test_one_entry r1 k2 v2`
@@ -236,10 +243,10 @@ let find_while_merge () =
   let f () = test_one_entry r1 k1 v1 in
   let t3 = Index.force_merge ~hook:(before f) w in
   let t4 = Index.force_merge ~hook:(before f) w in
-  Threads.await t1;
-  Threads.await t2;
-  Threads.await t3;
-  Threads.await t4
+  Index.await t1 |> check_completed;
+  Index.await t2 |> check_completed;
+  Index.await t3 |> check_completed;
+  Index.await t4 |> check_completed
 
 let find_in_async_generation_change () =
   let { Context.rw; clone; _ } = Context.full_index () in
@@ -253,7 +260,7 @@ let find_in_async_generation_change () =
     test_one_entry r1 k1 v1
   in
   let t1 = Index.force_merge ~hook:(before f) w in
-  Threads.await t1
+  Index.await t1 |> check_completed
 
 let find_in_async_same_generation () =
   let { Context.rw; clone; _ } = Context.full_index () in
@@ -272,7 +279,7 @@ let find_in_async_same_generation () =
     test_one_entry r1 k2 v2
   in
   let t1 = Index.force_merge ~hook:(before f) w in
-  Threads.await t1
+  Index.await t1 |> check_completed
 
 let tests =
   [
