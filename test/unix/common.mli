@@ -44,3 +44,6 @@ val ignore_value : Value.t -> unit
 val ignore_bool : bool -> unit
 
 val ignore_index : Index.t -> unit
+
+val check_completed :
+  ([ `Aborted | `Completed ], [ `Async_exn of exn ]) result -> unit

@@ -293,7 +293,7 @@ module Readonly = struct
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
     let thread = Index.force_merge rw in
-    Index.await thread;
+    Index.await thread |> check_completed;
     check_index_entry ro k1 v1;
     Index.clear rw;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
