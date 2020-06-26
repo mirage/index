@@ -3,12 +3,18 @@
 ## Added
 
 - Added `Index_unix.Syscalls`, a module exposing various Unix bindings for
-  interacting with file-systems.
+  interacting with file-systems. (#176)
+
+## Changed
+
+- `Index.close` will now abort an ongoing asynchronous merge operation, rather
+  than waiting for it to finish. (#185)
 
 ## Fixed
 
-- Fail when `Index_unix.IO` file version number is not as expected.
-- Fixed creation of an index when an empty `data` file exists.
+- Fail when `Index_unix.IO` file version number is not as expected. (#178)
+
+- Fixed creation of an index when an empty `data` file exists. (#173)
 
 # 1.2.0 (2020-02-25)
 
@@ -18,9 +24,8 @@
 
 ## Changed
 
-- Parameterise `Index.Make` over arbitrary mutex and thread implementations
-  (and remove the obligation for `IO` to provide this functionality). (#160,
-  #161)
+- Parameterise `Index.Make` over arbitrary mutex and thread implementations (and
+  remove the obligation for `IO` to provide this functionality). (#160, #161)
 
 # 1.1.0 (2019-12-21)
 
