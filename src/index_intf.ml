@@ -257,7 +257,8 @@ module type Index = sig
       (** The type of asynchronous computation. *)
 
       val force_merge :
-        ?hook:[ `After | `Before ] Hook.t ->
+        ?hook:
+          [ `After | `After_clear | `After_generation_change | `Before ] Hook.t ->
         t ->
         [ `Completed | `Aborted ] async
       (** [force_merge t] forces a merge for [t]. Optionally, a hook can be
@@ -265,6 +266,10 @@ module type Index = sig
 
           - [`Before]: immediately before merging (while holding the merge
             lock);
+          - [`After_clear]: immediately after clearing the log, at the end of a
+            merge;
+          - [`After_generation_change]: immediately after increasing the
+            generation, at the end of a merge;
           - [`After]: immediately after merging (while holding the merge lock). *)
 
       val await : 'a async -> ('a, [ `Async_exn of exn ]) result
@@ -276,6 +281,13 @@ module type Index = sig
           of consecutive operations, which can be specified by
           [sampling_interval]. If [sampling_interval] is not set, no operation
           is timed. *)
+
+      val ro_sync_with_timer : t -> unit
+      (** Time ro_sync operations. *)
+
+      val ro_sync' : ?hook:[ `Before_offset_read ] Hook.t -> t -> unit
+      (** [`Before_offset_read]: after reading the generation number but before
+          reading the offset. *)
     end
 
     module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :

@@ -234,7 +234,7 @@ struct
       Some { io; mem } )
     else None
 
-  let sync_log t =
+  let sync_log ?hook t =
     Log.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
     let no_changes () =
@@ -261,6 +261,7 @@ struct
     | Some log ->
         let generation = IO.get_generation log.io in
         let log_offset = IO.offset log.io in
+        may (fun f -> f `Before_offset_read) hook;
         let new_log_offset = IO.force_offset log.io in
         let add_log_entry e = add_log_entry log e in
         sync_log_async ~generation_change:(t.generation <> generation) ();
@@ -597,10 +598,12 @@ struct
           Mutex.with_lock t.rename_lock (fun () ->
               IO.rename ~src:merge ~dst:index.io;
               t.index <- Some index;
-              IO.clear ~keep_generation:true log.io;
-              Tbl.clear log.mem;
               IO.set_generation log.io generation;
               t.generation <- generation;
+              may (fun f -> f `After_generation_change) hook;
+              IO.clear ~keep_generation:true log.io;
+              Tbl.clear log.mem;
+              may (fun f -> f `After_clear) hook;
               let log_async = assert_and_get t.log_async in
               Tbl.iter
                 (fun key value ->
@@ -734,14 +737,16 @@ struct
 
   let close = close' ~hook:(fun _ -> ())
 
-  let ro_sync t =
+  let ro_sync' ?hook t =
     let f t =
       Stats.incr_nb_ro_sync ();
       let t = check_open t in
       Log.info (fun l -> l "[%s] ro_sync" (Filename.basename t.root));
-      if t.config.readonly then sync_log t else raise RW_not_allowed
+      if t.config.readonly then sync_log ?hook t else raise RW_not_allowed
     in
     Stats.ro_sync_with_timer (fun () -> f t)
+
+  let ro_sync t = ro_sync' t
 end
 
 module Make = Make_private
@@ -765,11 +770,16 @@ module Private = struct
     val close' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
 
     val force_merge :
-      ?hook:[ `After | `Before ] Hook.t -> t -> [ `Completed | `Aborted ] async
+      ?hook:
+        [ `After | `After_clear | `After_generation_change | `Before ] Hook.t ->
+      t ->
+      [ `Completed | `Aborted ] async
 
     val await : 'a async -> ('a, [ `Async_exn of exn ]) result
 
     val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit
+
+    val ro_sync' : ?hook:[ `Before_offset_read ] Hook.t -> t -> unit
   end
 
   module Make = Make_private
