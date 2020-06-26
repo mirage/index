@@ -7,13 +7,6 @@ module Context = Common.Make_context (struct
   let root = root
 end)
 
-let check_completed = function
-  | Ok `Completed -> ()
-  | Ok `Aborted -> Alcotest.fail "Unexpected asynchronous abort"
-  | Error (`Async_exn exn) ->
-      Alcotest.failf "Unexpected asynchronous exception: %s"
-        (Printexc.to_string exn)
-
 let after f = Hook.v (function `After -> f () | _ -> ())
 
 let before f = Hook.v (function `Before -> f () | _ -> ())

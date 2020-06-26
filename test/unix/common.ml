@@ -116,3 +116,10 @@ let ignore_value (_ : Value.t) = ()
 let ignore_bool (_ : bool) = ()
 
 let ignore_index (_ : Index.t) = ()
+
+let check_completed = function
+  | Ok `Completed -> ()
+  | Ok `Aborted -> Alcotest.fail "Unexpected asynchronous abort"
+  | Error (`Async_exn exn) ->
+      Alcotest.failf "Unexpected asynchronous exception: %s"
+        (Printexc.to_string exn)
