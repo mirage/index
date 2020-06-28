@@ -24,6 +24,8 @@ let decode_int64 buf =
 
 type t = { fd : Unix.file_descr } [@@unboxed]
 
+type raw = t
+
 let v fd = { fd }
 
 let really_write fd fd_offset buffer =
@@ -119,4 +121,35 @@ module Fan = struct
     let n = unsafe_read t ~off:(24L ++ 8L) ~len:size buf in
     assert (n = size);
     Bytes.unsafe_to_string buf
+end
+
+module Header = struct
+  type t = { offset : int64; version : string; generation : int64 }
+
+  (** NOTE: These functions must be equivalent to calling the above [set] /
+      [get] functions individually. *)
+
+  let total_header_length = 8 + 8 + 8
+
+  let read_word buf off =
+    let result = Bytes.create 8 in
+    Bytes.blit buf off result 0 8;
+    Bytes.unsafe_to_string result
+
+  let get t =
+    let header = Bytes.create total_header_length in
+    let n = unsafe_read t ~off:0L ~len:total_header_length header in
+    assert (n = total_header_length);
+    let offset = read_word header 0 |> decode_int64 in
+    let version = read_word header 8 in
+    let generation = read_word header 16 |> decode_int64 in
+    { offset; version; generation }
+
+  let set t { offset; version; generation } =
+    assert (String.length version = 8);
+    let b = Bytes.create total_header_length in
+    Bytes.blit_string (encode_int64 offset) 0 b 0 8;
+    Bytes.blit_string version 0 b 8 8;
+    Bytes.blit_string (encode_int64 generation) 0 b 16 8;
+    unsafe_write t ~off:0L (Bytes.unsafe_to_string b)
 end

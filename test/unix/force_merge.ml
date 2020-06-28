@@ -11,9 +11,6 @@ let after f = Hook.v (function `After -> f () | _ -> ())
 
 let after_clear f = Hook.v (function `After_clear -> f () | _ -> ())
 
-let after_generation_change f =
-  Hook.v (function `After_generation_change -> f () | _ -> ())
-
 let before f = Hook.v (function `Before -> f () | _ -> ())
 
 let before_offset_read f =
@@ -323,27 +320,6 @@ let sync_after_clear_log () =
   Index.close rw;
   Index.close ro
 
-(** The same test as above, but with a hook after the generation changed.*)
-let sync_after_generation_change () =
-  let Context.{ rw; clone; _ } = Context.empty_index () in
-  let ro = clone ~readonly:true () in
-  let k1, v1 = (Key.v (), Value.v ()) in
-  Index.replace rw k1 v1;
-  Index.flush rw;
-  let hook = after_generation_change (fun () -> Index.ro_sync ro) in
-  let t = Index.force_merge ~hook rw in
-  Index.await t |> check_completed;
-  test_one_entry ro k1 v1;
-  let k2, v2 = (Key.v (), Value.v ()) in
-  Index.replace rw k2 v2;
-  Index.flush rw;
-  Index.ro_sync ro;
-  let hook = after_generation_change (fun () -> test_one_entry ro k1 v1) in
-  let t = Index.force_merge ~hook rw in
-  Index.await t |> check_completed;
-  Index.close rw;
-  Index.close ro
-
 (** during a merge RO sync can miss a value if it reads the generation before
     the generation is updated. *)
 let merge_during_sync () =
@@ -373,8 +349,5 @@ let tests =
     ("find in async without log", `Quick, find_in_async_generation_change);
     ("find in async with log", `Quick, find_in_async_same_generation);
     ("sync and find after log cleared", `Quick, sync_after_clear_log);
-    ( "sync and find after generation change",
-      `Quick,
-      sync_after_generation_change );
     ("merge during ro sync", `Quick, merge_during_sync);
   ]

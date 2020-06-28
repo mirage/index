@@ -169,7 +169,7 @@ module type S = sig
 
   val ro_sync : t -> unit
   (** [ro_sync t] syncs a read-only index with the files on disk. Raises
-      [RW_not_allowed] if called by an read-write index. *)
+      [RW_not_allowed] if called by a read-write index. *)
 end
 
 module type Index = sig
@@ -257,8 +257,7 @@ module type Index = sig
       (** The type of asynchronous computation. *)
 
       val force_merge :
-        ?hook:
-          [ `After | `After_clear | `After_generation_change | `Before ] Hook.t ->
+        ?hook:[ `After | `After_clear | `Before ] Hook.t ->
         t ->
         [ `Completed | `Aborted ] async
       (** [force_merge t] forces a merge for [t]. Optionally, a hook can be
@@ -268,8 +267,6 @@ module type Index = sig
             lock);
           - [`After_clear]: immediately after clearing the log, at the end of a
             merge;
-          - [`After_generation_change]: immediately after increasing the
-            generation, at the end of a merge;
           - [`After]: immediately after merging (while holding the merge lock). *)
 
       val await : 'a async -> ('a, [ `Async_exn of exn ]) result
@@ -286,8 +283,8 @@ module type Index = sig
       (** Time ro_sync operations. *)
 
       val ro_sync' : ?hook:[ `Before_offset_read ] Hook.t -> t -> unit
-      (** [`Before_offset_read]: after reading the generation number but before
-          reading the offset. *)
+      (** [`Before_offset_read]: after reading the generation number and the
+          offset. *)
     end
 
     module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :

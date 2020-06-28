@@ -521,7 +521,7 @@ module Close = struct
       | `Before ->
           Fmt.pr "Child: issuing request to close the index\n%!";
           Mutex.unlock close_request
-      | `After_clear | `After_generation_change | `After ->
+      | `After_clear | `After ->
           Alcotest.fail "Merge completed despite concurrent close"
     in
     let merge_promise : _ Index.async =

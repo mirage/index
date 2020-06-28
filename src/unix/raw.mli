@@ -49,3 +49,17 @@ module Fan : sig
 
   val set_size : t -> int64 -> unit
 end
+
+type raw = t
+
+module Header : sig
+  type t = {
+    offset : int64;  (** The length of the file containing valid data *)
+    version : string;  (** Format version *)
+    generation : int64;  (** Generation number *)
+  }
+
+  val get : raw -> t
+
+  val set : raw -> t -> unit
+end

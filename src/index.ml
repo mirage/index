@@ -107,19 +107,16 @@ struct
     Mutex.with_lock t.merge_lock (fun () ->
         t.generation <- Int64.succ t.generation;
         let log = assert_and_get t.log in
-        IO.set_generation log.io t.generation;
-        IO.clear ~keep_generation:true log.io;
+        IO.clear ~generation:t.generation log.io;
         Tbl.clear log.mem;
         may
           (fun l ->
-            IO.set_generation l.io t.generation;
-            IO.clear ~keep_generation:true l.io;
+            IO.clear ~generation:t.generation log.io;
             IO.close l.io)
           t.log_async;
         may
           (fun (i : index) ->
-            IO.set_generation i.io t.generation;
-            IO.clear ~keep_generation:true i.io;
+            IO.clear ~generation:t.generation i.io;
             IO.close i.io)
           t.index;
         t.index <- None;
@@ -259,10 +256,11 @@ struct
     match t.log with
     | None -> sync_log_async ()
     | Some log ->
-        let generation = IO.get_generation log.io in
         let log_offset = IO.offset log.io in
         may (fun f -> f `Before_offset_read) hook;
-        let new_log_offset = IO.force_offset log.io in
+        let IO.Header.{ generation; offset = new_log_offset } =
+          IO.Header.get_header log.io
+        in
         let add_log_entry e = add_log_entry log e in
         sync_log_async ~generation_change:(t.generation <> generation) ();
         if t.generation <> generation then (
@@ -377,7 +375,7 @@ struct
                 append_key_value log.io e.key e.value)
               io;
             IO.sync log.io;
-            IO.clear io)
+            IO.clear ~generation:0L io)
           log;
       IO.close io );
     let generation =
@@ -598,10 +596,8 @@ struct
           Mutex.with_lock t.rename_lock (fun () ->
               IO.rename ~src:merge ~dst:index.io;
               t.index <- Some index;
-              IO.set_generation log.io generation;
               t.generation <- generation;
-              may (fun f -> f `After_generation_change) hook;
-              IO.clear ~keep_generation:true log.io;
+              IO.clear ~generation log.io;
               Tbl.clear log.mem;
               may (fun f -> f `After_clear) hook;
               let log_async = assert_and_get t.log_async in
@@ -613,7 +609,7 @@ struct
               IO.sync log.io;
               t.log_async <- None);
           may (fun f -> f `After) hook;
-          IO.clear log_async.io;
+          IO.clear ~generation log_async.io;
           IO.close log_async.io;
           Mutex.unlock t.merge_lock;
           `Completed
@@ -770,8 +766,7 @@ module Private = struct
     val close' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
 
     val force_merge :
-      ?hook:
-        [ `After | `After_clear | `After_generation_change | `Before ] Hook.t ->
+      ?hook:[ `After | `After_clear | `Before ] Hook.t ->
       t ->
       [ `Completed | `Aborted ] async
 
