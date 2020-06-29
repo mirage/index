@@ -221,7 +221,8 @@ struct
 
   let with_cache ~v ~clear =
     let roots = Hashtbl.create 0 in
-    let f ?(fresh = false) ?(readonly = false) ~log_size root =
+    let f ?auto_flush_callback ?(fresh = false) ?(readonly = false) ~log_size
+        root =
       Log.info (fun l ->
           l "[%s] v fresh=%b readonly=%b log_size=%d" (Filename.basename root)
             fresh readonly log_size);
@@ -244,13 +245,13 @@ struct
           Hashtbl.remove roots (root, readonly);
           raise Not_found )
       with Not_found ->
-        let instance = v ~fresh ~readonly ~log_size root in
+        let instance = v ?auto_flush_callback ~fresh ~readonly ~log_size root in
         Hashtbl.add roots (root, readonly) instance;
         ref (Some instance)
     in
     `Staged f
 
-  let v_no_cache ~fresh ~readonly ~log_size root =
+  let v_no_cache ?auto_flush_callback ~fresh ~readonly ~log_size root =
     Log.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
@@ -262,7 +263,10 @@ struct
     let log =
       if readonly then if fresh then raise RO_not_allowed else None
       else
-        let io = IO.v ~fresh ~readonly ~generation:0L ~fan_size:0L log_path in
+        let io =
+          IO.v ?auto_flush_callback ~fresh ~readonly ~generation:0L ~fan_size:0L
+            log_path
+        in
         let entries = Int64.div (IO.offset io) entry_sizeL in
         Log.debug (fun l ->
             l "[%s] log file detected. Loading %Ld entries"
@@ -276,7 +280,8 @@ struct
        there is no need to do it here. *)
     if (not readonly) && Sys.file_exists log_async_path then (
       let io =
-        IO.v ~fresh ~readonly:false ~generation:0L ~fan_size:0L log_async_path
+        IO.v ?auto_flush_callback ~fresh ~readonly:false ~generation:0L
+          ~fan_size:0L log_async_path
       in
       let entries = Int64.div (IO.offset io) entry_sizeL in
       Log.debug (fun l ->
@@ -302,7 +307,10 @@ struct
     let index =
       let index_path = index_path root in
       if Sys.file_exists index_path then
-        let io = IO.v ~fresh ~readonly ~generation ~fan_size:0L index_path in
+        let io =
+          IO.v ?auto_flush_callback ~fresh ~readonly ~generation ~fan_size:0L
+            index_path
+        in
         let entries = Int64.div (IO.offset io) entry_sizeL in
         if entries = 0L then None
         else (

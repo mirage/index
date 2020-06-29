@@ -39,10 +39,12 @@ module IO : Index.IO = struct
     mutable fan_size : int64;
     readonly : bool;
     buf : Buffer.t;
+    auto_flush_callback : unit -> unit;
   }
 
   let sync ?(with_fsync = false) t =
     if t.readonly then raise RO_not_allowed;
+    t.auto_flush_callback ();
     let buf = Buffer.contents t.buf in
     let offset = t.offset in
     Buffer.clear t.buf;
@@ -151,7 +153,8 @@ module IO : Index.IO = struct
 
   let () = assert (String.length current_version = 8)
 
-  let v ~readonly ~fresh ~generation ~fan_size file =
+  let v ?(auto_flush_callback = fun () -> ()) ~readonly ~fresh ~generation
+      ~fan_size file =
     let v ~fan_size ~offset raw =
       let header = 8L ++ 8L ++ 8L ++ 8L ++ fan_size in
       {
@@ -163,6 +166,7 @@ module IO : Index.IO = struct
         fan_size;
         buf = buffer file;
         flushed = header ++ offset;
+        auto_flush_callback;
       }
     in
     let mode = Unix.(if readonly then O_RDONLY else O_RDWR) in

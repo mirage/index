@@ -114,9 +114,16 @@ module type S = sig
   type value
   (** The type for values. *)
 
-  val v : ?fresh:bool -> ?readonly:bool -> log_size:int -> string -> t
+  val v :
+    ?auto_flush_callback:(unit -> unit) ->
+    ?fresh:bool ->
+    ?readonly:bool ->
+    log_size:int ->
+    string ->
+    t
   (** The constructor for indexes.
 
+      @param auto_flush_callback adds a callback before an auto flush.
       @param fresh whether an existing index should be overwritten.
       @param read_only whether read-only mode is enabled for this index.
       @param log_size the maximum number of bindings in the `log` IO. *)
