@@ -10,7 +10,7 @@ let test_noop () =
   add c "added" 1;
   find c "added" |> check_none "Cannot find added value";
   remove c "added";
-  find c "added" |> check_none "Can't find added value after remove";
+  find c "added" |> check_none "Cannot find added value after remove";
   ()
 
 let test_unbounded () =
@@ -21,7 +21,7 @@ let test_unbounded () =
   add c "added" 1;
   find c "added" |> check_some "Can find added value" 1;
   remove c "added";
-  find c "added" |> check_none "Can't find added value after remove";
+  find c "added" |> check_none "Cannot find added value after remove";
   ()
 
 let tests =

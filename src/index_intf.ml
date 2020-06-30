@@ -134,7 +134,7 @@ module type S = sig
   (** The constructor for indexes.
 
       @param auto_flush_callback adds a callback before an auto flush.
-      @param cache a cache instance to use for instance sharing.
+      @param cache used for instance sharing.
       @param fresh whether an existing index should be overwritten.
       @param read_only whether read-only mode is enabled for this index.
       @param log_size the maximum number of bindings in the `log` IO. *)
