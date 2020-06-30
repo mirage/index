@@ -82,7 +82,6 @@ struct
   type t = {
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
-    cache : Index.cache;
     clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
   }
 
@@ -94,7 +93,7 @@ struct
     let clone ?(fresh = false) ~readonly () =
       Index.v ~cache ~fresh ~log_size:4 ~readonly name
     in
-    { rw; tbl; clone; cache }
+    { rw; tbl; clone }
 
   let full_index ?(size = 103) () =
     let name = fresh_name "full_index" in
@@ -111,7 +110,7 @@ struct
     let clone ?(fresh = false) ~readonly () =
       Index.v ~cache ~fresh ~log_size:4 ~readonly name
     in
-    { rw = t; tbl; clone; cache }
+    { rw = t; tbl; clone }
 end
 
 let ignore_value (_ : Value.t) = ()

@@ -25,7 +25,6 @@ end) : sig
   type t = private {
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
-    cache : Index.cache;
     clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
   }
 
