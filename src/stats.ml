@@ -6,8 +6,8 @@ type t = {
   mutable nb_merge : int;
   mutable nb_replace : int;
   mutable replace_times : float list;
-  mutable nb_ro_sync : int;
-  mutable time_ro_sync : float;
+  mutable nb_sync : int;
+  mutable time_sync : float;
 }
 
 let fresh_stats () =
@@ -19,8 +19,8 @@ let fresh_stats () =
     nb_merge = 0;
     nb_replace = 0;
     replace_times = [];
-    nb_ro_sync = 0;
-    time_ro_sync = 0.0;
+    nb_sync = 0;
+    time_sync = 0.0;
   }
 
 let stats = fresh_stats ()
@@ -33,8 +33,8 @@ let reset_stats () =
   stats.nb_merge <- 0;
   stats.nb_replace <- 0;
   stats.replace_times <- [];
-  stats.nb_ro_sync <- 0;
-  stats.time_ro_sync <- 0.0
+  stats.nb_sync <- 0;
+  stats.time_sync <- 0.0
 
 let get () = stats
 
@@ -50,7 +50,7 @@ let incr_nb_merge () = stats.nb_merge <- succ stats.nb_merge
 
 let incr_nb_replace () = stats.nb_replace <- succ stats.nb_replace
 
-let incr_nb_ro_sync () = stats.nb_ro_sync <- succ stats.nb_ro_sync
+let incr_nb_sync () = stats.nb_sync <- succ stats.nb_sync
 
 let add_read n =
   incr_bytes_read n;
@@ -76,8 +76,8 @@ let end_replace ~sampling_interval =
     replace_timer := Mtime_clock.counter ();
     nb_replace := 0 )
 
-let ro_sync_with_timer f =
+let sync_with_timer f =
   let timer = Mtime_clock.counter () in
   f ();
   let span = Mtime_clock.count timer in
-  stats.time_ro_sync <- Mtime.Span.to_us span
+  stats.time_sync <- Mtime.Span.to_us span

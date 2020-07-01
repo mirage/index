@@ -167,8 +167,8 @@ module type S = sig
   val close : t -> unit
   (** Closes all resources used by [t]. *)
 
-  val ro_sync : t -> unit
-  (** [ro_sync t] syncs a read-only index with the files on disk. Raises
+  val sync : t -> unit
+  (** [sync t] syncs a read-only index with the files on disk. Raises
       [RW_not_allowed] if called by a read-write index. *)
 end
 
@@ -220,8 +220,8 @@ module type Index = sig
       index. *)
 
   exception RW_not_allowed
-  (** The exception is raised when a ro_sync operation is attempted on a
-      read-write index. *)
+  (** The exception is raised when a sync operation is attempted on a read-write
+      index. *)
 
   exception Closed
   (** The exception raised when any operation is attempted on a closed index,
@@ -279,11 +279,8 @@ module type Index = sig
           [sampling_interval]. If [sampling_interval] is not set, no operation
           is timed. *)
 
-      val ro_sync_with_timer : t -> unit
-      (** Time ro_sync operations. *)
-
-      val ro_sync' : ?hook:[ `Before_offset_read ] Hook.t -> t -> unit
-      (** [`Before_offset_read]: after reading the generation number and the
+      val sync' : ?hook:[ `Before_offset_read ] Hook.t -> t -> unit
+      (** [`Before_offset_read]: before reading the generation number and the
           offset. *)
     end
 

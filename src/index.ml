@@ -733,16 +733,16 @@ struct
 
   let close = close' ~hook:(fun _ -> ())
 
-  let ro_sync' ?hook t =
+  let sync' ?hook t =
     let f t =
-      Stats.incr_nb_ro_sync ();
+      Stats.incr_nb_sync ();
       let t = check_open t in
       Log.info (fun l -> l "[%s] ro_sync" (Filename.basename t.root));
       if t.config.readonly then sync_log ?hook t else raise RW_not_allowed
     in
-    Stats.ro_sync_with_timer (fun () -> f t)
+    Stats.sync_with_timer (fun () -> f t)
 
-  let ro_sync t = ro_sync' t
+  let sync t = sync' t
 end
 
 module Make = Make_private
@@ -774,7 +774,7 @@ module Private = struct
 
     val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit
 
-    val ro_sync' : ?hook:[ `Before_offset_read ] Hook.t -> t -> unit
+    val sync' : ?hook:[ `Before_offset_read ] Hook.t -> t -> unit
   end
 
   module Make = Make_private

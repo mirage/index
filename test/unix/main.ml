@@ -186,7 +186,7 @@ module DuplicateInstance = struct
     Index.close rw;
     Index.close rw2
 
-  let fail_restart_ro_fresh () =
+  let fail_restart_fresh () =
     let reuse_name = Context.fresh_name "empty_index" in
     let rw = Index.v ~fresh:true ~readonly:false ~log_size:4 reuse_name in
     let exn = I.RO_not_allowed in
@@ -212,7 +212,7 @@ module DuplicateInstance = struct
       ("find (absent)", `Quick, find_absent);
       ("replace", `Quick, replace);
       ("membership", `Quick, membership);
-      ("fail restart readonly fresh", `Quick, fail_restart_ro_fresh);
+      ("fail restart readonly fresh", `Quick, fail_restart_fresh);
       ("in sync", `Quick, sync);
     ]
 end
@@ -224,7 +224,7 @@ module Readonly = struct
     let ro = clone ~readonly:true () in
     Hashtbl.iter (fun k v -> Index.replace rw k v) main.tbl;
     Index.flush rw;
-    Index.ro_sync ro;
+    Index.sync ro;
     check_equivalence ro main.tbl;
     Index.close rw;
     Index.close ro
@@ -246,7 +246,7 @@ module Readonly = struct
     let ro = clone ~readonly:true () in
     check_equivalence ro tbl;
     Index.clear rw;
-    Index.ro_sync ro;
+    Index.sync ro;
     Hashtbl.iter
       (fun k _ ->
         Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k)
@@ -272,7 +272,7 @@ module Readonly = struct
     let ro = clone ~readonly:true () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
-    Index.ro_sync ro;
+    Index.sync ro;
     Alcotest.check_raises "Index readonly cannot read if data is not flushed."
       Not_found (fun () -> ignore_value (Index.find ro k1));
     Index.close rw;
@@ -289,7 +289,7 @@ module Readonly = struct
     Index.close rw;
     Index.close ro
 
-  (** Readonly finds value in log before and after clear. Before ro_sync the
+  (** Readonly finds value in log before and after clear. Before sync the
       deleted value is still found. *)
   let readonly_add_log_before_clear () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
@@ -297,17 +297,17 @@ module Readonly = struct
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
     Index.flush rw;
-    Index.ro_sync ro;
+    Index.sync ro;
     check_index_entry ro k1 v1;
     Index.clear rw;
     check_index_entry ro k1 v1;
-    Index.ro_sync ro;
+    Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1));
     Index.close rw;
     Index.close ro
 
-  (** Readonly finds value in index before and after clear. Before ro_sync the
+  (** Readonly finds value in index before and after clear. Before sync the
       deleted value is still found. *)
   let readonly_add_index_before_clear () =
     let Context.{ rw; clone; _ } = Context.full_index () in
@@ -317,11 +317,11 @@ module Readonly = struct
     Index.replace rw k1 v1;
     let thread = Index.force_merge rw in
     Index.await thread |> check_completed;
-    Index.ro_sync ro;
+    Index.sync ro;
     check_index_entry ro k1 v1;
     Index.clear rw;
     check_index_entry ro k1 v1;
-    Index.ro_sync ro;
+    Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1));
     Index.close rw;
@@ -335,14 +335,14 @@ module Readonly = struct
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
     Index.flush rw;
-    Index.ro_sync ro;
+    Index.sync ro;
     check_index_entry ro k1 v1;
     Index.clear rw;
     let k2, v2 = (Key.v (), Value.v ()) in
     Index.replace rw k2 v2;
     Index.flush rw;
     check_index_entry ro k1 v1;
-    Index.ro_sync ro;
+    Index.sync ro;
     check_index_entry ro k2 v2;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find rw k1));
@@ -362,7 +362,7 @@ module Readonly = struct
     Index.replace rw k1 v1;
     let t = Index.force_merge rw in
     Index.await t |> check_completed;
-    Index.ro_sync ro;
+    Index.sync ro;
     Index.clear rw;
     let k2, v2 = (Key.v (), Value.v ()) in
     Index.replace rw k2 v2;
@@ -371,7 +371,7 @@ module Readonly = struct
     check_index_entry ro k1 v1;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find rw k1));
-    Index.ro_sync ro;
+    Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1));
     check_index_entry ro k2 v2;
