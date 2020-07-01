@@ -1,14 +1,25 @@
+# Unreleased
+
+## Added
+
+- Added `auto_flush_callback` parameter to the creation of a store, to register
+  a callback before a flush. (#189)
+
+## Changed
+
+- `Index.close` will now abort an ongoing asynchronous merge operation, rather
+  than waiting for it to finish. (#185)
+
+## Fixed
+
+- Added values after a clear are found by read-only instances. (#168)
+
 # 1.2.1 (2020-06-24)
 
 ## Added
 
 - Added `Index_unix.Syscalls`, a module exposing various Unix bindings for
   interacting with file-systems. (#176)
-
-## Changed
-
-- `Index.close` will now abort an ongoing asynchronous merge operation, rather
-  than waiting for it to finish. (#185)
 
 ## Fixed
 
