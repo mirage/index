@@ -24,6 +24,8 @@ let assert_and_get = function None -> assert false | Some e -> e
 
 exception RO_not_allowed
 
+exception RW_not_allowed
+
 exception Closed
 
 module Make_private
@@ -312,6 +314,7 @@ struct
         if t.open_instances <> 0 then (
           Log.debug (fun l -> l "[%s] found in cache" (Filename.basename root));
           t.open_instances <- t.open_instances + 1;
+          if readonly then sync_log t;
           let t = ref (Some t) in
           if fresh then clear t;
           t )
@@ -321,6 +324,7 @@ struct
       with Not_found ->
         let instance = v ?auto_flush_callback ~fresh ~readonly ~log_size root in
         Hashtbl.add roots (root, readonly) instance;
+        if readonly then sync_log instance;
         ref (Some instance)
     in
     `Staged f
@@ -441,16 +445,10 @@ struct
       @~ find_if_exists ~name:"index" ~find:interpolation_search t.index
     in
     Mutex.with_lock t.rename_lock (fun () ->
-        if t.config.readonly then sync_log t;
         find_if_exists ~name:"log_async"
           ~find:(fun log -> Tbl.find log.mem)
           t.log_async
-        @~ fun () ->
-        find_log_index @~ fun () ->
-        if t.config.readonly then (
-          sync_log t;
-          find_log_index () )
-        else raise Not_found)
+        @~ find_log_index)
 
   let find t key =
     let t = check_open t in
@@ -698,7 +696,6 @@ struct
   let iter f t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] iter" (Filename.basename t.root));
-    if t.config.readonly then sync_log t;
     match t.log with
     | None -> ()
     | Some log ->
@@ -736,6 +733,11 @@ struct
               may (fun lock -> IO.unlock lock) t.writer_lock ))
 
   let close = close' ~hook:(fun _ -> ())
+
+  let ro_sync t =
+    let t = check_open t in
+    Log.info (fun l -> l "[%s] ro_sync" (Filename.basename t.root));
+    if t.config.readonly then sync_log t else raise RW_not_allowed
 end
 
 module Make = Make_private

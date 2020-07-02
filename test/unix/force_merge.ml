@@ -123,6 +123,9 @@ let readonly_and_merge () =
     Index.replace w k1 v1;
     Index.flush w;
     let t1 = Index.force_merge w in
+    Index.ro_sync r1;
+    Index.ro_sync r2;
+    Index.ro_sync r3;
     test_one_entry r1 k1 v1;
     test_one_entry r2 k1 v1;
     test_one_entry r3 k1 v1;
@@ -131,6 +134,9 @@ let readonly_and_merge () =
     let v2 = Value.v () in
     Index.replace w k2 v2;
     Index.flush w;
+    Index.ro_sync r1;
+    Index.ro_sync r2;
+    Index.ro_sync r3;
     test_one_entry r1 k1 v1;
     let t2 = Index.force_merge w in
     test_one_entry r2 k2 v2;
@@ -143,10 +149,12 @@ let readonly_and_merge () =
     test_one_entry r1 k1 v1;
     Index.replace w k2 v2;
     Index.flush w;
+    Index.ro_sync r1;
     let t3 = Index.force_merge w in
     test_one_entry r1 k1 v1;
     Index.replace w k3 v3;
     Index.flush w;
+    Index.ro_sync r3;
     let t4 = Index.force_merge w in
     test_one_entry r3 k3 v3;
 
@@ -154,6 +162,8 @@ let readonly_and_merge () =
     let v2 = Value.v () in
     Index.replace w k2 v2;
     Index.flush w;
+    Index.ro_sync r2;
+    Index.ro_sync r3;
     test_one_entry w k2 v2;
     let t5 = Index.force_merge w in
     test_one_entry w k2 v2;
@@ -164,6 +174,8 @@ let readonly_and_merge () =
     let v2 = Value.v () in
     Index.replace w k2 v2;
     Index.flush w;
+    Index.ro_sync r2;
+    Index.ro_sync r3;
     test_one_entry r2 k1 v1;
     let t6 = Index.force_merge w in
     test_one_entry w k2 v2;
@@ -195,6 +207,7 @@ let write_after_merge () =
   let hook = after (fun () -> Index.replace w k2 v2) in
   let t = Index.force_merge ~hook w in
   Index.await t |> check_completed;
+  Index.ro_sync r1;
   test_one_entry r1 k1 v1;
   Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k2)
     Not_found (fun () -> ignore_value (Index.find r1 k2))
@@ -214,6 +227,7 @@ let replace_while_merge () =
         test_one_entry w k2 v2)
   in
   let t = Index.force_merge ~hook w in
+  Index.ro_sync r1;
   test_one_entry r1 k1 v1;
   Index.await t |> check_completed
 
@@ -250,6 +264,7 @@ let find_in_async_generation_change () =
   let f () =
     Index.replace w k1 v1;
     Index.flush w;
+    Index.ro_sync r1;
     test_one_entry r1 k1 v1
   in
   let t1 = Index.force_merge ~hook:(before f) w in
@@ -266,9 +281,11 @@ let find_in_async_same_generation () =
   let f () =
     Index.replace w k1 v1;
     Index.flush w;
+    Index.ro_sync r1;
     test_one_entry r1 k1 v1;
     Index.replace w k2 v2;
     Index.flush w;
+    Index.ro_sync r1;
     test_one_entry r1 k2 v2
   in
   let t1 = Index.force_merge ~hook:(before f) w in

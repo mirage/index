@@ -166,6 +166,10 @@ module type S = sig
 
   val close : t -> unit
   (** Closes all resources used by [t]. *)
+
+  val ro_sync : t -> unit
+  (** [ro_sync t] syncs a read-only index with the files on disk. Raises
+      [RW_not_allowed] if called by an read-write index. *)
 end
 
 module type Index = sig
@@ -214,6 +218,10 @@ module type Index = sig
   exception RO_not_allowed
   (** The exception raised when a write operation is attempted on a read_only
       index. *)
+
+  exception RW_not_allowed
+  (** The exception is raised when a ro_sync operation is attempted on a
+      read-write index. *)
 
   exception Closed
   (** The exception raised when any operation is attempted on a closed index,
