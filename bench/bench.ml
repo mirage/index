@@ -223,6 +223,7 @@ module Index = struct
     fresh : bool;
     benchmark : with_metrics:bool -> Index.t -> unit -> unit;
     dependency : string option;
+    speed : [ `Quick | `Slow ];
   }
 
   let suite =
@@ -234,6 +235,7 @@ module Index = struct
         fresh = true;
         benchmark = write_random;
         dependency = None;
+        speed = `Quick;
       };
       {
         name = "replace_random_with_timer";
@@ -242,6 +244,7 @@ module Index = struct
         fresh = true;
         benchmark = write_random_with_timer;
         dependency = None;
+        speed = `Slow;
       };
       {
         name = "replace_random_sync";
@@ -250,6 +253,7 @@ module Index = struct
         fresh = true;
         benchmark = write_sync;
         dependency = None;
+        speed = `Quick;
       };
       {
         name = "replace_increasing_keys";
@@ -258,6 +262,7 @@ module Index = struct
         fresh = true;
         benchmark = write_seq;
         dependency = None;
+        speed = `Slow;
       };
       {
         name = "replace_increasing_hash";
@@ -266,6 +271,7 @@ module Index = struct
         fresh = true;
         benchmark = write_seq_hash;
         dependency = None;
+        speed = `Slow;
       };
       {
         name = "replace_decreasing_hash";
@@ -274,6 +280,7 @@ module Index = struct
         fresh = true;
         benchmark = write_rev_seq_hash;
         dependency = None;
+        speed = `Slow;
       };
       {
         name = "iter_rw";
@@ -282,6 +289,7 @@ module Index = struct
         fresh = false;
         benchmark = iter;
         dependency = Some "replace_random";
+        speed = `Slow;
       };
       {
         name = "find_random_ro";
@@ -290,6 +298,7 @@ module Index = struct
         fresh = false;
         benchmark = find_random;
         dependency = Some "replace_random";
+        speed = `Quick;
       };
       {
         name = "find_random_rw";
@@ -298,6 +307,7 @@ module Index = struct
         fresh = false;
         benchmark = find_random;
         dependency = Some "replace_random";
+        speed = `Quick;
       };
       {
         name = "find_absent_ro";
@@ -306,6 +316,7 @@ module Index = struct
         fresh = false;
         benchmark = find_absent;
         dependency = Some "replace_random";
+        speed = `Slow;
       };
       {
         name = "find_absent_rw";
@@ -314,6 +325,7 @@ module Index = struct
         fresh = false;
         benchmark = find_absent;
         dependency = Some "replace_random";
+        speed = `Slow;
       };
     ]
 end
@@ -353,6 +365,7 @@ type config = {
   seed : int;
   with_metrics : bool;
   sampling_interval : int;
+  minimal_flag : bool;
 }
 [@@deriving yojson]
 
@@ -387,9 +400,10 @@ let init config =
     Metrics_gnuplot.set_reporter ();
     Metrics_unix.monitor_gc 0.1 );
   bindings_pool := make_bindings_pool config.nb_entries;
-  absent_bindings_pool := make_bindings_pool config.nb_entries;
-  sorted_bindings_pool := Array.copy !bindings_pool;
-  replace_sampling_interval := config.sampling_interval
+  if not config.minimal_flag then (
+    absent_bindings_pool := make_bindings_pool config.nb_entries;
+    sorted_bindings_pool := Array.copy !bindings_pool;
+    replace_sampling_interval := config.sampling_interval )
 
 let print fmt (config, results) =
   let pp_bench fmt (b, result) =
@@ -421,8 +435,13 @@ let print_json fmt (config, results) =
   in
   pretty_print fmt obj
 
+let get_suite_list minimal_flag =
+  if minimal_flag then
+    List.filter (fun bench -> bench.Index.speed = `Quick) Index.suite
+  else Index.suite
+
 let run filter root output seed with_metrics log_size nb_entries json
-    sampling_interval =
+    sampling_interval minimal_flag =
   let config =
     {
       key_size;
@@ -432,14 +451,16 @@ let run filter root output seed with_metrics log_size nb_entries json
       seed;
       with_metrics;
       sampling_interval;
+      minimal_flag;
     }
   in
   cleanup root;
   init config;
+  let current_suite = get_suite_list config.minimal_flag in
   let name_filter =
     match filter with None -> fun _ -> true | Some re -> Re.execp re
   in
-  Index.suite
+  current_suite
   |> schedule name_filter
   |> List.map (fun (b : Index.suite_elt) ->
          let name =
@@ -534,6 +555,11 @@ let sampling_interval =
   let env = env_var "REPLACE_DURATION_SAMPLING_INTERVAL" in
   Arg.(value & opt int 10 & info [ "sampling-interval" ] ~env ~doc)
 
+let minimal_flag =
+  let doc = "Run a set of minimal benchmarks" in
+  let env = env_var "MINIMAL" in
+  Arg.(value & flag & info [ "minimal" ] ~env ~doc)
+
 let cmd =
   let doc = "Run all the benchmarks." in
   ( Term.(
@@ -546,7 +572,8 @@ let cmd =
       $ log_size
       $ nb_entries
       $ json_flag
-      $ sampling_interval),
+      $ sampling_interval
+      $ minimal_flag),
     Term.info "run" ~doc ~exits:Term.default_exits )
 
 let () =
