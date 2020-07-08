@@ -9,6 +9,8 @@
 
 - `Index.close` will now abort an ongoing asynchronous merge operation, rather
   than waiting for it to finish. (#185)
+- `sync` has to be called by the read-only instance to synchronise with the
+  files on disk. (#175)
 
 ## Fixed
 
