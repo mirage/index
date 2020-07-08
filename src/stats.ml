@@ -4,6 +4,7 @@ type t = {
   mutable bytes_written : int;
   mutable nb_writes : int;
   mutable nb_merge : int;
+  mutable merge_times : float list;
   mutable nb_replace : int;
   mutable replace_times : float list;
   mutable nb_sync : int;
@@ -17,6 +18,7 @@ let fresh_stats () =
     bytes_written = 0;
     nb_writes = 0;
     nb_merge = 0;
+    merge_times = [];
     nb_replace = 0;
     replace_times = [];
     nb_sync = 0;
@@ -31,6 +33,7 @@ let reset_stats () =
   stats.bytes_written <- 0;
   stats.nb_writes <- 0;
   stats.nb_merge <- 0;
+  stats.merge_times <- [];
   stats.nb_replace <- 0;
   stats.replace_times <- [];
   stats.nb_sync <- 0;
@@ -81,3 +84,13 @@ let sync_with_timer f =
   f ();
   let span = Mtime_clock.count timer in
   stats.time_sync <- Mtime.Span.to_us span
+
+let drop_head l =
+  match l with l when List.length l < 10 -> l | _ :: tl -> tl | [] -> []
+
+let merge_with_timer f =
+  let timer = Mtime_clock.counter () in
+  let result = f () in
+  let span = Mtime.Span.to_us (Mtime_clock.count timer) in
+  stats.merge_times <- drop_head stats.merge_times @ [ span ];
+  result
