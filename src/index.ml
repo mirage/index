@@ -352,6 +352,9 @@ struct
         iter_io (fun e -> Tbl.replace mem e.key e.value) io;
         Some { io; mem }
     in
+    let generation =
+      match log with None -> 0L | Some log -> IO.get_generation log.io
+    in
     let log_async_path = log_async_path root in
     (* If we are in readonly mode, the log_async will be read during sync_log so
        there is no need to do it here. *)
@@ -375,12 +378,9 @@ struct
                 append_key_value log.io e.key e.value)
               io;
             IO.sync log.io;
-            IO.clear ~generation:0L io)
+            IO.clear ~generation io)
           log;
       IO.close io );
-    let generation =
-      match log with None -> 0L | Some log -> IO.get_generation log.io
-    in
     let index =
       let index_path = index_path root in
       if Sys.file_exists index_path then
