@@ -109,6 +109,26 @@ module IO : Index.IO = struct
     assert (Int64.equal (Int64.of_int (String.length buf)) t.fan_size);
     Raw.Fan.set t.raw buf
 
+  module Header = struct
+    type header = { offset : int64; generation : int64 }
+
+    let pp ppf { offset; generation } =
+      Format.fprintf ppf "{ offset = %Ld; generation = %Ld }" offset generation
+
+    let get_header t =
+      let Raw.Header.{ offset; generation; _ } = Raw.Header.get t.raw in
+      t.offset <- offset;
+      let headers = { offset; generation } in
+      Log.debug (fun m -> m "[%s] get_headers: %a" t.file pp headers);
+      headers
+
+    let set_header t { offset; generation } =
+      let version = version () in
+      Log.debug (fun m ->
+          m "[%s] set_header %a" t.file pp { offset; generation });
+      Raw.Header.(set t.raw { offset; version; generation })
+  end
+
   let readonly t = t.readonly
 
   let protect_unix_exn = function
@@ -134,11 +154,10 @@ module IO : Index.IO = struct
     in
     (aux [@tailcall]) dirname (fun () -> ())
 
-  let clear ?(keep_generation = false) t =
+  let clear ~generation t =
     t.offset <- 0L;
     t.flushed <- t.header;
-    if not keep_generation then Raw.Generation.set t.raw 0L;
-    Raw.Offset.set t.raw t.offset;
+    Header.set_header t { offset = t.offset; generation };
     Raw.Fan.set t.raw "";
     Buffer.clear t.buf
 

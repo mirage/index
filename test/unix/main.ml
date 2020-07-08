@@ -186,7 +186,7 @@ module DuplicateInstance = struct
     Index.close rw;
     Index.close rw2
 
-  let fail_restart_ro_fresh () =
+  let fail_restart_fresh () =
     let reuse_name = Context.fresh_name "empty_index" in
     let rw = Index.v ~fresh:true ~readonly:false ~log_size:4 reuse_name in
     let exn = I.RO_not_allowed in
@@ -212,7 +212,7 @@ module DuplicateInstance = struct
       ("find (absent)", `Quick, find_absent);
       ("replace", `Quick, replace);
       ("membership", `Quick, membership);
-      ("fail restart readonly fresh", `Quick, fail_restart_ro_fresh);
+      ("fail restart readonly fresh", `Quick, fail_restart_fresh);
       ("in sync", `Quick, sync);
     ]
 end
@@ -224,6 +224,7 @@ module Readonly = struct
     let ro = clone ~readonly:true () in
     Hashtbl.iter (fun k v -> Index.replace rw k v) main.tbl;
     Index.flush rw;
+    Index.sync ro;
     check_equivalence ro main.tbl;
     Index.close rw;
     Index.close ro
@@ -245,6 +246,7 @@ module Readonly = struct
     let ro = clone ~readonly:true () in
     check_equivalence ro tbl;
     Index.clear rw;
+    Index.sync ro;
     Hashtbl.iter
       (fun k _ ->
         Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k)
@@ -262,30 +264,51 @@ module Readonly = struct
     Index.close rw;
     Index.close ro
 
-  (* Tests that the entries that are not flushed cannot be read by a readonly index. The test relies on the fact that, for log_size > 0, adding one entry into an empty index does not lead to flush/merge. *)
+  (** Tests that the entries that are not flushed cannot be read by a readonly
+      index. The test relies on the fact that, for log_size > 0, adding one
+      entry into an empty index does not lead to flush/merge. *)
   let fail_readonly_read () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
     let ro = clone ~readonly:true () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
+    Index.sync ro;
     Alcotest.check_raises "Index readonly cannot read if data is not flushed."
       Not_found (fun () -> ignore_value (Index.find ro k1));
     Index.close rw;
     Index.close ro
 
+  let readonly_v_in_sync () =
+    let Context.{ rw; clone; _ } = Context.full_index () in
+    let k = Key.v () in
+    let v = Value.v () in
+    Index.replace rw k v;
+    Index.flush rw;
+    let ro = clone ~readonly:true () in
+    check_index_entry ro k v;
+    Index.close rw;
+    Index.close ro
+
+  (** Readonly finds value in log before and after clear. Before sync the
+      deleted value is still found. *)
   let readonly_add_log_before_clear () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
     let ro = clone ~readonly:true () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
     Index.flush rw;
+    Index.sync ro;
     check_index_entry ro k1 v1;
     Index.clear rw;
+    check_index_entry ro k1 v1;
+    Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1));
     Index.close rw;
     Index.close ro
 
+  (** Readonly finds value in index before and after clear. Before sync the
+      deleted value is still found. *)
   let readonly_add_index_before_clear () =
     let Context.{ rw; clone; _ } = Context.full_index () in
     let ro = clone ~readonly:true () in
@@ -294,25 +317,66 @@ module Readonly = struct
     Index.replace rw k1 v1;
     let thread = Index.force_merge rw in
     Index.await thread |> check_completed;
+    Index.sync ro;
     check_index_entry ro k1 v1;
     Index.clear rw;
+    check_index_entry ro k1 v1;
+    Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1));
     Index.close rw;
     Index.close ro
 
+  (** Readonly finds old value in log after clear and after new values are
+      added, before a sync. *)
   let readonly_add_after_clear () =
     let Context.{ rw; clone; _ } = Context.empty_index () in
     let ro = clone ~readonly:true () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
     Index.flush rw;
+    Index.sync ro;
     check_index_entry ro k1 v1;
     Index.clear rw;
     let k2, v2 = (Key.v (), Value.v ()) in
     Index.replace rw k2 v2;
     Index.flush rw;
-    check_index_entry ro k2 v2
+    check_index_entry ro k1 v1;
+    Index.sync ro;
+    check_index_entry ro k2 v2;
+    Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
+      Not_found (fun () -> ignore_value (Index.find rw k1));
+    Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
+      Not_found (fun () -> ignore_value (Index.find ro k1));
+    Index.close rw;
+    Index.close ro
+
+  (** Readonly finds old value in index after clear and after new values are
+      added, before a sync. This is because the readonly instance still uses the
+      old index file, before being replaced by the merge. *)
+  let readonly_add_index_after_clear () =
+    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let ro = clone ~readonly:true () in
+    Index.clear rw;
+    let k1, v1 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    let t = Index.force_merge rw in
+    Index.await t |> check_completed;
+    Index.sync ro;
+    Index.clear rw;
+    let k2, v2 = (Key.v (), Value.v ()) in
+    Index.replace rw k2 v2;
+    let t = Index.force_merge rw in
+    Index.await t |> check_completed;
+    check_index_entry ro k1 v1;
+    Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
+      Not_found (fun () -> ignore_value (Index.find rw k1));
+    Index.sync ro;
+    Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
+      Not_found (fun () -> ignore_value (Index.find ro k1));
+    check_index_entry ro k2 v2;
+    Index.close rw;
+    Index.close ro
 
   let readonly_open_after_clear () =
     let Context.{ clone; rw; _ } = Context.full_index () in
@@ -330,13 +394,17 @@ module Readonly = struct
       ("Readonly v after replace", `Quick, readonly_v_after_replace);
       ("add not allowed", `Quick, fail_readonly_add);
       ("fail read if no flush", `Quick, fail_readonly_read);
+      ("readonly v is in sync", `Quick, readonly_v_in_sync);
       ( "read values added in log before clear",
         `Quick,
         readonly_add_log_before_clear );
       ( "read values added in index before clear",
         `Quick,
         readonly_add_index_before_clear );
-      ("read values added after clear", `Quick, readonly_add_after_clear);
+      ("read old values in log after clear", `Quick, readonly_add_after_clear);
+      ( "read old values in index after clear",
+        `Quick,
+        readonly_add_index_after_clear );
       ("readonly open after clear", `Quick, readonly_open_after_clear);
     ]
 end
@@ -453,7 +521,8 @@ module Close = struct
       | `Before ->
           Fmt.pr "Child: issuing request to close the index\n%!";
           Mutex.unlock close_request
-      | `After -> Alcotest.fail "Merge completed despite concurrent close"
+      | `After_clear | `After ->
+          Alcotest.fail "Merge completed despite concurrent close"
     in
     let merge_promise : _ Index.async =
       Index.force_merge ~hook:(I.Private.Hook.v hook) rw

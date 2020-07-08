@@ -37,7 +37,7 @@ module type S = sig
 
   val read : t -> off:int64 -> len:int -> bytes -> int
 
-  val clear : ?keep_generation:bool -> t -> unit
+  val clear : generation:int64 -> t -> unit
 
   val sync : ?with_fsync:bool -> t -> unit
 
@@ -62,4 +62,12 @@ module type S = sig
   val lock : string -> lock
 
   val unlock : lock -> unit
+
+  module Header : sig
+    type header = { offset : int64; generation : int64 }
+
+    val set_header : t -> header -> unit
+
+    val get_header : t -> header
+  end
 end

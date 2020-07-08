@@ -9,7 +9,12 @@ end)
 
 let after f = Hook.v (function `After -> f () | _ -> ())
 
+let after_clear f = Hook.v (function `After_clear -> f () | _ -> ())
+
 let before f = Hook.v (function `Before -> f () | _ -> ())
+
+let before_offset_read f =
+  Hook.v (function `Before_offset_read -> f () | _ -> ())
 
 let test_find_present t tbl =
   Hashtbl.iter
@@ -123,6 +128,9 @@ let readonly_and_merge () =
     Index.replace w k1 v1;
     Index.flush w;
     let t1 = Index.force_merge w in
+    Index.sync r1;
+    Index.sync r2;
+    Index.sync r3;
     test_one_entry r1 k1 v1;
     test_one_entry r2 k1 v1;
     test_one_entry r3 k1 v1;
@@ -131,6 +139,9 @@ let readonly_and_merge () =
     let v2 = Value.v () in
     Index.replace w k2 v2;
     Index.flush w;
+    Index.sync r1;
+    Index.sync r2;
+    Index.sync r3;
     test_one_entry r1 k1 v1;
     let t2 = Index.force_merge w in
     test_one_entry r2 k2 v2;
@@ -143,10 +154,12 @@ let readonly_and_merge () =
     test_one_entry r1 k1 v1;
     Index.replace w k2 v2;
     Index.flush w;
+    Index.sync r1;
     let t3 = Index.force_merge w in
     test_one_entry r1 k1 v1;
     Index.replace w k3 v3;
     Index.flush w;
+    Index.sync r3;
     let t4 = Index.force_merge w in
     test_one_entry r3 k3 v3;
 
@@ -154,6 +167,8 @@ let readonly_and_merge () =
     let v2 = Value.v () in
     Index.replace w k2 v2;
     Index.flush w;
+    Index.sync r2;
+    Index.sync r3;
     test_one_entry w k2 v2;
     let t5 = Index.force_merge w in
     test_one_entry w k2 v2;
@@ -164,6 +179,8 @@ let readonly_and_merge () =
     let v2 = Value.v () in
     Index.replace w k2 v2;
     Index.flush w;
+    Index.sync r2;
+    Index.sync r3;
     test_one_entry r2 k1 v1;
     let t6 = Index.force_merge w in
     test_one_entry w k2 v2;
@@ -195,6 +212,7 @@ let write_after_merge () =
   let hook = after (fun () -> Index.replace w k2 v2) in
   let t = Index.force_merge ~hook w in
   Index.await t |> check_completed;
+  Index.sync r1;
   test_one_entry r1 k1 v1;
   Alcotest.check_raises (Printf.sprintf "Absent value was found: %s." k2)
     Not_found (fun () -> ignore_value (Index.find r1 k2))
@@ -214,6 +232,7 @@ let replace_while_merge () =
         test_one_entry w k2 v2)
   in
   let t = Index.force_merge ~hook w in
+  Index.sync r1;
   test_one_entry r1 k1 v1;
   Index.await t |> check_completed
 
@@ -250,6 +269,7 @@ let find_in_async_generation_change () =
   let f () =
     Index.replace w k1 v1;
     Index.flush w;
+    Index.sync r1;
     test_one_entry r1 k1 v1
   in
   let t1 = Index.force_merge ~hook:(before f) w in
@@ -266,13 +286,57 @@ let find_in_async_same_generation () =
   let f () =
     Index.replace w k1 v1;
     Index.flush w;
+    Index.sync r1;
     test_one_entry r1 k1 v1;
     Index.replace w k2 v2;
     Index.flush w;
+    Index.sync r1;
     test_one_entry r1 k2 v2
   in
   let t1 = Index.force_merge ~hook:(before f) w in
   Index.await t1 |> check_completed
+
+(** RW adds a value in log and flushes it, so every subsequent RO sync should
+    find that value. But if the RO sync occurs during a merge, after a clear but
+    before a generation change, then the value is missed. Also test ro find at
+    this point. *)
+let sync_after_clear_log () =
+  let Context.{ rw; clone; _ } = Context.empty_index () in
+  let ro = clone ~readonly:true () in
+  let k1, v1 = (Key.v (), Value.v ()) in
+  Index.replace rw k1 v1;
+  Index.flush rw;
+  let hook = after_clear (fun () -> Index.sync ro) in
+  let t = Index.force_merge ~hook rw in
+  Index.await t |> check_completed;
+  test_one_entry ro k1 v1;
+  let k2, v2 = (Key.v (), Value.v ()) in
+  Index.replace rw k2 v2;
+  Index.flush rw;
+  Index.sync ro;
+  let hook = after_clear (fun () -> test_one_entry ro k1 v1) in
+  let t = Index.force_merge ~hook rw in
+  Index.await t |> check_completed;
+  Index.close rw;
+  Index.close ro
+
+(** during a merge RO sync can miss a value if it reads the generation before
+    the generation is updated. *)
+let merge_during_sync () =
+  let Context.{ rw; clone; _ } = Context.empty_index () in
+  let ro = clone ~readonly:true () in
+  let k1, v1 = (Key.v (), Value.v ()) in
+  Index.replace rw k1 v1;
+  Index.flush rw;
+  let hook =
+    before_offset_read (fun () ->
+        let t = Index.force_merge rw in
+        Index.await t |> check_completed)
+  in
+  Index.sync' ~hook ro;
+  test_one_entry ro k1 v1;
+  Index.close rw;
+  Index.close ro
 
 let tests =
   [
@@ -284,4 +348,6 @@ let tests =
     ("find while merging", `Quick, find_while_merge);
     ("find in async without log", `Quick, find_in_async_generation_change);
     ("find in async with log", `Quick, find_in_async_same_generation);
+    ("sync and find after log cleared", `Quick, sync_after_clear_log);
+    ("merge during ro sync", `Quick, merge_during_sync);
   ]

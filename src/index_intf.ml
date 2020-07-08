@@ -166,6 +166,10 @@ module type S = sig
 
   val close : t -> unit
   (** Closes all resources used by [t]. *)
+
+  val sync : t -> unit
+  (** [sync t] syncs a read-only index with the files on disk. Raises
+      {!RW_not_allowed} if called by a read-write index. *)
 end
 
 module type Index = sig
@@ -215,6 +219,10 @@ module type Index = sig
   (** The exception raised when a write operation is attempted on a read_only
       index. *)
 
+  exception RW_not_allowed
+  (** The exception is raised when a sync operation is attempted on a read-write
+      index. *)
+
   exception Closed
   (** The exception raised when any operation is attempted on a closed index,
       except for [close], which is idempotent. *)
@@ -249,7 +257,7 @@ module type Index = sig
       (** The type of asynchronous computation. *)
 
       val force_merge :
-        ?hook:[ `After | `Before ] Hook.t ->
+        ?hook:[ `After | `After_clear | `Before ] Hook.t ->
         t ->
         [ `Completed | `Aborted ] async
       (** [force_merge t] forces a merge for [t]. Optionally, a hook can be
@@ -257,6 +265,8 @@ module type Index = sig
 
           - [`Before]: immediately before merging (while holding the merge
             lock);
+          - [`After_clear]: immediately after clearing the log, at the end of a
+            merge;
           - [`After]: immediately after merging (while holding the merge lock). *)
 
       val await : 'a async -> ('a, [ `Async_exn of exn ]) result
@@ -268,6 +278,10 @@ module type Index = sig
           of consecutive operations, which can be specified by
           [sampling_interval]. If [sampling_interval] is not set, no operation
           is timed. *)
+
+      val sync' : ?hook:[ `Before_offset_read ] Hook.t -> t -> unit
+      (** [`Before_offset_read]: before reading the generation number and the
+          offset. *)
     end
 
     module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :
