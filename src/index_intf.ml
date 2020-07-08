@@ -169,7 +169,7 @@ module type S = sig
 
   val sync : t -> unit
   (** [sync t] syncs a read-only index with the files on disk. Raises
-      [RW_not_allowed] if called by a read-write index. *)
+      {!RW_not_allowed} if called by a read-write index. *)
 end
 
 module type Index = sig

@@ -231,7 +231,7 @@ struct
       Some { io; mem } )
     else None
 
-  let sync_log ?hook t =
+  let sync_log ?(hook = fun _ -> ()) t =
     Log.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
     let no_changes () =
@@ -257,7 +257,7 @@ struct
     | None -> sync_log_async ()
     | Some log ->
         let log_offset = IO.offset log.io in
-        may (fun f -> f `Before_offset_read) hook;
+        hook `Before_offset_read;
         let IO.Header.{ generation; offset = new_log_offset } =
           IO.Header.get_header log.io
         in
@@ -524,7 +524,8 @@ struct
     in
     (go [@tailcall]) 0L 0 0
 
-  let merge ?(blocking = false) ?(filter = fun _ -> true) ?hook ~witness t =
+  let merge ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
+      ~witness t =
     let yield () = check_pending_cancel t in
     Mutex.lock t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
@@ -542,7 +543,7 @@ struct
     t.log_async <- Some log_async;
 
     let go () =
-      may (fun f -> f `Before) hook;
+      hook `Before;
       let log = assert_and_get t.log in
       let generation = Int64.succ t.generation in
       let log_array =
@@ -599,7 +600,7 @@ struct
               t.generation <- generation;
               IO.clear ~generation log.io;
               Tbl.clear log.mem;
-              may (fun f -> f `After_clear) hook;
+              hook `After_clear;
               let log_async = assert_and_get t.log_async in
               Tbl.iter
                 (fun key value ->
@@ -608,7 +609,7 @@ struct
                 log_async.mem;
               IO.sync log.io;
               t.log_async <- None);
-          may (fun f -> f `After) hook;
+          hook `After;
           IO.clear ~generation log_async.io;
           IO.close log_async.io;
           Mutex.unlock t.merge_lock;
@@ -742,7 +743,7 @@ struct
     in
     Stats.sync_with_timer (fun () -> f t)
 
-  let sync t = sync' t
+  let sync = sync' ?hook:None
 end
 
 module Make = Make_private
