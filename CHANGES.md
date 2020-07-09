@@ -4,6 +4,8 @@
 
 - Added `auto_flush_callback` parameter to the creation of a store, to register
   a callback before a flush. (#189)
+- Added `Stats.merge_durations` to list the duration of the last 10 merges.
+  (#193)
 
 ## Changed
 
