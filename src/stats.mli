@@ -4,9 +4,9 @@ type t = {
   mutable bytes_written : int;
   mutable nb_writes : int;
   mutable nb_merge : int;
-  mutable merge_times : float list;
+  mutable merge_durations : float list;
   mutable nb_replace : int;
-  mutable replace_times : float list;
+  mutable replace_durations : float list;
   mutable nb_sync : int;
   mutable time_sync : float;
 }
@@ -17,10 +17,11 @@ type t = {
     - [bytes_written] is the number of bytes written to disk;
     - [nb_writes] is the number of writes to disk;
     - [nb_merge] is the number of times a merge occurred;
-    - [merge_times] lists how much time the last 10 merge operations took.
+    - [merge_durations] lists how much time the last 10 merge operations took
+      (in microseconds);
     - [nb_replace] is the number of calls to [I.replace];
-    - [replace_times] lists how much time replace operations took. Each element
-      is an average of [n] consecutive replaces, where [n] is the
+    - [replace_durations] lists how much time replace operations took. Each
+      element is an average of [n] consecutive replaces, where [n] is the
       [sampling_interval] specified when calling [end_replace].
     - [time_sync] is the duration of the latest call to sync. *)
 

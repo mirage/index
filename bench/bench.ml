@@ -19,7 +19,7 @@ let src =
         int "bytes_written" t.bytes_written;
         int "merge" t.nb_merge;
         int "replace" t.nb_replace;
-        head "replace_time" t.replace_times;
+        head "replace_durations" t.replace_durations;
       ]
   in
   Src.v "bench" ~tags ~data
@@ -92,8 +92,8 @@ module Benchmark = struct
     read_amplification_size : float;
     write_amplification_calls : float;
     write_amplification_size : float;
-    replace_times : float list;
-    merge_times : float list;
+    replace_durations : float list;
+    merge_durations : float list; [@key "merge_durations_us"]
     nb_merges : int;
   }
   [@@deriving yojson]
@@ -114,8 +114,8 @@ module Benchmark = struct
     in
     let ops_per_sec = nb_entriesf /. time in
     let mbs_per_sec = entry_sizef *. nb_entriesf /. 1_048_576. /. time in
-    let replace_times = stats.replace_times in
-    let merge_times = stats.merge_times in
+    let replace_durations = stats.replace_durations in
+    let merge_durations = stats.merge_durations in
     let nb_merges = stats.nb_merge in
     {
       time;
@@ -125,13 +125,12 @@ module Benchmark = struct
       read_amplification_size;
       write_amplification_calls;
       write_amplification_size;
-      replace_times;
-      merge_times;
+      replace_durations;
+      merge_durations;
       nb_merges;
     }
 
-  let pp_list times =
-    String.concat "" (List.map (fun f -> string_of_float f ^ "; ") times)
+  let pp_list times = String.concat "; " (List.map string_of_float times)
 
   let pp_result fmt result =
     Format.fprintf fmt
@@ -142,11 +141,11 @@ module Benchmark = struct
        Read amplification in bytes: %f@\n\
        Write amplification in syscalls: %f@\n\
        Write amplification in bytes: %f@\n\
-       Last 10 merges: %s@\n\
+       Last 10 merge durations (μs): %s@\n\
        Number of merges : %d" result.time result.ops_per_sec result.mbs_per_sec
       result.read_amplification_calls result.read_amplification_size
       result.write_amplification_calls result.write_amplification_size
-      (pp_list result.merge_times)
+      (pp_list result.merge_durations)
       result.nb_merges
 end
 

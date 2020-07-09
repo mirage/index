@@ -4,9 +4,9 @@ type t = {
   mutable bytes_written : int;
   mutable nb_writes : int;
   mutable nb_merge : int;
-  mutable merge_times : float list;
+  mutable merge_durations : float list;
   mutable nb_replace : int;
-  mutable replace_times : float list;
+  mutable replace_durations : float list;
   mutable nb_sync : int;
   mutable time_sync : float;
 }
@@ -18,9 +18,9 @@ let fresh_stats () =
     bytes_written = 0;
     nb_writes = 0;
     nb_merge = 0;
-    merge_times = [];
+    merge_durations = [];
     nb_replace = 0;
-    replace_times = [];
+    replace_durations = [];
     nb_sync = 0;
     time_sync = 0.0;
   }
@@ -33,9 +33,9 @@ let reset_stats () =
   stats.bytes_written <- 0;
   stats.nb_writes <- 0;
   stats.nb_merge <- 0;
-  stats.merge_times <- [];
+  stats.merge_durations <- [];
   stats.nb_replace <- 0;
-  stats.replace_times <- [];
+  stats.replace_durations <- [];
   stats.nb_sync <- 0;
   stats.time_sync <- 0.0
 
@@ -75,7 +75,7 @@ let end_replace ~sampling_interval =
   if !nb_replace = sampling_interval then (
     let span = Mtime_clock.count !replace_timer in
     let average = Mtime.Span.to_us span /. float_of_int !nb_replace in
-    stats.replace_times <- average :: stats.replace_times;
+    stats.replace_durations <- average :: stats.replace_durations;
     replace_timer := Mtime_clock.counter ();
     nb_replace := 0 )
 
@@ -85,12 +85,11 @@ let sync_with_timer f =
   let span = Mtime_clock.count timer in
   stats.time_sync <- Mtime.Span.to_us span
 
-let drop_head l =
-  match l with l when List.length l < 10 -> l | _ :: tl -> tl | [] -> []
+let drop_head l = if List.length l >= 10 then List.tl l else l
 
 let merge_with_timer f =
   let timer = Mtime_clock.counter () in
   let result = f () in
   let span = Mtime.Span.to_us (Mtime_clock.count timer) in
-  stats.merge_times <- drop_head stats.merge_times @ [ span ];
+  stats.merge_durations <- drop_head stats.merge_durations @ [ span ];
   result
