@@ -278,6 +278,11 @@ module Mutex = struct
     with e ->
       Mutex.unlock t;
       raise e
+
+  let is_locked t =
+    let locked = Mutex.try_lock t in
+    if locked then Mutex.unlock t;
+    not locked
 end
 
 module Thread = struct

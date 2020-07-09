@@ -653,6 +653,14 @@ struct
         Thread.return `Completed
     | Some witness -> merge ?hook ~witness t
 
+  (** [t.merge_lock] is used to detect an ongoing merge. Other operations can
+      take this lock, but as they are not async, we consider this to be a good
+      enough approximations. *)
+  let is_merging t =
+    let t = check_open t in
+    if t.config.readonly then raise RO_not_allowed;
+    Mutex.is_locked t.merge_lock
+
   let replace t key value =
     let t = check_open t in
     Stats.incr_nb_replace ();
