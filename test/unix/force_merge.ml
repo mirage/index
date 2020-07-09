@@ -340,24 +340,18 @@ let merge_during_sync () =
 
 let test_is_merging () =
   let Context.{ rw; _ } = Context.empty_index () in
-  let f msg b () =
-    Log.debug (fun l -> l "test ");
-    Alcotest.(check bool) msg (Index.is_merging rw) b
+  let add_binding_and_merge ~hook =
+    let k1, v1 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    let t = Index.force_merge ~hook rw in
+    Index.await t |> check_completed
   in
+  let f msg b () = Alcotest.(check bool) msg (Index.is_merging rw) b in
   f "before merge" false ();
-  let k1, v1 = (Key.v (), Value.v ()) in
-  Index.replace rw k1 v1;
-  let t = Index.force_merge ~hook:(before (f "before" true)) rw in
-  Index.await t |> check_completed;
-  let k1, v1 = (Key.v (), Value.v ()) in
-  Index.replace rw k1 v1;
+  add_binding_and_merge ~hook:(before (f "before" true));
   f "between merge" false ();
-  let t = Index.force_merge ~hook:(after (f "after" true)) rw in
-  Index.await t |> check_completed;
-  let k1, v1 = (Key.v (), Value.v ()) in
-  Index.replace rw k1 v1;
-  let t = Index.force_merge ~hook:(after_clear (f "after clear" true)) rw in
-  Index.await t |> check_completed;
+  add_binding_and_merge ~hook:(after (f "after" true));
+  add_binding_and_merge ~hook:(after_clear (f "after clear" true));
   Index.close rw
 
 let tests =
@@ -372,5 +366,5 @@ let tests =
     ("find in async with log", `Quick, find_in_async_same_generation);
     ("sync and find after log cleared", `Quick, sync_after_clear_log);
     ("merge during ro sync", `Quick, merge_during_sync);
-    ("test is merging", `Quick, test_is_merging);
+    ("is_merging", `Quick, test_is_merging);
   ]

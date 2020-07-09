@@ -83,8 +83,7 @@ module type MUTEX = sig
       unlocks [t]. *)
 
   val is_locked : t -> bool
-  (** Return true is the mutex is locked, but does not block the mutex
-      otherwise.*)
+  (** [is_locked t] returns [true] if the mutex is locked, without locking [t]. *)
 end
 
 module type THREAD = sig
@@ -176,7 +175,7 @@ module type S = sig
       {!RW_not_allowed} if called by a read-write index. *)
 
   val is_merging : t -> bool
-  (** [is_merging t] returns true if [t] is running an async merge. Raises
+  (** [is_merging t] returns true if [t] is running a merge. Raises
       {!RO_not_allowed} if called by a read-only index. *)
 end
 
