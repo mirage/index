@@ -618,7 +618,9 @@ struct
           Mutex.unlock t.merge_lock;
           `Aborted
     in
-    if blocking then go () |> Thread.return else Thread.async go
+    let go_with_timer () = Stats.merge_with_timer go in
+    if blocking then go_with_timer () |> Thread.return
+    else Thread.async go_with_timer
 
   let get_witness t =
     match t.log with
