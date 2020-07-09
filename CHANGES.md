@@ -6,6 +6,7 @@
   a callback before a flush. (#189)
 - Added `Stats.merge_durations` to list the duration of the last 10 merges.
   (#193)
+- Added `is_merging` to detect if a merge is running. (#192)
 
 ## Changed
 
