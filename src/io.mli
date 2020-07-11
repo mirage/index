@@ -57,6 +57,8 @@ module type S = sig
 
   val close : t -> unit
 
+  val unlink : t -> unit
+
   type lock
 
   val lock : string -> lock

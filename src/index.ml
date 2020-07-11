@@ -100,7 +100,7 @@ struct
   let check_open t =
     match !t with Some instance -> instance | None -> raise Closed
 
-  let clear t =
+  let clear' t =
     let t = check_open t in
     Log.debug (fun l -> l "clear %S" t.root);
     if t.config.readonly then raise RO_not_allowed;
@@ -112,12 +112,14 @@ struct
         may
           (fun l ->
             IO.clear ~generation:t.generation log.io;
-            IO.close l.io)
+            IO.close l.io;
+            IO.unlink l.io)
           t.log_async;
         may
           (fun (i : index) ->
             IO.clear ~generation:t.generation i.io;
-            IO.close i.io)
+            IO.close i.io;
+            IO.unlink i.io)
           t.index;
         t.index <- None;
         t.log_async <- None)
@@ -139,6 +141,8 @@ struct
   let index_dir root = root // "index"
 
   let log_path root = index_dir root // "log"
+
+  let log_path_clear root = index_dir root // "log.clear"
 
   let log_async_path root = index_dir root // "log_async"
 
@@ -218,81 +222,72 @@ struct
           Int64.of_float rounded
       end)
 
-  let try_load_log t path =
+  let try_load_log t ~generation path =
     Log.debug (fun l ->
         l "[%s] checking on-disk %s file" (Filename.basename t.root)
           (Filename.basename path));
     if Sys.file_exists path then (
-      let io =
-        IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
-      in
+      let io = IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L path in
       let mem = Tbl.create 0 in
       iter_io (fun e -> Tbl.replace mem e.key e.value) io;
       Some { io; mem } )
     else None
 
+  let try_load_index ~generation path =
+    if not (Sys.file_exists path) then None
+    else
+      let io = IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L path in
+      let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
+      if IO.offset io = 0L then None else Some { fan_out; io }
+
+  let add_log_entry log e = Tbl.replace log.mem e.key e.value
+
+  let sync_log_async ?(generation_change = false) t =
+    match t.log_async with
+    | None ->
+        t.log_async <- try_load_log t ~generation:0L (log_async_path t.root)
+    | Some log ->
+        let offset = IO.offset log.io in
+        let new_offset = IO.force_offset log.io in
+        if generation_change || offset <> new_offset then (
+          Tbl.clear log.mem;
+          iter_io (add_log_entry log) log.io )
+        else ()
+
+  let no_changes t =
+    Log.debug (fun l -> l "[%s] no changes detected" (Filename.basename t.root))
+
   let sync_log ?(hook = fun _ -> ()) t =
     Log.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
-    let no_changes () =
-      Log.debug (fun l ->
-          l "[%s] no changes detected" (Filename.basename t.root))
-    in
-    let add_log_entry log e = Tbl.replace log.mem e.key e.value in
-    let sync_log_async ?(generation_change = false) () =
-      match t.log_async with
-      | None -> t.log_async <- try_load_log t (log_async_path t.root)
-      | Some log ->
-          let offset = IO.offset log.io in
-          let new_offset = IO.force_offset log.io in
-          if generation_change || offset <> new_offset then (
-            Tbl.clear log.mem;
-            iter_io (add_log_entry log) log.io )
-          else ()
-    in
     ( match t.log with
-    | None -> t.log <- try_load_log t (log_path t.root)
+    | None -> t.log <- try_load_log t ~generation:0L (log_path t.root)
     | Some _ -> () );
     match t.log with
-    | None -> sync_log_async ()
+    | None -> sync_log_async t
     | Some log ->
         let log_offset = IO.offset log.io in
         hook `Before_offset_read;
         let IO.Header.{ generation; offset = new_log_offset } =
           IO.Header.get_header log.io
         in
-        let add_log_entry e = add_log_entry log e in
-        sync_log_async ~generation_change:(t.generation <> generation) ();
+        sync_log_async ~generation_change:(t.generation <> generation) t;
         if t.generation <> generation then (
           Log.debug (fun l ->
-              l "[%s] generation has changed, reading log and index from disk"
-                (Filename.basename t.root));
+              l
+                "[%s] generation has changed (%Ld -> %Ld), reading log and \
+                 index from disk"
+                (Filename.basename t.root) t.generation generation);
           t.generation <- generation;
-          Tbl.clear log.mem;
-          iter_io add_log_entry log.io;
           may (fun (i : index) -> IO.close i.io) t.index;
-          let index_path = index_path t.root in
-          if not (Sys.file_exists index_path) then t.index <- None
-          else
-            let io =
-              IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L
-                index_path
-            in
-            let fan_out =
-              Fan.import ~hash_size:K.hash_size (IO.get_fanout io)
-            in
-            if IO.offset io = 0L then t.index <- None
-            else t.index <- Some { fan_out; io } )
+          t.log <- try_load_log t ~generation (log_path t.root);
+          t.index <- try_load_index ~generation (index_path t.root) )
         else if log_offset < new_log_offset then (
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
                 (Filename.basename t.root));
-          iter_io add_log_entry log.io ~min:log_offset )
-        else if log_offset > new_log_offset then
-          (* In that case the log has probably been emptied and is being
-             refilled with async_log contents. *)
-          no_changes ()
-        else no_changes ()
+          iter_io (add_log_entry log) log.io ~min:log_offset )
+        else no_changes t
 
   let with_cache ~v ~clear =
     let roots = Hashtbl.create 0 in
@@ -415,7 +410,7 @@ struct
       pending_cancel = false;
     }
 
-  let (`Staged v) = with_cache ~v:v_no_cache ~clear
+  let (`Staged v) = with_cache ~v:v_no_cache ~clear:clear'
 
   let interpolation_search index key =
     let hashed_key = K.hash key in
@@ -743,6 +738,23 @@ struct
               may (fun lock -> IO.unlock lock) t.writer_lock ))
 
   let close = close' ~hook:(fun _ -> ())
+
+  let clear (ti : t) =
+    clear' ti;
+    let t = check_open ti in
+    let generation = t.generation in
+    match t.log with
+    | None -> ()
+    | Some log ->
+        let io =
+          IO.v ~fresh:true ~readonly:false ~generation ~fan_size:0L
+            (log_path_clear t.root)
+        in
+        (* atomic swap between the old log file and the fresh one;
+           this avoids concurrent readers to see the log file
+           disapearing. *)
+        IO.rename ~src:io ~dst:log.io;
+        t.log <- Some { log with io }
 
   let sync' ?hook t =
     let f t =

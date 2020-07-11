@@ -70,6 +70,7 @@ module IO : Index.IO = struct
     dst.raw <- src.raw
 
   let close t =
+    Log.debug (fun l -> l "Closing %s" t.file);
     if not t.readonly then Buffer.clear t.buf;
     Raw.close t.raw
 
@@ -160,6 +161,10 @@ module IO : Index.IO = struct
     Header.set_header t { offset = t.offset; generation };
     Raw.Fan.set t.raw "";
     Buffer.clear t.buf
+
+  let unlink t =
+    Log.debug (fun l -> l "Unlinking %s" t.file);
+    try Unix.unlink t.file with Unix.Unix_error (Unix.ENOENT, _, _) -> ()
 
   let buffers = Hashtbl.create 256
 
