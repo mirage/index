@@ -228,7 +228,7 @@ struct
       in
       let mem = Tbl.create 0 in
       iter_io (fun e -> Tbl.replace mem e.key e.value) io;
-      Some { io; mem } )
+      Some { io; mem })
     else None
 
   let sync_log ?(hook = fun _ -> ()) t =
@@ -247,12 +247,12 @@ struct
           let new_offset = IO.force_offset log.io in
           if generation_change || offset <> new_offset then (
             Tbl.clear log.mem;
-            iter_io (add_log_entry log) log.io )
+            iter_io (add_log_entry log) log.io)
           else ()
     in
-    ( match t.log with
+    (match t.log with
     | None -> t.log <- try_load_log t (log_path t.root)
-    | Some _ -> () );
+    | Some _ -> ());
     match t.log with
     | None -> sync_log_async ()
     | Some log ->
@@ -282,12 +282,12 @@ struct
               Fan.import ~hash_size:K.hash_size (IO.get_fanout io)
             in
             if IO.offset io = 0L then t.index <- None
-            else t.index <- Some { fan_out; io } )
+            else t.index <- Some { fan_out; io })
         else if log_offset < new_log_offset then (
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
                 (Filename.basename t.root));
-          iter_io add_log_entry log.io ~min:log_offset )
+          iter_io add_log_entry log.io ~min:log_offset)
         else if log_offset > new_log_offset then
           (* In that case the log has probably been emptied and is being
              refilled with async_log contents. *)
@@ -308,7 +308,7 @@ struct
                 (Filename.basename root));
           Hashtbl.remove roots (root, true);
           Hashtbl.remove roots (root, false);
-          raise Not_found );
+          raise Not_found);
         let t = Hashtbl.find roots (root, readonly) in
         if t.open_instances <> 0 then (
           Log.debug (fun l -> l "[%s] found in cache" (Filename.basename root));
@@ -316,10 +316,10 @@ struct
           if readonly then sync_log t;
           let t = ref (Some t) in
           if fresh then clear t;
-          t )
+          t)
         else (
           Hashtbl.remove roots (root, readonly);
-          raise Not_found )
+          raise Not_found)
       with Not_found ->
         let instance = v ?auto_flush_callback ~fresh ~readonly ~log_size root in
         Hashtbl.add roots (root, readonly) instance;
@@ -380,7 +380,7 @@ struct
             IO.sync log.io;
             IO.clear ~generation io)
           log;
-      IO.close io );
+      IO.close io);
     let index =
       let index_path = index_path root in
       if Sys.file_exists index_path then
@@ -395,11 +395,11 @@ struct
               l "[%s] index file detected. Loading %Ld entries"
                 (Filename.basename root) entries);
           let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
-          Some { fan_out; io } )
+          Some { fan_out; io })
       else (
         Log.debug (fun l ->
             l "[%s] no index file detected." (Filename.basename root));
-        None )
+        None)
     in
     {
       config;
@@ -474,7 +474,7 @@ struct
       if v.key_hash >= hash_e then log_i
       else (
         append_entry_fanout fan_out v dst_io;
-        (merge_from_log [@tailcall]) fan_out log (log_i + 1) hash_e dst_io )
+        (merge_from_log [@tailcall]) fan_out log (log_i + 1) hash_e dst_io)
 
   let append_remaining_log fan_out log log_i dst_io =
     for log_i = log_i to Array.length log - 1 do
@@ -494,7 +494,7 @@ struct
     let rec go index_offset buf_offset log_i =
       if index_offset >= index_end then (
         append_remaining_log fan_out log log_i dst_io;
-        `Completed )
+        `Completed)
       else
         let buf_str = Bytes.sub buf buf_offset entry_size in
         let index_offset = Int64.add index_offset entry_sizeL in
@@ -505,10 +505,10 @@ struct
         | `Continue ->
             Thread.yield ();
             if
-              ( log_i >= Array.length log
+              (log_i >= Array.length log
               ||
               let key = log.(log_i).key in
-              not K.(equal key e.key) )
+              not K.(equal key e.key))
               && filter (e.key, e.value)
             then
               append_buf_fanout fan_out e.key_hash (Bytes.to_string buf_str)
@@ -517,7 +517,7 @@ struct
               let n = buf_offset + entry_size in
               if n >= Bytes.length buf then (
                 refill index_offset;
-                0 )
+                0)
               else n
             in
             (go [@tailcall]) index_offset buf_offset log_i
@@ -588,7 +588,7 @@ struct
             let index = { index with fan_out } in
             match merge_with ~yield ~filter log_array index merge with
             | `Completed -> `Index index
-            | `Aborted -> `Aborted )
+            | `Aborted -> `Aborted)
       in
       match merge_result with
       | `Index index ->
@@ -641,7 +641,7 @@ struct
                 let buf = Bytes.create entry_size in
                 let n = IO.read index.io ~off:0L ~len:entry_size buf in
                 assert (n = entry_size);
-                Some (decode_entry buf 0) ) )
+                Some (decode_entry buf 0)))
 
   let force_merge ?hook t =
     let t = check_open t in
@@ -701,7 +701,7 @@ struct
         | Ok (`Aborted | `Completed) -> ()
         | Error (`Async_exn exn) ->
             Fmt.failwith "filter: asynchronous exception during merge (%s)"
-              (Printexc.to_string exn) )
+              (Printexc.to_string exn))
 
   let iter f t =
     let t = check_open t in
@@ -712,9 +712,9 @@ struct
         Tbl.iter f log.mem;
         may (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io) t.index;
         Mutex.with_lock t.rename_lock (fun () ->
-            ( match t.log_async with
+            (match t.log_async with
             | None -> ()
-            | Some log -> Tbl.iter f log.mem );
+            | Some log -> Tbl.iter f log.mem);
             may
               (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io)
               t.index)
@@ -740,7 +740,7 @@ struct
                   IO.close l.io)
                 t.log;
               may (fun (i : index) -> IO.close i.io) t.index;
-              may (fun lock -> IO.unlock lock) t.writer_lock ))
+              may (fun lock -> IO.unlock lock) t.writer_lock))
 
   let close = close' ~hook:(fun _ -> ())
 

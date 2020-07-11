@@ -409,12 +409,12 @@ let init config =
   if config.with_metrics then (
     Metrics.enable_all ();
     Metrics_gnuplot.set_reporter ();
-    Metrics_unix.monitor_gc 0.1 );
+    Metrics_unix.monitor_gc 0.1);
   bindings_pool := make_bindings_pool config.nb_entries;
   if not config.minimal_flag then (
     absent_bindings_pool := make_bindings_pool config.nb_entries;
     sorted_bindings_pool := Array.copy !bindings_pool;
-    replace_sampling_interval := config.sampling_interval )
+    replace_sampling_interval := config.sampling_interval)
 
 let print fmt (config, results) =
   let pp_bench fmt (b, result) =

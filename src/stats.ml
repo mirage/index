@@ -77,7 +77,7 @@ let end_replace ~sampling_interval =
     let average = Mtime.Span.to_us span /. float_of_int !nb_replace in
     stats.replace_durations <- average :: stats.replace_durations;
     replace_timer := Mtime_clock.counter ();
-    nb_replace := 0 )
+    nb_replace := 0)
 
 let sync_with_timer f =
   let timer = Mtime_clock.counter () in

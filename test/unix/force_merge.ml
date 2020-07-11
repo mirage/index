@@ -43,16 +43,16 @@ let test_fd () =
   let fd_file = "tmp" in
   let lsof_command = "lsof -a -s -p " ^ pid ^ " > " ^ fd_file in
   let result =
-    ( match Sys.os_type with
+    (match Sys.os_type with
     | "Unix" -> `Ok ()
-    | _ -> `Skip "non-UNIX operating system" )
+    | _ -> `Skip "non-UNIX operating system")
     >>? fun () ->
-    ( match Unix.system lsof_command with
+    (match Unix.system lsof_command with
     | Unix.WEXITED 0 -> `Ok ()
     | Unix.WEXITED _ ->
         `Skip "failing `lsof` command. Is `lsof` installed on your system?"
     | Unix.WSIGNALED _ | Unix.WSTOPPED _ ->
-        Alcotest.fail "`lsof` command was interrupted" )
+        Alcotest.fail "`lsof` command was interrupted")
     >>? fun () ->
     let lines = ref [] in
     let extract_fd line =
@@ -64,11 +64,11 @@ let test_fd () =
     in
     let ic = open_in fd_file in
     let lines =
-      ( try
-          while true do
-            extract_fd (input_line ic)
-          done
-        with End_of_file -> close_in ic );
+      (try
+         while true do
+           extract_fd (input_line ic)
+         done
+       with End_of_file -> close_in ic);
       !lines
     in
     let contains sub s =

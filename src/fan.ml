@@ -57,7 +57,7 @@ let finalize t =
     if i = Array.length t.fans then ()
     else (
       if t.fans.(i) = 0L then t.fans.(i) <- curr;
-      loop t.fans.(i) (i + 1) )
+      loop t.fans.(i) (i + 1))
   in
   loop 0L 0
 
@@ -90,7 +90,7 @@ let export t =
     if i >= Array.length t.fans then ()
     else (
       Buffer.add_string buf (encode_int64 t.fans.(i));
-      loop (i + 1) )
+      loop (i + 1))
   in
   loop 0;
   Buffer.contents buf

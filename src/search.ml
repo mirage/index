@@ -99,7 +99,7 @@ module Make
               else
                 (search [@tailcall]) low (Int64.pred next_index)
                   (Lazy.from_val lowest_entry)
-                  (lazy array.(Int64.(pred next_index))) )
+                  (lazy array.(Int64.(pred next_index))))
     in
     if high < 0L then raise Not_found
     else (search [@tailcall]) low high (lazy array.(low)) (lazy array.(high))

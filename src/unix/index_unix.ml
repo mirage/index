@@ -53,7 +53,7 @@ module IO : Index.IO = struct
       Raw.unsafe_write t.raw ~off:t.flushed buf;
       Raw.Offset.set t.raw offset;
       assert (t.flushed ++ Int64.of_int (String.length buf) = t.header ++ offset);
-      t.flushed <- offset ++ t.header );
+      t.flushed <- offset ++ t.header);
     if with_fsync then Raw.fsync t.raw
 
   let name t = t.file
@@ -150,7 +150,7 @@ module IO : Index.IO = struct
         if Sys.file_exists dir then safe Unix.unlink dir;
         (aux [@tailcall]) (Filename.dirname dir) @@ fun () ->
         protect (Unix.mkdir dir) 0o755;
-        k () )
+        k ())
     in
     (aux [@tailcall]) dirname (fun () -> ())
 
@@ -209,7 +209,7 @@ module IO : Index.IO = struct
           Raw.Fan.set_size raw fan_size;
           Raw.Version.set raw current_version;
           Raw.Generation.set raw generation;
-          v ~fan_size ~offset:0L raw )
+          v ~fan_size ~offset:0L raw)
         else
           let version = Raw.Version.get raw in
           if version <> current_version then
@@ -233,7 +233,7 @@ module IO : Index.IO = struct
       Unix.lockf fd op 0;
       if Unix.single_write_substring fd pid 0 pid_len <> pid_len then (
         Unix.close fd;
-        failwith "Unable to write PID to lock file" )
+        failwith "Unable to write PID to lock file")
       else Some fd
     with
     | Unix.Unix_error (Unix.EAGAIN, _, _) ->
@@ -313,7 +313,7 @@ module Thread = struct
         match !result with
         | Some (Ok _ as o) -> o
         | Some (Error exn) -> Error (`Async_exn exn)
-        | None -> assert false )
+        | None -> assert false)
 end
 
 module Make (K : Index.Key) (V : Index.Value) =
