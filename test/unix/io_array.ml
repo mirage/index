@@ -44,7 +44,7 @@ let populate_random ~size io =
   in
   let mem_arr = Array.of_list (List.rev (loop [] size)) in
   let io_arr = IOArray.v io in
-  IO.sync io;
+  IO.flush io;
   (mem_arr, io_arr)
 
 (* Tests *)
