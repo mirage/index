@@ -72,7 +72,7 @@ module Make (IO : Io.S) (Elt : ELT) :
     let off = Int64.(mul i Elt.encoded_sizeL) in
     match t.buffer with
     | Some b when is_in_buffer t off -> (
-        try get_entry_from_buffer b off with _ -> assert false )
+        try get_entry_from_buffer b off with _ -> assert false)
     | _ -> get_entry_from_io t.io off
 
   let length t = Int64.(div (IO.offset t.io) Elt.encoded_sizeL)
@@ -117,7 +117,7 @@ module Make (IO : Io.S) (Elt : ELT) :
                   "Current buffer [%Ld, %Ld] insufficient. Prefetching in \
                    range [%Ld, %Ld]"
                   low_buf high_buf low high);
-            set_buffer t ~low ~high )
+            set_buffer t ~low ~high)
       | None ->
           Log.debug (fun m ->
               m "No existing buffer. Prefetching in range [%Ld, %Ld]" low high);
