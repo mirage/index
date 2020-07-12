@@ -242,16 +242,34 @@ module Readonly = struct
     Index.close rw
 
   let readonly_clear () =
+    let check_no_index_entry index k =
+      Alcotest.check_raises (Fmt.strf "Find %s key after clearing." k) Not_found
+        (fun () -> ignore_value (Index.find index k))
+    in
     let Context.{ rw; tbl; clone } = Context.full_index () in
     let ro = clone ~readonly:true () in
     check_equivalence ro tbl;
     Index.clear rw;
     Index.sync ro;
-    Hashtbl.iter
-      (fun k _ ->
-        Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k)
-          Not_found (fun () -> ignore_value (Index.find ro k)))
-      tbl;
+    Hashtbl.iter (fun k _ -> check_no_index_entry ro k) tbl;
+    Index.close rw;
+    Index.close ro;
+    let rw = clone ~readonly:false () in
+    let ro = clone ~readonly:true () in
+    let k, v = (Key.v (), Value.v ()) in
+    Index.replace rw k v;
+    check_index_entry rw k v;
+    check_no_index_entry ro k;
+    Index.flush rw;
+    Index.sync ro;
+    check_index_entry rw k v;
+    check_index_entry ro k v;
+    Index.clear rw;
+    check_no_index_entry rw k;
+    check_index_entry ro k v;
+    Index.sync ro;
+    check_no_index_entry rw k;
+    check_no_index_entry ro k;
     Index.close rw;
     Index.close ro
 
