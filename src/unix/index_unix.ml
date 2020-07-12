@@ -42,7 +42,7 @@ module IO : Index.IO = struct
     auto_flush_callback : unit -> unit;
   }
 
-  let sync ?(with_fsync = false) t =
+  let flush ?(with_fsync = false) t =
     if t.readonly then raise RO_not_allowed;
     t.auto_flush_callback ();
     let buf = Buffer.contents t.buf in
@@ -50,6 +50,7 @@ module IO : Index.IO = struct
     Buffer.clear t.buf;
     if buf = "" then ()
     else (
+      Log.debug (fun l -> l "[%s] flushing %d bytes" t.file (String.length buf));
       Raw.unsafe_write t.raw ~off:t.flushed buf;
       Raw.Offset.set t.raw offset;
       assert (t.flushed ++ Int64.of_int (String.length buf) = t.header ++ offset);
@@ -59,7 +60,7 @@ module IO : Index.IO = struct
   let name t = t.file
 
   let rename ~src ~dst =
-    sync ~with_fsync:true src;
+    flush ~with_fsync:true src;
     Raw.close dst.raw;
     Unix.rename src.file dst.file;
     Buffer.clear dst.buf;
@@ -80,7 +81,7 @@ module IO : Index.IO = struct
     Buffer.add_string t.buf buf;
     let len = Int64.of_int (String.length buf) in
     t.offset <- t.offset ++ len;
-    if t.offset -- t.flushed > auto_flush_limit then sync t
+    if t.offset -- t.flushed > auto_flush_limit then flush t
 
   let read t ~off ~len buf =
     if not t.readonly then assert (t.header ++ off <= t.flushed);
