@@ -161,7 +161,8 @@ module IO : Index.IO = struct
     t.flushed <- t.header;
     Header.set_header t { offset = t.offset; generation };
     Raw.Fan.set t.raw "";
-    Buffer.clear t.buf
+    Buffer.clear t.buf;
+    flush ~with_fsync:true t
 
   let unlink t =
     Log.debug (fun l -> l "Unlinking %s" t.file);
