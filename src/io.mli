@@ -39,7 +39,7 @@ module type S = sig
 
   val clear : generation:int64 -> t -> unit
 
-  val sync : ?with_fsync:bool -> t -> unit
+  val flush : ?with_fsync:bool -> t -> unit
 
   val version : t -> string
 

@@ -126,8 +126,8 @@ struct
     Log.debug (fun l ->
         l "[%s] flushing instance" (Filename.basename instance.root));
     if instance.config.readonly then raise RO_not_allowed;
-    may (fun log -> IO.sync ~with_fsync log.io) instance.log;
-    may (fun log -> IO.sync ~with_fsync log.io) instance.log_async
+    may (fun log -> IO.flush ~with_fsync log.io) instance.log;
+    may (fun log -> IO.flush ~with_fsync log.io) instance.log_async
 
   let flush ?(with_fsync = false) t =
     let t = check_open t in
@@ -377,7 +377,7 @@ struct
                 Tbl.replace log.mem e.key e.value;
                 append_key_value log.io e.key e.value)
               io;
-            IO.sync log.io;
+            IO.flush log.io;
             IO.clear ~generation io)
           log;
       IO.close io );
@@ -607,7 +607,7 @@ struct
                   Tbl.replace log.mem key value;
                   append_key_value log.io key value)
                 log_async.mem;
-              IO.sync log.io;
+              IO.flush log.io;
               t.log_async <- None);
           hook `After;
           IO.clear ~generation log_async.io;
@@ -748,7 +748,7 @@ struct
     let f t =
       Stats.incr_nb_sync ();
       let t = check_open t in
-      Log.info (fun l -> l "[%s] ro_sync" (Filename.basename t.root));
+      Log.info (fun l -> l "[%s] sync" (Filename.basename t.root));
       if t.config.readonly then sync_log ?hook t else raise RW_not_allowed
     in
     Stats.sync_with_timer (fun () -> f t)
