@@ -160,7 +160,8 @@ module IO : Index.IO = struct
     t.flushed <- t.header;
     Header.set_header t { offset = t.offset; generation };
     Raw.Fan.set t.raw "";
-    Buffer.clear t.buf
+    Buffer.clear t.buf;
+    Raw.fsync t.raw
 
   let buffers = Hashtbl.create 256
 
