@@ -17,6 +17,10 @@ let reporter ?(prefix = "") () =
   in
   { Logs.report }
 
+let src = Logs.Src.create "test/unix" ~doc:"Index_unix tests"
+
+module Log = (val Logs.src_log src : Logs.LOG)
+
 let report () =
   Logs_threaded.enable ();
   Logs.set_level (Some Logs.Debug);
@@ -118,6 +122,9 @@ let ignore_value (_ : Value.t) = ()
 let ignore_bool (_ : bool) = ()
 
 let ignore_index (_ : Index.t) = ()
+
+let pp_binding ppf (key, value) =
+  Fmt.pf ppf "{ %a → %a }" Key.pp key Value.pp value
 
 let check_completed = function
   | Ok `Completed -> ()

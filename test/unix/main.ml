@@ -252,9 +252,9 @@ module Readonly = struct
     in
     let Context.{ rw; tbl; clone } = Context.full_index () in
     let ro = clone ~readonly:true () in
-    check_equivalence ro tbl;
     Index.clear rw;
     Index.sync ro;
+    Log.info (fun m -> m "Checking that RO observes the empty index");
     Hashtbl.iter (fun k _ -> check_no_index_entry ro k) tbl;
     Index.close rw;
     Index.close ro;
@@ -302,11 +302,12 @@ module Readonly = struct
 
   let readonly_v_in_sync () =
     let Context.{ rw; clone; _ } = Context.full_index () in
-    let k = Key.v () in
-    let v = Value.v () in
+    let k, v = (Key.v (), Value.v ()) in
     Index.replace rw k v;
     Index.flush rw;
     let ro = clone ~readonly:true () in
+    Log.info (fun m ->
+        m "Checking that RO observes the flushed binding %a" pp_binding (k, v));
     check_index_entry ro k v;
     Index.close rw;
     Index.close ro
