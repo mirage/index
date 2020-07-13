@@ -28,18 +28,25 @@ end) : sig
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
     clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
+    close_all : unit -> unit;
   }
 
   val fresh_name : string -> string
   (** [fresh_name typ] is a clean directory for a resource of type [typ]. *)
 
-  val empty_index : unit -> t
-  (** Fresh, empty index. *)
+  val with_empty_index : unit -> (t -> 'a) -> 'a
+  (** [with_empty_index f] applies [f] to a fresh empty index. Afterwards, the
+      index and any clones are closed. *)
 
-  val full_index : ?size:int -> unit -> t
-  (** Fresh index with a random table of key/value pairs, and a given
-      constructor for opening clones of the index at the same location. *)
+  val with_full_index : ?size:int -> unit -> (t -> 'a) -> 'a
+  (** [with_full_index f] applies [f] to a fresh index with a random table of
+      key/value pairs. [f] also gets a constructor for opening clones of the
+      index at the same location. Afterwards, the index and any clones are
+      closed. *)
 end
+
+val ( let* ) : ('a -> 'b) -> 'a -> 'b
+(** CPS monad *)
 
 val ignore_value : Value.t -> unit
 

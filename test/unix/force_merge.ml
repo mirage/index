@@ -94,7 +94,7 @@ let test_fd () =
   | `Skip err -> Log.warn (fun m -> m "`test_fd` was skipped: %s" err)
 
 let readonly_s () =
-  let { Context.tbl; clone; _ } = Context.full_index () in
+  let* { Context.tbl; clone; _ } = Context.with_full_index () in
   let r1 = clone ~readonly:true () in
   let r2 = clone ~readonly:true () in
   let r3 = clone ~readonly:true () in
@@ -104,7 +104,7 @@ let readonly_s () =
   test_fd ()
 
 let readonly () =
-  let { Context.tbl; clone; _ } = Context.full_index () in
+  let* { Context.tbl; clone; _ } = Context.with_full_index () in
   let r1 = clone ~readonly:true () in
   let r2 = clone ~readonly:true () in
   let r3 = clone ~readonly:true () in
@@ -117,7 +117,7 @@ let readonly () =
   test_fd ()
 
 let readonly_and_merge () =
-  let { Context.rw; clone; _ } = Context.full_index () in
+  let* { Context.rw; clone; _ } = Context.with_full_index () in
   let w = rw in
   let r1 = clone ~readonly:true () in
   let r2 = clone ~readonly:true () in
@@ -201,7 +201,7 @@ let readonly_and_merge () =
 
 (* A force merge has an implicit flush, however, if the replace occurs at the end of the merge, the value is not flushed *)
 let write_after_merge () =
-  let { Context.rw; clone; _ } = Context.full_index () in
+  let* { Context.rw; clone; _ } = Context.with_full_index () in
   let w = rw in
   let r1 = clone ~readonly:true () in
   let k1 = Key.v () in
@@ -218,7 +218,7 @@ let write_after_merge () =
     Not_found (fun () -> ignore_value (Index.find r1 k2))
 
 let replace_while_merge () =
-  let { Context.rw; clone; _ } = Context.full_index () in
+  let* { Context.rw; clone; _ } = Context.with_full_index () in
   let w = rw in
   let r1 = clone ~readonly:true () in
   let k1 = Key.v () in
@@ -243,7 +243,7 @@ let replace_while_merge () =
 *)
 
 let find_while_merge () =
-  let { Context.rw; clone; _ } = Context.full_index () in
+  let* { Context.rw; clone; _ } = Context.with_full_index () in
   let w = rw in
   let k1 = Key.v () in
   let v1 = Value.v () in
@@ -261,7 +261,7 @@ let find_while_merge () =
   Index.await t4 |> check_completed
 
 let find_in_async_generation_change () =
-  let { Context.rw; clone; _ } = Context.full_index () in
+  let* { Context.rw; clone; _ } = Context.with_full_index () in
   let w = rw in
   let r1 = clone ~readonly:true () in
   let k1 = Key.v () in
@@ -276,7 +276,7 @@ let find_in_async_generation_change () =
   Index.await t1 |> check_completed
 
 let find_in_async_same_generation () =
-  let { Context.rw; clone; _ } = Context.full_index () in
+  let* { Context.rw; clone; _ } = Context.with_full_index () in
   let w = rw in
   let r1 = clone ~readonly:true () in
   let k1 = Key.v () in
@@ -301,7 +301,7 @@ let find_in_async_same_generation () =
     before a generation change, then the value is missed. Also test ro find at
     this point. *)
 let sync_after_clear_log () =
-  let Context.{ rw; clone; _ } = Context.empty_index () in
+  let* Context.{ rw; clone; _ } = Context.with_empty_index () in
   let ro = clone ~readonly:true () in
   let k1, v1 = (Key.v (), Value.v ()) in
   Index.replace rw k1 v1;
@@ -316,14 +316,12 @@ let sync_after_clear_log () =
   Index.sync ro;
   let hook = after_clear (fun () -> test_one_entry ro k1 v1) in
   let t = Index.force_merge ~hook rw in
-  Index.await t |> check_completed;
-  Index.close rw;
-  Index.close ro
+  Index.await t |> check_completed
 
 (** during a merge RO sync can miss a value if it reads the generation before
     the generation is updated. *)
 let merge_during_sync () =
-  let Context.{ rw; clone; _ } = Context.empty_index () in
+  let* Context.{ rw; clone; _ } = Context.with_empty_index () in
   let ro = clone ~readonly:true () in
   let k1, v1 = (Key.v (), Value.v ()) in
   Index.replace rw k1 v1;
@@ -334,12 +332,10 @@ let merge_during_sync () =
         Index.await t |> check_completed)
   in
   Index.sync' ~hook ro;
-  test_one_entry ro k1 v1;
-  Index.close rw;
-  Index.close ro
+  test_one_entry ro k1 v1
 
 let test_is_merging () =
-  let Context.{ rw; _ } = Context.empty_index () in
+  let* Context.{ rw; _ } = Context.with_empty_index () in
   let add_binding_and_merge ~hook =
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
@@ -351,8 +347,7 @@ let test_is_merging () =
   add_binding_and_merge ~hook:(before (f "before" true));
   f "between merge" false ();
   add_binding_and_merge ~hook:(after (f "after" true));
-  add_binding_and_merge ~hook:(after_clear (f "after clear" true));
-  Index.close rw
+  add_binding_and_merge ~hook:(after_clear (f "after clear" true))
 
 let tests =
   [
