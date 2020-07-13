@@ -15,19 +15,38 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
-module Make (K : Index.Key) (V : Index.Value) (C : Index.Cache.S) :
-  Index.S with type key = K.t and type value = V.t
+module type S = sig
+  type ('k, 'v) t
+  (** A cache of values of type ['v], indexed by keys of type ['k]. *)
 
-module Syscalls = Syscalls
-(** Bindings to Unix system calls. *)
+  val create : unit -> (_, _) t
 
-(** These modules should not be used. They are exposed purely for testing
-    purposes. *)
-module Private : sig
-  module IO : Index.IO
+  val add : ('k, 'v) t -> 'k -> 'v -> unit
 
-  module Raw = Raw
+  val find : ('k, 'v) t -> 'k -> 'v option
 
-  module Make (K : Index.Key) (V : Index.Value) (C : Index.Cache.S) :
-    Index.Private.S with type key = K.t and type value = V.t
+  val remove : ('k, _) t -> 'k -> unit
+end
+
+(** Cache implementation that always misses. *)
+module Noop : S = struct
+  type (_, _) t = unit
+
+  let create () = ()
+
+  let add () _ _ = ()
+
+  let find () _ = None
+
+  let remove () _ = ()
+end
+
+(** Cache implementation that always finds previously-added values, and grows
+    indefinitely. *)
+module Unbounded : S = struct
+  include Hashtbl
+
+  let create () = create 0
+
+  let find = find_opt
 end

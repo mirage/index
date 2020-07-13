@@ -117,8 +117,15 @@ module type S = sig
   type value
   (** The type for values. *)
 
+  type cache
+  (** The type for caches of index instances. *)
+
+  val empty_cache : unit -> cache
+  (** Construct a new empty cache of index instances. *)
+
   val v :
     ?auto_flush_callback:(unit -> unit) ->
+    ?cache:cache ->
     ?fresh:bool ->
     ?readonly:bool ->
     log_size:int ->
@@ -127,6 +134,7 @@ module type S = sig
   (** The constructor for indexes.
 
       @param auto_flush_callback adds a callback before an auto flush.
+      @param cache used for instance sharing.
       @param fresh whether an existing index should be overwritten.
       @param read_only whether read-only mode is enabled for this index.
       @param log_size the maximum number of bindings in the `log` IO. *)
@@ -180,7 +188,7 @@ module type S = sig
 end
 
 module type Index = sig
-  (** The input of [Make] for keys. *)
+  (** The input of {!Make} for keys. *)
   module type Key = sig
     (* N.B. We use [sig ... end] redirections to avoid linking to the [_intf]
        file in the generated docs. Once Odoc 2 is released, this can be
@@ -190,12 +198,8 @@ module type Index = sig
     (** @inline *)
   end
 
-  module Stats : sig
-    include module type of Stats
-    (** @inline *)
-  end
-
-  (** The input of [Make] for values. The same requirements as for [Key] apply. *)
+  (** The input of {!Make} for values. The same requirements as for {!Key}
+      apply. *)
   module type Value = sig
     include Value
     (** @inline *)
@@ -213,6 +217,13 @@ module type Index = sig
 
   module type THREAD = sig
     include THREAD
+    (** @inline *)
+  end
+
+  (** Signatures and implementations of caches. {!Make} requires a cache in
+      order to provide instance sharing. *)
+  module Cache : sig
+    include module type of Cache
     (** @inline *)
   end
 
@@ -234,8 +245,19 @@ module type Index = sig
   (** The exception raised when any operation is attempted on a closed index,
       except for [close], which is idempotent. *)
 
-  module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :
-    S with type key = K.t and type value = V.t
+  module Make
+      (K : Key)
+      (V : Value)
+      (IO : IO)
+      (M : MUTEX)
+      (T : THREAD)
+      (C : Cache.S) : S with type key = K.t and type value = V.t
+
+  (** Run-time metric tracking for index instances. *)
+  module Stats : sig
+    include module type of Stats
+    (** @inline *)
+  end
 
   (** These modules should not be used. They are exposed purely for testing
       purposes. *)
@@ -291,7 +313,12 @@ module type Index = sig
           offset. *)
     end
 
-    module Make (K : Key) (V : Value) (IO : IO) (M : MUTEX) (T : THREAD) :
-      S with type key = K.t and type value = V.t
+    module Make
+        (K : Key)
+        (V : Value)
+        (IO : IO)
+        (M : MUTEX)
+        (T : THREAD)
+        (C : Cache.S) : S with type key = K.t and type value = V.t
   end
 end

@@ -1,4 +1,4 @@
 (test
- (name search)
+ (name main)
  (package index)
  (libraries index alcotest))

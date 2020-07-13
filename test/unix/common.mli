@@ -3,6 +3,8 @@ val random_char : unit -> char
 val report : unit -> unit
 (** Set logs reporter at [Logs.Debug] level *)
 
+module Log : Logs.LOG
+
 (** Simple key/value modules with String type and a random constructor *)
 module Key : sig
   include Index.Key with type t = string
@@ -22,7 +24,7 @@ module Index : Index.Private.S with type key = Key.t and type value = Value.t
 module Make_context (Config : sig
   val root : string
 end) : sig
-  type t = {
+  type t = private {
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
     clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
@@ -44,6 +46,8 @@ val ignore_value : Value.t -> unit
 val ignore_bool : bool -> unit
 
 val ignore_index : Index.t -> unit
+
+val pp_binding : (Key.t * Value.t) Fmt.t
 
 val check_completed :
   ([ `Aborted | `Completed ], [ `Async_exn of exn ]) result -> unit

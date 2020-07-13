@@ -17,6 +17,7 @@ all copies or substantial portions of the Software. *)
 
 include Index_intf
 module Stats = Stats
+module Cache = Cache
 
 let may f = function None -> () | Some bf -> f bf
 
@@ -33,7 +34,8 @@ module Make_private
     (V : Value)
     (IO : Io.S)
     (Mutex : MUTEX)
-    (Thread : THREAD) =
+    (Thread : THREAD)
+    (Cache : Cache.S) =
 struct
   type 'a async = 'a Thread.t
 
@@ -294,40 +296,6 @@ struct
           no_changes ()
         else no_changes ()
 
-  let with_cache ~v ~clear =
-    let roots = Hashtbl.create 0 in
-    let f ?auto_flush_callback ?(fresh = false) ?(readonly = false) ~log_size
-        root =
-      Log.info (fun l ->
-          l "[%s] v fresh=%b readonly=%b log_size=%d" (Filename.basename root)
-            fresh readonly log_size);
-      try
-        if not (Sys.file_exists (index_dir root)) then (
-          Log.debug (fun l ->
-              l "[%s] does not exist anymore, cleaning up the fd cache"
-                (Filename.basename root));
-          Hashtbl.remove roots (root, true);
-          Hashtbl.remove roots (root, false);
-          raise Not_found);
-        let t = Hashtbl.find roots (root, readonly) in
-        if t.open_instances <> 0 then (
-          Log.debug (fun l -> l "[%s] found in cache" (Filename.basename root));
-          t.open_instances <- t.open_instances + 1;
-          if readonly then sync_log t;
-          let t = ref (Some t) in
-          if fresh then clear t;
-          t)
-        else (
-          Hashtbl.remove roots (root, readonly);
-          raise Not_found)
-      with Not_found ->
-        let instance = v ?auto_flush_callback ~fresh ~readonly ~log_size root in
-        Hashtbl.add roots (root, readonly) instance;
-        if readonly then sync_log instance;
-        ref (Some instance)
-    in
-    `Staged f
-
   let v_no_cache ?auto_flush_callback ~fresh ~readonly ~log_size root =
     Log.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
@@ -415,7 +383,47 @@ struct
       pending_cancel = false;
     }
 
-  let (`Staged v) = with_cache ~v:v_no_cache ~clear
+  type cache = (string * bool, instance) Cache.t
+
+  let empty_cache = Cache.create
+
+  let v ?(auto_flush_callback = fun () -> ()) ?(cache = empty_cache ())
+      ?(fresh = false) ?(readonly = false) ~log_size root =
+    let new_instance () =
+      let instance =
+        v_no_cache ~auto_flush_callback ~fresh ~readonly ~log_size root
+      in
+      if readonly then sync_log instance;
+      Cache.add cache (root, readonly) instance;
+      ref (Some instance)
+    in
+    Log.info (fun l ->
+        l "[%s] v fresh=%b readonly=%b log_size=%d" (Filename.basename root)
+          fresh readonly log_size);
+    match
+      (Cache.find cache (root, readonly), Sys.file_exists (index_dir root))
+    with
+    | None, _ -> new_instance ()
+    | Some _, false ->
+        Log.debug (fun l ->
+            l "[%s] does not exist anymore, cleaning up the fd cache"
+              (Filename.basename root));
+        Cache.remove cache (root, true);
+        Cache.remove cache (root, false);
+        new_instance ()
+    | Some t, true -> (
+        match t.open_instances with
+        | 0 ->
+            Cache.remove cache (root, readonly);
+            new_instance ()
+        | _ ->
+            Log.debug (fun l ->
+                l "[%s] found in cache" (Filename.basename root));
+            t.open_instances <- t.open_instances + 1;
+            if readonly then sync_log t;
+            let t = ref (Some t) in
+            if fresh then clear t;
+            t)
 
   let interpolation_search index key =
     let hashed_key = K.hash key in

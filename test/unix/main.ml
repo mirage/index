@@ -188,10 +188,14 @@ module DuplicateInstance = struct
 
   let fail_restart_fresh () =
     let reuse_name = Context.fresh_name "empty_index" in
-    let rw = Index.v ~fresh:true ~readonly:false ~log_size:4 reuse_name in
+    let cache = Index.empty_cache () in
+    let rw =
+      Index.v ~cache ~fresh:true ~readonly:false ~log_size:4 reuse_name
+    in
     let exn = I.RO_not_allowed in
     Alcotest.check_raises "Index readonly cannot be fresh." exn (fun () ->
-        ignore_index (Index.v ~fresh:true ~readonly:true ~log_size:4 reuse_name));
+        ignore_index
+          (Index.v ~cache ~fresh:true ~readonly:true ~log_size:4 reuse_name));
     Index.close rw
 
   let sync () =
@@ -248,9 +252,9 @@ module Readonly = struct
     in
     let Context.{ rw; tbl; clone } = Context.full_index () in
     let ro = clone ~readonly:true () in
-    check_equivalence ro tbl;
     Index.clear rw;
     Index.sync ro;
+    Log.info (fun m -> m "Checking that RO observes the empty index");
     Hashtbl.iter (fun k _ -> check_no_index_entry ro k) tbl;
     Index.close rw;
     Index.close ro;
@@ -298,11 +302,12 @@ module Readonly = struct
 
   let readonly_v_in_sync () =
     let Context.{ rw; clone; _ } = Context.full_index () in
-    let k = Key.v () in
-    let v = Value.v () in
+    let k, v = (Key.v (), Value.v ()) in
     Index.replace rw k v;
     Index.flush rw;
     let ro = clone ~readonly:true () in
+    Log.info (fun m ->
+        m "Checking that RO observes the flushed binding %a" pp_binding (k, v));
     check_index_entry ro k v;
     Index.close rw;
     Index.close ro
@@ -437,7 +442,7 @@ module Close = struct
     Index.close w
 
   let find_absent () =
-    let Context.{ rw; tbl; clone; _ } = Context.full_index () in
+    let Context.{ rw; tbl; clone } = Context.full_index () in
     Index.close rw;
     let rw = clone ~readonly:false () in
     test_find_absent rw tbl;
