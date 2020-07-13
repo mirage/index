@@ -87,35 +87,55 @@ struct
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
     clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
+    close_all : unit -> unit;
   }
+
+  let ( >> ) f g x = g (f x)
 
   let empty_index () =
     let name = fresh_name "empty_index" in
     let cache = Index.empty_cache () in
     let rw = Index.v ~cache ~fresh:true ~log_size:4 name in
+    let close_all = ref (fun () -> Index.close rw) in
     let tbl = Hashtbl.create 0 in
     let clone ?(fresh = false) ~readonly () =
-      Index.v ~cache ~fresh ~log_size:4 ~readonly name
+      let t = Index.v ~cache ~fresh ~log_size:4 ~readonly name in
+      (close_all := !close_all >> fun () -> Index.close t);
+      t
     in
-    { rw; tbl; clone }
+    { rw; tbl; clone; close_all = (fun () -> !close_all ()) }
 
   let full_index ?(size = 103) () =
     let name = fresh_name "full_index" in
     let cache = Index.empty_cache () in
-    let t = Index.v ~cache ~fresh:true ~log_size:4 name in
+    let rw = Index.v ~cache ~fresh:true ~log_size:4 name in
+    let close_all = ref (fun () -> Index.close rw) in
     let tbl = Hashtbl.create 0 in
     for _ = 1 to size do
       let k = Key.v () in
       let v = Value.v () in
-      Index.replace t k v;
+      Index.replace rw k v;
       Hashtbl.replace tbl k v
     done;
-    Index.flush t;
+    Index.flush rw;
     let clone ?(fresh = false) ~readonly () =
-      Index.v ~cache ~fresh ~log_size:4 ~readonly name
+      let t = Index.v ~cache ~fresh ~log_size:4 ~readonly name in
+      (close_all := !close_all >> fun () -> Index.close t);
+      t
     in
-    { rw = t; tbl; clone }
+    { rw; tbl; clone; close_all = (fun () -> !close_all ()) }
+
+  let call_then_close (type a) (t : t) (f : t -> a) : a =
+    let a = f t in
+    t.close_all ();
+    a
+
+  let with_empty_index () f = call_then_close (empty_index ()) f
+
+  let with_full_index ?size () f = call_then_close (full_index ?size ()) f
 end
+
+let ( let* ) f k = f k
 
 let ignore_value (_ : Value.t) = ()
 

@@ -1,6 +1,8 @@
 module I = Index
 open Common
 
+type index = Common.Index.t
+
 let ( // ) = Filename.concat
 
 let root = "_tests" // "unix.main"
@@ -8,8 +10,6 @@ let root = "_tests" // "unix.main"
 module Context = Common.Make_context (struct
   let root = root
 end)
-
-let main = Context.full_index ()
 
 (* Helper functions *)
 
@@ -77,70 +77,60 @@ let check_equivalence_mem index tbl =
 (* Basic tests of find/replace on a live index *)
 module Live = struct
   let find_present_live () =
-    let Context.{ rw; tbl; _ } = Context.full_index () in
-    check_equivalence rw tbl;
-    Index.close rw
+    let* Context.{ rw; tbl; _ } = Context.with_full_index () in
+    check_equivalence rw tbl
 
   let find_absent_live () =
-    let Context.{ rw; tbl; _ } = Context.full_index () in
-    test_find_absent rw tbl;
-    Index.close rw
+    let* Context.{ rw; tbl; _ } = Context.with_full_index () in
+    test_find_absent rw tbl
 
   let replace_live () =
-    let Context.{ rw; _ } = Context.full_index () in
-    test_replace rw;
-    Index.close rw
+    let* Context.{ rw; _ } = Context.with_full_index () in
+    test_replace rw
 
   let different_size_for_key () =
-    let Context.{ rw; _ } = Context.empty_index () in
+    let* Context.{ rw; _ } = Context.with_empty_index () in
     let k = String.init 2 (fun _i -> random_char ()) in
     let v = Value.v () in
     let exn = Index.Invalid_key_size k in
     Alcotest.check_raises
       "Cannot add a key of a different size than string_size." exn (fun () ->
-        Index.replace rw k v);
-    Index.close rw
+        Index.replace rw k v)
 
   let different_size_for_value () =
-    let Context.{ rw; _ } = Context.empty_index () in
+    let* Context.{ rw; _ } = Context.with_empty_index () in
     let k = Key.v () in
     let v = String.init 200 (fun _i -> random_char ()) in
     let exn = Index.Invalid_value_size v in
     Alcotest.check_raises
       "Cannot add a value of a different size than string_size." exn (fun () ->
-        Index.replace rw k v);
-    Index.close rw
+        Index.replace rw k v)
 
   let membership () =
-    let Context.{ rw; tbl; _ } = Context.full_index () in
-    check_equivalence_mem rw tbl;
-    Index.close rw
+    let* Context.{ rw; tbl; _ } = Context.with_full_index () in
+    check_equivalence_mem rw tbl
 
   let iter_after_clear () =
-    let Context.{ rw; _ } = Context.full_index () in
+    let* Context.{ rw; _ } = Context.with_full_index () in
     let () = Index.clear rw in
-    Index.iter (fun _ _ -> Alcotest.fail "Indexed not cleared.") rw;
-    Index.close rw
+    Index.iter (fun _ _ -> Alcotest.fail "Indexed not cleared.") rw
 
   let find_after_clear () =
-    let Context.{ rw; tbl; _ } = Context.full_index () in
+    let* Context.{ rw; tbl; _ } = Context.with_full_index () in
     let () = Index.clear rw in
     Hashtbl.fold
       (fun k _ () ->
         match Index.find rw k with
         | exception Not_found -> ()
         | _ -> Alcotest.fail "Indexed not cleared.")
-      tbl ();
-    Index.close rw
+      tbl ()
 
   let open_after_clear () =
-    let Context.{ clone; rw; _ } = Context.full_index () in
+    let* Context.{ clone; rw; _ } = Context.with_full_index () in
     Index.clear rw;
     let rw2 = clone ~fresh:false ~readonly:false () in
     Alcotest.check_raises "Finding absent should raise Not_found" Not_found
-      (fun () -> Key.v () |> Index.find rw2 |> ignore_value);
-    Index.close rw2;
-    Index.close rw
+      (fun () -> Key.v () |> Index.find rw2 |> ignore_value)
 
   let tests =
     [
@@ -159,32 +149,24 @@ end
 (* Tests of behaviour after restarting the index *)
 module DuplicateInstance = struct
   let find_present () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
-    let rw2 = clone ~readonly:false () in
-    check_equivalence rw tbl;
-    Index.close rw;
-    Index.close rw2
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
+    let (_ : index) = clone ~readonly:false () in
+    check_equivalence rw tbl
 
   let find_absent () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
-    let rw2 = clone ~readonly:false () in
-    test_find_absent rw tbl;
-    Index.close rw;
-    Index.close rw2
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
+    let (_ : index) = clone ~readonly:false () in
+    test_find_absent rw tbl
 
   let replace () =
-    let Context.{ rw; clone; _ } = Context.full_index ~size:5 () in
-    let rw2 = clone ~readonly:false () in
-    test_replace rw;
-    Index.close rw;
-    Index.close rw2
+    let* Context.{ rw; clone; _ } = Context.with_full_index ~size:5 () in
+    let (_ : index) = clone ~readonly:false () in
+    test_replace rw
 
   let membership () =
-    let Context.{ tbl; clone; rw } = Context.full_index () in
-    let rw2 = clone ~readonly:false () in
-    check_equivalence_mem rw2 tbl;
-    Index.close rw;
-    Index.close rw2
+    let* Context.{ tbl; clone; _ } = Context.with_full_index () in
+    let rw' = clone ~readonly:false () in
+    check_equivalence_mem rw' tbl
 
   let fail_restart_fresh () =
     let reuse_name = Context.fresh_name "empty_index" in
@@ -199,16 +181,14 @@ module DuplicateInstance = struct
     Index.close rw
 
   let sync () =
-    let Context.{ rw; clone; _ } = Context.full_index () in
+    let* Context.{ rw; clone; _ } = Context.with_full_index () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
     let rw2 = clone ~readonly:false () in
     let k2, v2 = (Key.v (), Value.v ()) in
     Index.replace rw2 k2 v2;
     check_index_entry rw k2 v2;
-    check_index_entry rw2 k1 v1;
-    Index.close rw;
-    Index.close rw2
+    check_index_entry rw2 k1 v1
 
   let tests =
     [
@@ -224,17 +204,20 @@ end
 (* Tests of read-only indices *)
 module Readonly = struct
   let readonly () =
-    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let* Context.{ rw; clone; tbl; _ } = Context.with_empty_index () in
     let ro = clone ~readonly:true () in
-    Hashtbl.iter (fun k v -> Index.replace rw k v) main.tbl;
+    let tbl2 =
+      let h = Hashtbl.create 0 in
+      Hashtbl.iter (fun k _ -> Hashtbl.add h k (Value.v ())) tbl;
+      h
+    in
+    Hashtbl.iter (fun k v -> Index.replace rw k v) tbl2;
     Index.flush rw;
     Index.sync ro;
-    check_equivalence ro main.tbl;
-    Index.close rw;
-    Index.close ro
+    check_equivalence ro tbl2
 
   let readonly_v_after_replace () =
-    let Context.{ rw; clone; _ } = Context.full_index () in
+    let* Context.{ rw; clone; _ } = Context.with_full_index () in
     let k = Key.v () in
     let v = Value.v () in
     Index.replace rw k v;
@@ -242,15 +225,14 @@ module Readonly = struct
     Index.close rw;
     Index.close ro;
     let rw = clone ~readonly:false () in
-    check_index_entry rw k v;
-    Index.close rw
+    check_index_entry rw k v
 
   let readonly_clear () =
     let check_no_index_entry index k =
       Alcotest.check_raises (Fmt.strf "Find %s key after clearing." k) Not_found
         (fun () -> ignore_value (Index.find index k))
     in
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
     let ro = clone ~readonly:true () in
     Index.clear rw;
     Index.sync ro;
@@ -273,49 +255,41 @@ module Readonly = struct
     check_index_entry ro k v;
     Index.sync ro;
     check_no_index_entry rw k;
-    check_no_index_entry ro k;
-    Index.close rw;
-    Index.close ro
+    check_no_index_entry ro k
 
   let fail_readonly_add () =
-    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let* Context.{ clone; _ } = Context.with_empty_index () in
     let ro = clone ~readonly:true () in
     let exn = I.RO_not_allowed in
     Alcotest.check_raises "Index readonly cannot write." exn (fun () ->
-        Index.replace ro (Key.v ()) (Value.v ()));
-    Index.close rw;
-    Index.close ro
+        Index.replace ro (Key.v ()) (Value.v ()))
 
   (** Tests that the entries that are not flushed cannot be read by a readonly
       index. The test relies on the fact that, for log_size > 0, adding one
       entry into an empty index does not lead to flush/merge. *)
   let fail_readonly_read () =
-    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let* Context.{ rw; clone; _ } = Context.with_empty_index () in
     let ro = clone ~readonly:true () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
     Index.sync ro;
     Alcotest.check_raises "Index readonly cannot read if data is not flushed."
-      Not_found (fun () -> ignore_value (Index.find ro k1));
-    Index.close rw;
-    Index.close ro
+      Not_found (fun () -> ignore_value (Index.find ro k1))
 
   let readonly_v_in_sync () =
-    let Context.{ rw; clone; _ } = Context.full_index () in
+    let* Context.{ rw; clone; _ } = Context.with_full_index () in
     let k, v = (Key.v (), Value.v ()) in
     Index.replace rw k v;
     Index.flush rw;
     let ro = clone ~readonly:true () in
     Log.info (fun m ->
         m "Checking that RO observes the flushed binding %a" pp_binding (k, v));
-    check_index_entry ro k v;
-    Index.close rw;
-    Index.close ro
+    check_index_entry ro k v
 
   (** Readonly finds value in log before and after clear. Before sync the
       deleted value is still found. *)
   let readonly_add_log_before_clear () =
-    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let* Context.{ rw; clone; _ } = Context.with_empty_index () in
     let ro = clone ~readonly:true () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
@@ -326,14 +300,12 @@ module Readonly = struct
     check_index_entry ro k1 v1;
     Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
-      Not_found (fun () -> ignore_value (Index.find ro k1));
-    Index.close rw;
-    Index.close ro
+      Not_found (fun () -> ignore_value (Index.find ro k1))
 
   (** Readonly finds value in index before and after clear. Before sync the
       deleted value is still found. *)
   let readonly_add_index_before_clear () =
-    let Context.{ rw; clone; _ } = Context.full_index () in
+    let* Context.{ rw; clone; _ } = Context.with_full_index () in
     let ro = clone ~readonly:true () in
     Index.clear rw;
     let k1, v1 = (Key.v (), Value.v ()) in
@@ -346,14 +318,12 @@ module Readonly = struct
     check_index_entry ro k1 v1;
     Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
-      Not_found (fun () -> ignore_value (Index.find ro k1));
-    Index.close rw;
-    Index.close ro
+      Not_found (fun () -> ignore_value (Index.find ro k1))
 
   (** Readonly finds old value in log after clear and after new values are
       added, before a sync. *)
   let readonly_add_after_clear () =
-    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let* Context.{ rw; clone; _ } = Context.with_empty_index () in
     let ro = clone ~readonly:true () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
@@ -370,15 +340,13 @@ module Readonly = struct
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find rw k1));
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
-      Not_found (fun () -> ignore_value (Index.find ro k1));
-    Index.close rw;
-    Index.close ro
+      Not_found (fun () -> ignore_value (Index.find ro k1))
 
   (** Readonly finds old value in index after clear and after new values are
       added, before a sync. This is because the readonly instance still uses the
       old index file, before being replaced by the merge. *)
   let readonly_add_index_after_clear () =
-    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let* Context.{ rw; clone; _ } = Context.with_empty_index () in
     let ro = clone ~readonly:true () in
     Index.clear rw;
     let k1, v1 = (Key.v (), Value.v ()) in
@@ -397,18 +365,14 @@ module Readonly = struct
     Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1));
-    check_index_entry ro k2 v2;
-    Index.close rw;
-    Index.close ro
+    check_index_entry ro k2 v2
 
   let readonly_open_after_clear () =
-    let Context.{ clone; rw; _ } = Context.full_index () in
+    let* Context.{ clone; rw; _ } = Context.with_full_index () in
     Index.clear rw;
     let ro = clone ~fresh:false ~readonly:true () in
     Alcotest.check_raises "Finding absent should raise Not_found" Not_found
-      (fun () -> Key.v () |> Index.find ro |> ignore_value);
-    Index.close ro;
-    Index.close rw
+      (fun () -> Key.v () |> Index.find ro |> ignore_value)
 
   let tests =
     [
@@ -435,39 +399,34 @@ end
 (* Tests of {Index.close} *)
 module Close = struct
   let close_reopen_rw () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
     Index.close rw;
     let w = clone ~readonly:false () in
-    check_equivalence w tbl;
-    Index.close w
+    check_equivalence w tbl
 
   let find_absent () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
     Index.close rw;
     let rw = clone ~readonly:false () in
-    test_find_absent rw tbl;
-    Index.close rw
+    test_find_absent rw tbl
 
   let replace () =
-    let Context.{ rw; clone; _ } = Context.full_index ~size:5 () in
+    let* Context.{ rw; clone; _ } = Context.with_full_index ~size:5 () in
     Index.close rw;
     let rw = clone ~readonly:false () in
-    test_replace rw;
-    Index.close rw
+    test_replace rw
 
   let open_readonly_close_rw () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
     let ro = clone ~readonly:true () in
     Index.close rw;
-    check_equivalence ro tbl;
-    Index.close ro
+    check_equivalence ro tbl
 
   let close_reopen_readonly () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
     Index.close rw;
     let ro = clone ~readonly:true () in
-    check_equivalence ro tbl;
-    Index.close ro
+    check_equivalence ro tbl
 
   let fail_api_after_close () =
     let k = Key.v () in
@@ -500,18 +459,19 @@ module Close = struct
             I.Closed call)
         (calls instance)
     in
-    check_calls ~readonly:true (Context.full_index ()).rw;
-    check_calls ~readonly:false (Context.full_index ()).rw
+    let* Context.{ rw; _ } = Context.with_full_index () in
+    check_calls ~readonly:true rw;
+    check_calls ~readonly:false rw
 
   let check_double_close () =
-    let Context.{ rw; _ } = Context.full_index () in
+    let* Context.{ rw; _ } = Context.with_full_index () in
     Index.close rw;
     Index.close rw;
     Alcotest.check_raises "flush after double close with raises Closed" I.Closed
       (fun () -> Index.flush rw)
 
   let restart_twice () =
-    let Context.{ rw; clone; _ } = Context.empty_index () in
+    let* Context.{ rw; clone; _ } = Context.with_empty_index () in
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
     Index.close rw;
@@ -521,12 +481,11 @@ module Close = struct
     Index.close rw;
     let rw = clone ~fresh:false ~readonly:false () in
     Alcotest.check_raises "Index restarted fresh once cannot read data."
-      Not_found (fun () -> ignore_value (Index.find rw k1));
-    Index.close rw
+      Not_found (fun () -> ignore_value (Index.find rw k1))
 
   (** [close] terminates an ongoing merge operation *)
   let aborted_merge () =
-    let Context.{ rw; _ } = Context.full_index ~size:100 () in
+    let* Context.{ rw; _ } = Context.with_full_index ~size:100 () in
     let close_request, abort_signalled =
       (* Both locks are initially held.
          - [close_request] is dropped by the merge thread in the [`Before] hook
@@ -584,66 +543,57 @@ end
 module Filter = struct
   (** Test that all bindings are kept when using [filter] with a true predicate. *)
   let filter_none () =
-    let Context.{ rw; tbl; _ } = Context.full_index () in
+    let* Context.{ rw; tbl; _ } = Context.with_full_index () in
     Index.filter rw (fun _ -> true);
-    check_equivalence rw tbl;
-    Index.close rw
+    check_equivalence rw tbl
 
   (** Test that all bindings are removed when using [filter] with a false
       predicate. *)
   let filter_all () =
-    let Context.{ rw; _ } = Context.full_index () in
+    let* Context.{ rw; _ } = Context.with_full_index () in
     Index.filter rw (fun _ -> false);
-    check_equivalence rw (Hashtbl.create 0);
-    Index.close rw
+    check_equivalence rw (Hashtbl.create 0)
 
   (** Test that [filter] can be used to remove exactly a single binding. *)
   let filter_one () =
-    let Context.{ rw; tbl; _ } = Context.full_index () in
+    let* Context.{ rw; tbl; _ } = Context.with_full_index () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
     Index.filter rw (fun (k', _) -> not (String.equal k k'));
-    check_equivalence rw tbl;
-    Index.close rw
+    check_equivalence rw tbl
 
   (** Test that the results of [filter] are propagated to a clone which was
       created before. *)
   let clone_then_filter () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
     let rw2 = clone ~readonly:false () in
     Index.filter rw (fun (k', _) -> not (String.equal k k'));
     check_equivalence rw tbl;
-    check_equivalence rw2 tbl;
-    Index.close rw;
-    Index.close rw2
+    check_equivalence rw2 tbl
 
   (** Test that the results of [filter] are propagated to a clone which was
       created after. *)
   let filter_then_clone () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
     Index.filter rw (fun (k', _) -> not (String.equal k k'));
     let rw2 = clone ~readonly:false () in
     check_equivalence rw tbl;
-    check_equivalence rw2 tbl;
-    Index.close rw;
-    Index.close rw2
+    check_equivalence rw2 tbl
 
   (** Test that using [filter] doesn't affect fresh clones created later at the
       same path. *)
   let empty_after_filter_and_fresh () =
-    let Context.{ rw; tbl; clone } = Context.full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
     Index.filter rw (fun (k', _) -> not (String.equal k k'));
     let rw2 = clone ~fresh:true ~readonly:false () in
     (* rw2 should be empty since it is fresh. *)
-    check_equivalence rw2 (Hashtbl.create 0);
-    Index.close rw;
-    Index.close rw2
+    check_equivalence rw2 (Hashtbl.create 0)
 
   let tests =
     [

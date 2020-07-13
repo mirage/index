@@ -28,6 +28,7 @@ depends: [
   "crowbar" {with-test}
   "re" {with-test}
   "stdlib-shims"
+  "ocaml-syntax-shims" {with-test}
 ]
 synopsis: "A platform-agnostic multi-level index for OCaml"
 description:"""
