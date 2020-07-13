@@ -387,7 +387,7 @@ struct
 
   let empty_cache = Cache.create
 
-  let v ?(auto_flush_callback = Fun.id) ?(cache = empty_cache ())
+  let v ?(auto_flush_callback = fun () -> ()) ?(cache = empty_cache ())
       ?(fresh = false) ?(readonly = false) ~log_size root =
     let new_instance () =
       let instance =
