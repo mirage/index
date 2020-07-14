@@ -66,8 +66,8 @@ module type S = sig
   module Header : sig
     type header = { offset : int64; generation : int64 }
 
-    val set_header : t -> header -> unit
+    val set : t -> header -> unit
 
-    val get_header : t -> header
+    val get : t -> header
   end
 end

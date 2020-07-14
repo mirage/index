@@ -116,14 +116,14 @@ module IO : Index.IO = struct
     let pp ppf { offset; generation } =
       Format.fprintf ppf "{ offset = %Ld; generation = %Ld }" offset generation
 
-    let get_header t =
+    let get t =
       let Raw.Header.{ offset; generation; _ } = Raw.Header.get t.raw in
       t.offset <- offset;
       let headers = { offset; generation } in
       Log.debug (fun m -> m "[%s] get_headers: %a" t.file pp headers);
       headers
 
-    let set_header t { offset; generation } =
+    let set t { offset; generation } =
       let version = version () in
       Log.debug (fun m ->
           m "[%s] set_header %a" t.file pp { offset; generation });
@@ -158,7 +158,7 @@ module IO : Index.IO = struct
   let clear ~generation t =
     t.offset <- 0L;
     t.flushed <- t.header;
-    Header.set_header t { offset = t.offset; generation };
+    Header.set t { offset = t.offset; generation };
     Raw.Fan.set t.raw "";
     Buffer.clear t.buf;
     Raw.fsync t.raw
