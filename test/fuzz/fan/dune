@@ -7,8 +7,8 @@
  (package index)
  (deps main.exe))
 
-(alias
- (name fuzz)
+(rule
+ (alias fuzz)
  (package index)
  (deps
   main.exe
