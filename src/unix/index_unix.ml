@@ -35,6 +35,7 @@ module IO : Index.IO = struct
     mutable header : int64;
     mutable raw : Raw.t;
     mutable offset : int64;
+    mutable generation : int64;
     mutable flushed : int64;
     mutable fan_size : int64;
     readonly : bool;
@@ -67,6 +68,7 @@ module IO : Index.IO = struct
     dst.header <- src.header;
     dst.fan_size <- src.fan_size;
     dst.offset <- src.offset;
+    dst.generation <- src.generation;
     dst.flushed <- src.flushed;
     dst.raw <- src.raw
 
@@ -87,22 +89,21 @@ module IO : Index.IO = struct
     if not t.readonly then assert (t.header ++ off <= t.flushed);
     Raw.unsafe_read t.raw ~off:(t.header ++ off) ~len buf
 
-  let offset t = t.offset
-
-  let force_offset t =
-    t.offset <- Raw.Offset.get t.raw;
-    t.offset
+  let offset ~force t =
+    if force then (
+      t.offset <- Raw.Offset.get t.raw;
+      t.offset)
+    else t.offset
 
   let version _ = current_version
 
-  let get_generation t =
-    let i = Raw.Generation.get t.raw in
-    Log.debug (fun m -> m "get_generation: %Ld" i);
-    i
-
-  let set_generation t i =
-    Log.debug (fun m -> m "set_generation: %Ld" i);
-    Raw.Generation.set t.raw i
+  let generation ~force t =
+    if force then (
+      let i = Raw.Generation.get t.raw in
+      Log.debug (fun m -> m "generation: %Ld" i);
+      t.generation <- i;
+      i)
+    else t.generation
 
   let get_fanout t = Raw.Fan.get t.raw
 
@@ -119,6 +120,7 @@ module IO : Index.IO = struct
     let get t =
       let Raw.Header.{ offset; generation; _ } = Raw.Header.get t.raw in
       t.offset <- offset;
+      t.generation <- generation;
       let headers = { offset; generation } in
       Log.debug (fun m -> m "[%s] get_headers: %a" t.file pp headers);
       headers
@@ -157,6 +159,7 @@ module IO : Index.IO = struct
 
   let clear ~generation t =
     t.offset <- 0L;
+    t.generation <- generation;
     t.flushed <- t.header;
     Header.set t { offset = t.offset; generation };
     Raw.Fan.set t.raw "";
@@ -176,12 +179,13 @@ module IO : Index.IO = struct
 
   let v ?(auto_flush_callback = fun () -> ()) ~readonly ~fresh ~generation
       ~fan_size file =
-    let v ~fan_size ~offset raw =
+    let v ~fan_size ~offset ~generation raw =
       let header = 8L ++ 8L ++ 8L ++ 8L ++ fan_size in
       {
         header;
         file;
         offset;
+        generation;
         raw;
         readonly;
         fan_size;
@@ -200,7 +204,7 @@ module IO : Index.IO = struct
         Raw.Fan.set_size raw fan_size;
         Raw.Version.set raw current_version;
         Raw.Generation.set raw generation;
-        v ~fan_size ~offset:0L raw
+        v ~fan_size ~offset:0L ~generation raw
     | true ->
         let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; mode ] 0o644 in
         let raw = Raw.v x in
@@ -211,16 +215,15 @@ module IO : Index.IO = struct
           Raw.Fan.set_size raw fan_size;
           Raw.Version.set raw current_version;
           Raw.Generation.set raw generation;
-          v ~fan_size ~offset:0L raw)
+          v ~fan_size ~offset:0L ~generation raw)
         else
           let version = Raw.Version.get raw in
           if version <> current_version then
             Fmt.failwith "Io.v: unsupported version %s (current version is %s)"
               version current_version;
-
-          let offset = Raw.Offset.get raw in
+          let { Raw.Header.offset; generation; _ } = Raw.Header.get raw in
           let fan_size = Raw.Fan.get_size raw in
-          v ~fan_size ~offset raw
+          v ~fan_size ~offset ~generation raw
 
   type lock = { path : string; fd : Unix.file_descr }
 
