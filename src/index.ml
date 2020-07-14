@@ -270,6 +270,7 @@ struct
         let log_offset = IO.offset log.io in
         hook `Before_offset_read;
         let h = IO.Header.get log.io in
+        hook `After_offset_read;
         sync_log_async ~generation_change:(t.generation <> h.generation) t;
         if t.generation <> h.generation then (
           Log.debug (fun l ->
@@ -784,7 +785,8 @@ module Private = struct
 
     val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit
 
-    val sync' : ?hook:[ `Before_offset_read ] Hook.t -> t -> unit
+    val sync' :
+      ?hook:[ `Before_offset_read | `After_offset_read ] Hook.t -> t -> unit
   end
 
   module Make = Make_private

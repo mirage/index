@@ -308,9 +308,14 @@ module type Index = sig
           [sampling_interval]. If [sampling_interval] is not set, no operation
           is timed. *)
 
-      val sync' : ?hook:[ `Before_offset_read ] Hook.t -> t -> unit
-      (** [`Before_offset_read]: before reading the generation number and the
-          offset. *)
+      val sync' :
+        ?hook:[ `Before_offset_read | `After_offset_read ] Hook.t -> t -> unit
+      (** Hooks:
+
+          - [`Before_offset_read]: before reading the generation number and the
+            offset.
+          - [`After_offset_read]: after reading the generation number and
+            offset. *)
     end
 
     module Make
