@@ -75,7 +75,7 @@ module Make (IO : Io.S) (Elt : ELT) :
         try get_entry_from_buffer b off with _ -> assert false)
     | _ -> get_entry_from_io t.io off
 
-  let length t = Int64.(div (IO.offset t.io) Elt.encoded_sizeL)
+  let length t = Int64.(div (IO.offset ~force:false t.io) Elt.encoded_sizeL)
 
   let max_buffer_size = 4096
 
