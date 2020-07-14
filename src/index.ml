@@ -261,7 +261,7 @@ struct
         let log_offset = IO.offset log.io in
         hook `Before_offset_read;
         let IO.Header.{ generation; offset = new_log_offset } =
-          IO.Header.get_header log.io
+          IO.Header.get log.io
         in
         let add_log_entry e = add_log_entry log e in
         sync_log_async ~generation_change:(t.generation <> generation) ();
