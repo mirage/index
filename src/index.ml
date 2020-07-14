@@ -233,68 +233,59 @@ struct
       Some { io; mem })
     else None
 
+  let sync_log_entries ?min log =
+    let add_log_entry e = Tbl.replace log.mem e.key e.value in
+    if min = None then Tbl.clear log.mem;
+    iter_io ?min add_log_entry log.io
+
+  let sync_log_async ?(generation_change = false) t =
+    match t.log_async with
+    | None -> t.log_async <- try_load_log t (log_async_path t.root)
+    | Some log ->
+        let offset = IO.offset log.io in
+        let new_offset = IO.force_offset log.io in
+        if generation_change || offset <> new_offset then sync_log_entries log
+
+  let sync_index ~generation t =
+    may (fun (i : index) -> IO.close i.io) t.index;
+    let index_path = index_path t.root in
+    if not (Sys.file_exists index_path) then t.index <- None
+    else
+      let io =
+        IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L index_path
+      in
+      let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
+      if IO.offset io = 0L then t.index <- None
+      else t.index <- Some { fan_out; io }
+
   let sync_log ?(hook = fun _ -> ()) t =
     Log.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
-    let no_changes () =
-      Log.debug (fun l ->
-          l "[%s] no changes detected" (Filename.basename t.root))
-    in
-    let add_log_entry log e = Tbl.replace log.mem e.key e.value in
-    let sync_log_async ?(generation_change = false) () =
-      match t.log_async with
-      | None -> t.log_async <- try_load_log t (log_async_path t.root)
-      | Some log ->
-          let offset = IO.offset log.io in
-          let new_offset = IO.force_offset log.io in
-          if generation_change || offset <> new_offset then (
-            Tbl.clear log.mem;
-            iter_io (add_log_entry log) log.io)
-          else ()
-    in
     (match t.log with
     | None -> t.log <- try_load_log t (log_path t.root)
     | Some _ -> ());
     match t.log with
-    | None -> sync_log_async ()
+    | None -> sync_log_async t
     | Some log ->
         let log_offset = IO.offset log.io in
         hook `Before_offset_read;
-        let IO.Header.{ generation; offset = new_log_offset } =
-          IO.Header.get log.io
-        in
-        let add_log_entry e = add_log_entry log e in
-        sync_log_async ~generation_change:(t.generation <> generation) ();
-        if t.generation <> generation then (
+        let h = IO.Header.get log.io in
+        sync_log_async ~generation_change:(t.generation <> h.generation) t;
+        if t.generation <> h.generation then (
           Log.debug (fun l ->
               l "[%s] generation has changed, reading log and index from disk"
                 (Filename.basename t.root));
-          t.generation <- generation;
-          Tbl.clear log.mem;
-          iter_io add_log_entry log.io;
-          may (fun (i : index) -> IO.close i.io) t.index;
-          let index_path = index_path t.root in
-          if not (Sys.file_exists index_path) then t.index <- None
-          else
-            let io =
-              IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L
-                index_path
-            in
-            let fan_out =
-              Fan.import ~hash_size:K.hash_size (IO.get_fanout io)
-            in
-            if IO.offset io = 0L then t.index <- None
-            else t.index <- Some { fan_out; io })
-        else if log_offset < new_log_offset then (
+          t.generation <- h.generation;
+          sync_log_entries log;
+          sync_index ~generation:h.generation t)
+        else if log_offset < h.offset then (
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
                 (Filename.basename t.root));
-          iter_io add_log_entry log.io ~min:log_offset)
-        else if log_offset > new_log_offset then
-          (* In that case the log has probably been emptied and is being
-             refilled with async_log contents. *)
-          no_changes ()
-        else no_changes ()
+          sync_log_entries ~min:log_offset log)
+        else
+          Log.debug (fun l ->
+              l "[%s] no changes detected" (Filename.basename t.root))
 
   let v_no_cache ?auto_flush_callback ~fresh ~readonly ~log_size root =
     Log.debug (fun l ->
