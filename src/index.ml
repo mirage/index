@@ -609,9 +609,9 @@ struct
                 log_async.mem;
               IO.flush log.io;
               t.log_async <- None);
-          hook `After;
           IO.clear ~generation log_async.io;
           IO.close log_async.io;
+          hook `After;
           Mutex.unlock t.merge_lock;
           `Completed
       | `Aborted ->
