@@ -485,7 +485,9 @@ module Close = struct
 
   (** [close] terminates an ongoing merge operation *)
   let aborted_merge () =
-    let* Context.{ rw; _ } = Context.with_full_index ~size:100 () in
+    let* Context.{ rw; _ } =
+      Context.with_full_index ~throttle:`Block_writes ~size:100 ()
+    in
     let close_request, abort_signalled =
       (* Both locks are initially held.
          - [close_request] is dropped by the merge thread in the [`Before] hook

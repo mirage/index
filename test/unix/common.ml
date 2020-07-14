@@ -92,23 +92,23 @@ struct
 
   let ( >> ) f g x = g (f x)
 
-  let empty_index () =
+  let empty_index ?throttle () =
     let name = fresh_name "empty_index" in
     let cache = Index.empty_cache () in
-    let rw = Index.v ~cache ~fresh:true ~log_size:4 name in
+    let rw = Index.v ?throttle ~cache ~fresh:true ~log_size:4 name in
     let close_all = ref (fun () -> Index.close rw) in
     let tbl = Hashtbl.create 0 in
     let clone ?(fresh = false) ~readonly () =
-      let t = Index.v ~cache ~fresh ~log_size:4 ~readonly name in
+      let t = Index.v ?throttle ~cache ~fresh ~log_size:4 ~readonly name in
       (close_all := !close_all >> fun () -> Index.close t);
       t
     in
     { rw; tbl; clone; close_all = (fun () -> !close_all ()) }
 
-  let full_index ?(size = 103) () =
+  let full_index ?(size = 103) ?throttle () =
     let name = fresh_name "full_index" in
     let cache = Index.empty_cache () in
-    let rw = Index.v ~cache ~fresh:true ~log_size:4 name in
+    let rw = Index.v ?throttle ~cache ~fresh:true ~log_size:4 name in
     let close_all = ref (fun () -> Index.close rw) in
     let tbl = Hashtbl.create 0 in
     for _ = 1 to size do
@@ -119,7 +119,7 @@ struct
     done;
     Index.flush rw;
     let clone ?(fresh = false) ~readonly () =
-      let t = Index.v ~cache ~fresh ~log_size:4 ~readonly name in
+      let t = Index.v ?throttle ~cache ~fresh ~log_size:4 ~readonly name in
       (close_all := !close_all >> fun () -> Index.close t);
       t
     in
@@ -130,9 +130,11 @@ struct
     t.close_all ();
     a
 
-  let with_empty_index () f = call_then_close (empty_index ()) f
+  let with_empty_index ?throttle () f =
+    call_then_close (empty_index ?throttle ()) f
 
-  let with_full_index ?size () f = call_then_close (full_index ?size ()) f
+  let with_full_index ?throttle ?size () f =
+    call_then_close (full_index ?throttle ?size ()) f
 end
 
 let ( let* ) f k = f k

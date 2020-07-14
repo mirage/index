@@ -73,7 +73,14 @@ struct
 
   module Tbl = Hashtbl.Make (K)
 
-  type config = { log_size : int; readonly : bool; fresh : bool }
+  type throttle = [ `Overcommit_memory | `Block_writes ]
+
+  type config = {
+    log_size : int;
+    readonly : bool;
+    fresh : bool;
+    throttle : throttle;
+  }
 
   type index = { io : IO.t; fan_out : Fan.t }
 
@@ -288,14 +295,17 @@ struct
           Log.debug (fun l ->
               l "[%s] no changes detected" (Filename.basename t.root))
 
-  let v_no_cache ?auto_flush_callback ~fresh ~readonly ~log_size root =
+  let v_no_cache ?auto_flush_callback ~throttle ~fresh ~readonly ~log_size root
+      =
     Log.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
     let writer_lock =
       if not readonly then Some (IO.lock (lock_path root)) else None
     in
-    let config = { log_size = log_size * entry_size; readonly; fresh } in
+    let config =
+      { log_size = log_size * entry_size; readonly; fresh; throttle }
+    in
     let log_path = log_path root in
     let log =
       if readonly then if fresh then raise RO_not_allowed else None
@@ -380,10 +390,12 @@ struct
   let empty_cache = Cache.create
 
   let v ?(auto_flush_callback = fun () -> ()) ?(cache = empty_cache ())
-      ?(fresh = false) ?(readonly = false) ~log_size root =
+      ?(fresh = false) ?(readonly = false) ?(throttle = `Block_writes) ~log_size
+      root =
     let new_instance () =
       let instance =
-        v_no_cache ~auto_flush_callback ~fresh ~readonly ~log_size root
+        v_no_cache ~auto_flush_callback ~fresh ~readonly ~log_size ~throttle
+          root
       in
       if readonly then sync_log instance;
       Cache.add cache (root, readonly) instance;
@@ -667,7 +679,7 @@ struct
     Log.info (fun l ->
         l "[%s] replace %a %a" (Filename.basename t.root) K.pp key V.pp value);
     if t.config.readonly then raise RO_not_allowed;
-    let do_merge =
+    let log_limit_reached =
       Mutex.with_lock t.rename_lock (fun () ->
           let log =
             match t.log_async with
@@ -678,8 +690,12 @@ struct
           Tbl.replace log.mem key value;
           Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
     in
-    if do_merge then
-      ignore (merge ~witness:{ key; key_hash = K.hash key; value } t : _ async)
+    if log_limit_reached then
+      match t.config.throttle with
+      | `Overcommit_memory -> ()
+      | `Block_writes ->
+          ignore
+            (merge ~witness:{ key; key_hash = K.hash key; value } t : _ async)
 
   let replace_with_timer ?sampling_interval t key value =
     if sampling_interval <> None then Stats.start_replace ();
