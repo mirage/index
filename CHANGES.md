@@ -7,6 +7,8 @@
 - Added `Stats.merge_durations` to list the duration of the last 10 merges.
   (#193)
 - Added `is_merging` to detect if a merge is running. (#192)
+- New `IO.Header.{get,set}` functions to read and write the file headers
+  atomically (#175, #204, @icristescu, @CraigFe, @samoht)
 
 ## Changed
 
