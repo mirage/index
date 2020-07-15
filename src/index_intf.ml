@@ -128,6 +128,7 @@ module type S = sig
     ?cache:cache ->
     ?fresh:bool ->
     ?readonly:bool ->
+    ?throttle:[ `Overcommit_memory | `Block_writes ] ->
     log_size:int ->
     string ->
     t
@@ -137,6 +138,10 @@ module type S = sig
       @param cache used for instance sharing.
       @param fresh whether an existing index should be overwritten.
       @param read_only whether read-only mode is enabled for this index.
+      @param throttle the strategy to use when the cache are full and and async
+      in already in progress. [Block_writes] (the default) blocks any new writes
+      until the merge is completed. [Overcommit_memory] does not block but
+      continues to fill the (already full) cache.
       @param log_size the maximum number of bindings in the `log` IO. *)
 
   val clear : t -> unit
