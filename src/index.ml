@@ -662,6 +662,7 @@ struct
           `Completed
       | `Aborted ->
           Log.debug (fun l -> l "merge aborted [generation=%Ld]" t.generation);
+          IO.unlink merge;
           Mutex.unlock t.merge_lock;
           `Aborted
     in
