@@ -238,13 +238,15 @@ struct
     if min = None then Tbl.clear log.mem;
     iter_io ?min add_log_entry log.io
 
-  let sync_log_async ?(generation_change = false) t =
+  let sync_log_async t =
     match t.log_async with
     | None -> t.log_async <- try_load_log t (log_async_path t.root)
     | Some log ->
         let offset = IO.offset log.io in
-        let new_offset = IO.force_offset log.io in
-        if generation_change || offset <> new_offset then sync_log_entries log
+        let h = IO.Header.get log.io in
+        if t.generation <> h.generation then sync_log_entries log
+        else if offset < h.offset then sync_log_entries ~min:offset log
+        else if offset > h.offset then assert false
 
   let sync_index ~generation t =
     may (fun (i : index) -> IO.close i.io) t.index;
@@ -264,14 +266,26 @@ struct
     (match t.log with
     | None -> t.log <- try_load_log t (log_path t.root)
     | Some _ -> ());
+    (* there is a race between sync and merge:
+
+       - At the end of the merge, the entries in log_async are copied
+       into log. [merge] starts by calling IO.Header.set(log) with a
+       new generation number, copies all the entries and then clear
+       log_async.
+
+       - so here we need to make sure we do the same thing in reverse:
+       start by syncing [log_async], then read [log]'s headers. At
+       worse, [log_async] and [log] might contain duplicated entries,
+       but we won't miss any. These entries will be added to [log.mem]
+       using Tbl.replace where they will be deduplicated. *)
+    sync_log_async t;
     match t.log with
-    | None -> sync_log_async t
+    | None -> ()
     | Some log ->
         let log_offset = IO.offset log.io in
         hook `Before_offset_read;
         let h = IO.Header.get log.io in
         hook `After_offset_read;
-        sync_log_async ~generation_change:(t.generation <> h.generation) t;
         if t.generation <> h.generation then (
           Log.debug (fun l ->
               l "[%s] generation has changed, reading log and index from disk"
@@ -609,7 +623,7 @@ struct
                 log_async.mem;
               IO.flush log.io;
               t.log_async <- None);
-          IO.clear ~generation log_async.io;
+          IO.clear ~generation:(Int64.succ generation) log_async.io;
           IO.close log_async.io;
           hook `After;
           Mutex.unlock t.merge_lock;
@@ -671,7 +685,7 @@ struct
       Mutex.with_lock t.rename_lock (fun () ->
           let log =
             match t.log_async with
-            | Some async_log -> async_log
+            | Some log -> log
             | None -> assert_and_get t.log
           in
           append_key_value log.io key value;
