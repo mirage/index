@@ -287,6 +287,8 @@ module type Index = sig
           concurrent merge operations, but {i before} blocking on those
           cancellations having completed. *)
 
+      val clear' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
+
       type 'a async
       (** The type of asynchronous computation. *)
 
