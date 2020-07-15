@@ -28,6 +28,7 @@
 ## Fixed
 
 - Added values after a clear are found by read-only instances. (#168)
+- Fix a race between `merge` and `sync` (#203, @samoht, @CraigFe)
 
 # 1.2.1 (2020-06-24)
 

@@ -374,6 +374,48 @@ module Readonly = struct
     Alcotest.check_raises "Finding absent should raise Not_found" Not_found
       (fun () -> Key.v () |> Index.find ro |> ignore_value)
 
+  let readonly_sync_and_merge () =
+    let* Context.{ clone; rw; _ } = Context.with_empty_index () in
+    let ro = clone ~readonly:true () in
+    let lock () =
+      let m = Mutex.create () in
+      Mutex.lock m;
+      m
+    in
+    let replace = lock () and merge = lock () and sync = lock () in
+    let merge_hook =
+      I.Private.Hook.v @@ function
+      | `Before ->
+          Mutex.unlock replace;
+          Mutex.lock merge
+      | `After -> Mutex.unlock sync
+      | _ -> ()
+    in
+    let sync_hook =
+      I.Private.Hook.v @@ function
+      | `After_offset_read ->
+          Mutex.unlock merge;
+          Mutex.lock sync
+      | _ -> ()
+    in
+    let gen i = (String.make Key.encoded_size i, Value.v ()) in
+    let k1, v1 = gen '1' in
+    let k2, v2 = gen '2' in
+    let k3, v3 = gen '3' in
+
+    Index.replace rw k1 v1;
+    let thread = Index.force_merge ~hook:merge_hook rw in
+    Mutex.lock replace;
+    Index.replace rw k2 v2;
+    Index.replace rw k3 v3;
+    Mutex.unlock replace;
+    Index.flush rw;
+    Index.sync' ~hook:sync_hook ro;
+    Index.await thread |> check_completed;
+    Mutex.unlock sync;
+    check_index_entry ro k2 v2;
+    check_index_entry ro k3 v3
+
   let tests =
     [
       ("add", `Quick, readonly);
@@ -393,6 +435,7 @@ module Readonly = struct
         `Quick,
         readonly_add_index_after_clear );
       ("readonly open after clear", `Quick, readonly_open_after_clear);
+      ("race between sync and merge", `Quick, readonly_sync_and_merge);
     ]
 end
 
