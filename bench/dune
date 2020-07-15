@@ -10,7 +10,7 @@
  (name bench)
  (deps ./bench.exe))
 
-(alias
- (name runbench)
+(rule
+ (alias runbench)
  (action
   (run ./bench.exe)))
