@@ -176,11 +176,11 @@ module IO : Index.IO = struct
     (aux [@tailcall]) dirname (fun () -> ())
 
   let clear ~generation t =
+    Buffer.clear t.buf;
     t.offset <- 0L;
     t.flushed <- t.header;
     Header.set t { offset = t.offset; generation };
     Raw.Fan.set t.raw "";
-    Buffer.clear t.buf;
     Raw.fsync t.raw
 
   let buffers = Hashtbl.create 256
