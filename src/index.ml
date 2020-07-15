@@ -661,6 +661,7 @@ struct
           Mutex.unlock t.merge_lock;
           `Completed
       | `Aborted ->
+          Log.debug (fun l -> l "merge aborted [generation=%Ld]" t.generation);
           Mutex.unlock t.merge_lock;
           `Aborted
     in
