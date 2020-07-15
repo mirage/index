@@ -29,9 +29,9 @@ module type S = sig
 
   val name : t -> string
 
-  val offset : force:bool -> t -> int64
+  val offset : t -> int64
 
-  val generation : force:bool -> t -> int64
+  val force_offset : t -> int64
 
   val readonly : t -> bool
 
@@ -42,6 +42,10 @@ module type S = sig
   val flush : ?with_fsync:bool -> t -> unit
 
   val version : t -> string
+
+  val set_generation : t -> int64 -> unit
+
+  val get_generation : t -> int64
 
   val set_fanout : t -> string -> unit
 
