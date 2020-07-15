@@ -16,17 +16,10 @@
   than waiting for it to finish. (#185)
 - `sync` has to be called by the read-only instance to synchronise with the
   files on disk. (#175)
+
 - Caching of `Index` instances is now explicit: `Index.Make` requires a cache
   implementation, and `Index.v` may be passed a cache to be used for instance
   sharing. The default behaviour is _not_ to share instances. (#188)
-- `IO.{offset,generation}` refactoring (#207, @samoht)
-  - Remove IO.{set_generation,IO.get_generation,force_offset}
-  - Change `IO.offset` to take a `~force` argument:
-    - `IO.force_offset` becomes `IO.offset ~force:true`
-    - `IO.offset` becomes `IO.offset ~force:false`
-  - Add `IO.generation`
-    - `IO.get_generation` becomes `IO.generation ~force:true`
-    - `IO.generation ~force:false` is the cached generation number
 
 ## Fixed
 

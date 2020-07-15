@@ -153,9 +153,7 @@ struct
   let page_size = Int64.mul entry_sizeL 1_000L
 
   let iter_io_off ?min:(min_off = 0L) ?max:max_off f io =
-    let max_off =
-      match max_off with None -> IO.offset ~force:false io | Some m -> m
-    in
+    let max_off = match max_off with None -> IO.offset io | Some m -> m in
     let rec aux offset =
       let remaining = Int64.sub max_off offset in
       if remaining <= 0L then ()
@@ -244,8 +242,8 @@ struct
     match t.log_async with
     | None -> t.log_async <- try_load_log t (log_async_path t.root)
     | Some log ->
-        let offset = IO.offset ~force:false log.io in
-        let new_offset = IO.offset ~force:true log.io in
+        let offset = IO.offset log.io in
+        let new_offset = IO.force_offset log.io in
         if generation_change || offset <> new_offset then sync_log_entries log
 
   let sync_index ~generation t =
@@ -257,7 +255,7 @@ struct
         IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L index_path
       in
       let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
-      if IO.offset ~force:false io = 0L then t.index <- None
+      if IO.offset io = 0L then t.index <- None
       else t.index <- Some { fan_out; io }
 
   let sync_log ?(hook = fun _ -> ()) t =
@@ -269,7 +267,7 @@ struct
     match t.log with
     | None -> sync_log_async t
     | Some log ->
-        let log_offset = IO.offset ~force:false log.io in
+        let log_offset = IO.offset log.io in
         hook `Before_offset_read;
         let h = IO.Header.get log.io in
         hook `After_offset_read;
@@ -306,7 +304,7 @@ struct
           IO.v ?auto_flush_callback ~fresh ~readonly ~generation:0L ~fan_size:0L
             log_path
         in
-        let entries = Int64.div (IO.offset ~force:false io) entry_sizeL in
+        let entries = Int64.div (IO.offset io) entry_sizeL in
         Log.debug (fun l ->
             l "[%s] log file detected. Loading %Ld entries"
               (Filename.basename root) entries);
@@ -315,9 +313,7 @@ struct
         Some { io; mem }
     in
     let generation =
-      match log with
-      | None -> 0L
-      | Some log -> IO.generation ~force:false log.io
+      match log with None -> 0L | Some log -> IO.get_generation log.io
     in
     let log_async_path = log_async_path root in
     (* If we are in readonly mode, the log_async will be read during sync_log so
@@ -327,7 +323,7 @@ struct
         IO.v ?auto_flush_callback ~fresh ~readonly:false ~generation:0L
           ~fan_size:0L log_async_path
       in
-      let entries = Int64.div (IO.offset ~force:false io) entry_sizeL in
+      let entries = Int64.div (IO.offset io) entry_sizeL in
       Log.debug (fun l ->
           l "[%s] log_async file detected. Loading %Ld entries"
             (Filename.basename root) entries);
@@ -352,7 +348,7 @@ struct
           IO.v ?auto_flush_callback ~fresh ~readonly ~generation ~fan_size:0L
             index_path
         in
-        let entries = Int64.div (IO.offset ~force:false io) entry_sizeL in
+        let entries = Int64.div (IO.offset io) entry_sizeL in
         if entries = 0L then None
         else (
           Log.debug (fun l ->
@@ -464,11 +460,11 @@ struct
     match find_instance t key with _ -> true | exception Not_found -> false
 
   let append_buf_fanout fan_out hash buf_str dst_io =
-    Fan.update fan_out hash (IO.offset ~force:false dst_io);
+    Fan.update fan_out hash (IO.offset dst_io);
     IO.append dst_io buf_str
 
   let append_entry_fanout fan_out entry dst_io =
-    Fan.update fan_out entry.key_hash (IO.offset ~force:false dst_io);
+    Fan.update fan_out entry.key_hash (IO.offset dst_io);
     append_key_value dst_io entry.key entry.value
 
   let rec merge_from_log fan_out log log_i hash_e dst_io =
@@ -492,7 +488,7 @@ struct
     let len = entries * entry_size in
     let buf = Bytes.create len in
     let refill off = ignore (IO.read index.io ~off ~len buf) in
-    let index_end = IO.offset ~force:false index.io in
+    let index_end = IO.offset index.io in
     let fan_out = index.fan_out in
     refill 0L;
     let rec go index_offset buf_offset log_i =
@@ -569,7 +565,7 @@ struct
         match t.index with
         | None -> Tbl.length log.mem
         | Some index ->
-            (Int64.to_int (IO.offset ~force:false index.io) / entry_size)
+            (Int64.to_int (IO.offset index.io) / entry_size)
             + Array.length log_array
       in
       let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
@@ -680,10 +676,7 @@ struct
           in
           append_key_value log.io key value;
           Tbl.replace log.mem key value;
-          Int64.compare
-            (IO.offset ~force:false log.io)
-            (Int64.of_int t.config.log_size)
-          > 0)
+          Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
     in
     if do_merge then
       ignore (merge ~witness:{ key; key_hash = K.hash key; value } t : _ async)
