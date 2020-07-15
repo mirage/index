@@ -9,6 +9,11 @@
 - Added `is_merging` to detect if a merge is running. (#192)
 - New `IO.Header.{get,set}` functions to read and write the file headers
   atomically (#175, #204, @icristescu, @CraigFe, @samoht)
+- Added a `throttle` configuration option to select the strategy to use
+  when the cache are full and an async merge is already in progress. The
+  current behavior is the (default) [`Block_writes] strategy. The new
+  [`Overcommit_memory] does not block but continue to fill the cache instead.
+  (#209, @samoht)
 
 ## Changed
 
@@ -16,7 +21,6 @@
   than waiting for it to finish. (#185)
 - `sync` has to be called by the read-only instance to synchronise with the
   files on disk. (#175)
-
 - Caching of `Index` instances is now explicit: `Index.Make` requires a cache
   implementation, and `Index.v` may be passed a cache to be used for instance
   sharing. The default behaviour is _not_ to share instances. (#188)
