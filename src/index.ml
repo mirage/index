@@ -109,11 +109,14 @@ struct
   let check_open t =
     match !t with Some instance -> instance | None -> raise Closed
 
-  let clear t =
+  let clear' ~hook t =
     let t = check_open t in
     Log.debug (fun l -> l "clear %S" t.root);
     if t.config.readonly then raise RO_not_allowed;
+    t.pending_cancel <- true;
+    hook `Abort_signalled;
     Mutex.with_lock t.merge_lock (fun () ->
+        t.pending_cancel <- false;
         t.generation <- Int64.succ t.generation;
         let log = assert_and_get t.log in
         IO.clear ~generation:t.generation log.io;
@@ -130,6 +133,8 @@ struct
           t.index;
         t.index <- None;
         t.log_async <- None)
+
+  let clear = clear' ~hook:(fun _ -> ())
 
   let flush_instance ?(with_fsync = false) instance =
     Log.debug (fun l ->
@@ -603,13 +608,16 @@ struct
       in
       let merge_result : [ `Index of index | `Aborted ] =
         match t.index with
-        | None ->
-            let io =
-              IO.v ~fresh:true ~readonly:false ~generation ~fan_size:0L
-                (index_path t.root)
-            in
-            append_remaining_log fan_out log_array 0 merge;
-            `Index { io; fan_out }
+        | None -> (
+            match yield () with
+            | `Abort -> `Aborted
+            | `Continue ->
+                let io =
+                  IO.v ~fresh:true ~readonly:false ~generation ~fan_size:0L
+                    (index_path t.root)
+                in
+                append_remaining_log fan_out log_array 0 merge;
+                `Index { io; fan_out })
         | Some index -> (
             let index = { index with fan_out } in
             match merge_with ~yield ~filter log_array index merge with
@@ -805,6 +813,8 @@ module Private = struct
     type 'a async
 
     val close' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
+
+    val clear' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
 
     val force_merge :
       ?hook:[ `After | `After_clear | `Before ] Hook.t ->
