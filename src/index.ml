@@ -117,19 +117,22 @@ struct
     hook `Abort_signalled;
     Mutex.with_lock t.merge_lock (fun () ->
         t.pending_cancel <- false;
-        t.generation <- Int64.succ t.generation;
+        let generation = Int64.succ t.generation in
+        t.generation <- generation;
         let log = assert_and_get t.log in
-        IO.clear ~generation:t.generation log.io;
+        IO.clear ~generation log.io;
         Tbl.clear log.mem;
         may
           (fun l ->
-            IO.clear ~generation:t.generation l.io;
-            IO.close l.io)
+            IO.clear ~generation:(-1L) l.io;
+            IO.close l.io;
+            IO.unlink l.io)
           t.log_async;
         may
           (fun (i : index) ->
-            IO.clear ~generation:t.generation i.io;
-            IO.close i.io)
+            IO.clear ~generation:(-1L) i.io;
+            IO.close i.io;
+            IO.unlink i.io)
           t.index;
         t.index <- None;
         t.log_async <- None)
@@ -238,7 +241,8 @@ struct
           (Filename.basename path));
     if Sys.file_exists path then (
       let io =
-        IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
+        IO.v ~fresh:false ~readonly:true ~generation:t.generation ~fan_size:0L
+          path
       in
       let mem = Tbl.create 0 in
       iter_io (fun e -> Tbl.replace mem e.key e.value) io;
@@ -256,17 +260,21 @@ struct
     | Some log ->
         let offset = IO.offset log.io in
         let h = IO.Header.get log.io in
-        if t.generation <> h.generation then sync_log_entries log
+        if t.generation <> h.generation then (
+          IO.close log.io;
+          t.log_async <- try_load_log t (log_async_path t.root);
+          match t.log_async with None -> () | Some log -> sync_log_entries log)
         else if offset < h.offset then sync_log_entries ~min:offset log
         else if offset > h.offset then assert false
 
-  let sync_index ~generation t =
+  let sync_index t =
     may (fun (i : index) -> IO.close i.io) t.index;
     let index_path = index_path t.root in
     if not (Sys.file_exists index_path) then t.index <- None
     else
       let io =
-        IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L index_path
+        IO.v ~fresh:false ~readonly:true ~generation:t.generation ~fan_size:0L
+          index_path
       in
       let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
       if IO.offset io = 0L then t.index <- None
@@ -300,11 +308,13 @@ struct
         hook `After_offset_read;
         if t.generation <> h.generation then (
           Log.debug (fun l ->
-              l "[%s] generation has changed, reading log and index from disk"
-                (Filename.basename t.root));
+              l
+                "[%s] generation has changed [%Ld -> %Ld], reading log and \
+                 index from disk"
+                (Filename.basename t.root) t.generation h.generation);
           t.generation <- h.generation;
           sync_log_entries log;
-          sync_index ~generation:h.generation t)
+          sync_index t)
         else if log_offset < h.offset then (
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
@@ -491,10 +501,12 @@ struct
     match find_instance t key with _ -> true | exception Not_found -> false
 
   let append_buf_fanout fan_out hash buf_str dst_io =
+    Log.debug (fun l -> l "append_buf_fanout");
     Fan.update fan_out hash (IO.offset dst_io);
     IO.append dst_io buf_str
 
   let append_entry_fanout fan_out entry dst_io =
+    Log.debug (fun l -> l "append_entry_fanout");
     Fan.update fan_out entry.key_hash (IO.offset dst_io);
     append_key_value dst_io entry.key entry.value
 

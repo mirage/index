@@ -47,24 +47,39 @@ module IO : Index.IO = struct
     t.auto_flush_callback ();
     let buf = Buffer.contents t.buf in
     let offset = t.offset in
+    let h = Raw.Header.get t.raw in
     Buffer.clear t.buf;
     if buf = "" then ()
     else (
       Log.debug (fun l -> l "[%s] flushing %d bytes" t.file (String.length buf));
       Raw.unsafe_write t.raw ~off:t.flushed buf;
       Raw.Offset.set t.raw offset;
-      assert (t.flushed ++ Int64.of_int (String.length buf) = t.header ++ offset);
+      assert (
+        if
+          not
+            (t.flushed ++ Int64.of_int (String.length buf) = t.header ++ offset)
+        then (
+          Fmt.epr
+            "XXX file=%s; t.flushed=%Ld len(buf)=%d t.header=%Ld offset=%Ld \
+             [%Ld =? %Ld] h.offset=%Ld h.generation=%Ld\n\
+             %!"
+            t.file t.flushed (String.length buf) t.header offset
+            (t.flushed ++ Int64.of_int (String.length buf))
+            (t.header ++ offset) h.offset h.generation;
+          false)
+        else true);
       t.flushed <- offset ++ t.header);
     if with_fsync then Raw.fsync t.raw
 
   let name t = t.file
 
   let rename ~src ~dst =
+    Fmt.epr "XXX rename %s => %s\n%!" src.file dst.file;
     flush ~with_fsync:true src;
     Raw.close dst.raw;
     Unix.rename src.file dst.file;
     Buffer.clear dst.buf;
-    dst.file <- src.file;
+    src.file <- dst.file;
     dst.header <- src.header;
     dst.fan_size <- src.fan_size;
     dst.offset <- src.offset;
@@ -74,6 +89,10 @@ module IO : Index.IO = struct
   let close t =
     if not t.readonly then Buffer.clear t.buf;
     Raw.close t.raw
+
+  let unlink t =
+    if t.readonly then raise RO_not_allowed;
+    try Unix.unlink t.file with Unix.Unix_error (ENOENT, _, _) -> ()
 
   let auto_flush_limit = 1_000_000L
 
@@ -195,6 +214,7 @@ module IO : Index.IO = struct
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
     | false ->
+        Log.debug (fun l -> l "create %s [generation=%Ld]" file generation);
         let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; mode ] 0o644 in
         let raw = Raw.v x in
         Raw.Offset.set raw 0L;
@@ -208,6 +228,7 @@ module IO : Index.IO = struct
         if readonly && fresh then
           Fmt.failwith "IO.v: cannot reset a readonly file"
         else if fresh then (
+          Log.debug (fun l -> l "clearing %s [generation=%Ld]" file generation);
           Raw.Offset.set raw 0L;
           Raw.Fan.set_size raw fan_size;
           Raw.Version.set raw current_version;
