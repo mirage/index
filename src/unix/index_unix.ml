@@ -97,7 +97,8 @@ module IO : Index.IO = struct
   let auto_flush_limit = 1_000_000L
 
   let append t buf =
-    Fmt.epr "XXX append %s (%d bytes)\n%!" t.file (String.length buf);
+    Fmt.epr "XXX append %s ([%d]: %d bytes)\n%!" t.file (Buffer.length t.buf)
+      (String.length buf);
     if t.readonly then raise RO_not_allowed;
     Buffer.add_string t.buf buf;
     let len = Int64.of_int (String.length buf) in
