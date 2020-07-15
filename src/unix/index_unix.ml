@@ -164,15 +164,6 @@ module IO : Index.IO = struct
     Buffer.clear t.buf;
     Raw.fsync t.raw
 
-  let buffers = Hashtbl.create 256
-
-  let buffer file =
-    try Hashtbl.find buffers file
-    with Not_found ->
-      let buf = Buffer.create (4 * 1024) in
-      Hashtbl.add buffers file buf;
-      buf
-
   let () = assert (String.length current_version = 8)
 
   let v ?(auto_flush_callback = fun () -> ()) ~readonly ~fresh ~generation
@@ -186,7 +177,7 @@ module IO : Index.IO = struct
         raw;
         readonly;
         fan_size;
-        buf = buffer file;
+        buf = Buffer.create (4 * 1024);
         flushed = header ++ offset;
         auto_flush_callback;
       }
