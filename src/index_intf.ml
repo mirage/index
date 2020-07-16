@@ -293,7 +293,7 @@ module type Index = sig
       (** The type of asynchronous computation. *)
 
       val force_merge :
-        ?hook:[ `After | `After_clear | `Before ] Hook.t ->
+        ?hook:[ `After | `After_clear | `After_first_entry | `Before ] Hook.t ->
         t ->
         [ `Completed | `Aborted ] async
       (** [force_merge t] forces a merge for [t]. Optionally, a hook can be
@@ -303,6 +303,8 @@ module type Index = sig
             lock);
           - [`After_clear]: immediately after clearing the log, at the end of a
             merge;
+          - [`After_first_entry]: immediately after adding the first entry in
+            the merge file, if the data file contains at least one entry;
           - [`After]: immediately after merging (while holding the merge lock). *)
 
       val await : 'a async -> ('a, [ `Async_exn of exn ]) result

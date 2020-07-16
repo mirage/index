@@ -514,7 +514,7 @@ struct
 
   (* Merge [log] with [index] into [dst_io], ignoring bindings that do not
      satisfy [filter (k, v)]. [log] must be sorted by key hashes. *)
-  let merge_with ~yield ~filter log (index : index) dst_io =
+  let merge_with ~hook ~yield ~filter log (index : index) dst_io =
     let entries = 10_000 in
     let len = entries * entry_size in
     let buf = Bytes.create len in
@@ -522,7 +522,7 @@ struct
     let index_end = IO.offset index.io in
     let fan_out = index.fan_out in
     refill 0L;
-    let rec go index_offset buf_offset log_i =
+    let rec go first_entry index_offset buf_offset log_i =
       if index_offset >= index_end then (
         append_remaining_log fan_out log log_i dst_io;
         `Completed)
@@ -544,6 +544,7 @@ struct
             then
               append_buf_fanout fan_out e.key_hash (Bytes.to_string buf_str)
                 dst_io;
+            if first_entry then hook `After_first_entry;
             let buf_offset =
               let n = buf_offset + entry_size in
               if n >= Bytes.length buf then (
@@ -551,9 +552,9 @@ struct
                 0)
               else n
             in
-            (go [@tailcall]) index_offset buf_offset log_i
+            (go [@tailcall]) false index_offset buf_offset log_i
     in
-    (go [@tailcall]) 0L 0 0
+    (go [@tailcall]) true 0L 0 0
 
   let merge ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
       ~witness t =
@@ -620,7 +621,7 @@ struct
                 `Index { io; fan_out })
         | Some index -> (
             let index = { index with fan_out } in
-            match merge_with ~yield ~filter log_array index merge with
+            match merge_with ~hook ~yield ~filter log_array index merge with
             | `Completed -> `Index index
             | `Aborted -> `Aborted)
       in
@@ -817,7 +818,7 @@ module Private = struct
     val clear' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
 
     val force_merge :
-      ?hook:[ `After | `After_clear | `Before ] Hook.t ->
+      ?hook:[ `After | `After_clear | `After_first_entry | `Before ] Hook.t ->
       t ->
       [ `Completed | `Aborted ] async
 

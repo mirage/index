@@ -366,6 +366,7 @@ let test_throttle () =
   Mutex.unlock m;
   Index.await thread |> check_completed
 
+(** Test that a clear is aborting the merge.*)
 let test_non_blocking_clear () =
   let* Context.{ rw; _ } = Context.with_empty_index () in
   let lock () =
@@ -394,6 +395,44 @@ let test_non_blocking_clear () =
   | Ok `Aborted -> ()
   | _ -> Alcotest.fail "merge should have aborted"
 
+(** The test consists of aborting a first merge after one entry is added in the
+    ./merge file and checking that a second merge succeeds. Regression test for
+    PR 211 in which the second merge was triggering an assert failure. *)
+let test_abort_merge ~abort_merge () =
+  let* { Context.rw; clone; _ } = Context.with_full_index () in
+  let lock () =
+    let m = Mutex.create () in
+    Mutex.lock m;
+    m
+  in
+  let merge_started = lock () and merge = lock () in
+  let merge_hook =
+    Hook.v @@ function
+    | `After_first_entry ->
+        Mutex.unlock merge_started;
+        Mutex.lock merge
+    | `After | `After_clear ->
+        Alcotest.fail "Merge should have been aborted by clear"
+    | `Before -> ()
+  in
+  let abort_hook =
+    Hook.v @@ function `Abort_signalled -> Mutex.unlock merge
+  in
+  let t = Index.force_merge ~hook:merge_hook rw in
+  Mutex.lock merge_started;
+  abort_merge ~hook:abort_hook rw;
+  (match Index.await t with
+  | Ok `Aborted -> ()
+  | _ -> Alcotest.fail "Merge should have aborted");
+  let rw = clone ~readonly:false ~fresh:false () in
+  add_bindings rw;
+  let t = Index.force_merge rw in
+  Index.await t |> check_completed
+
+let test_clear_aborts_merge = test_abort_merge ~abort_merge:Index.clear'
+
+let test_close_aborts_merge = test_abort_merge ~abort_merge:Index.close'
+
 let tests =
   [
     ("readonly in sequence", `Quick, readonly_s);
@@ -409,4 +448,6 @@ let tests =
     ("is_merging", `Quick, test_is_merging);
     ("throttle", `Quick, test_throttle);
     ("clear is not blocking", `Quick, test_non_blocking_clear);
+    ("close aborts merge", `Quick, test_close_aborts_merge);
+    ("clear aborts merge", `Quick, test_clear_aborts_merge);
   ]
