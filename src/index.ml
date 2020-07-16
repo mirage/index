@@ -120,7 +120,7 @@ struct
         Tbl.clear log.mem;
         may
           (fun l ->
-            IO.clear ~generation:t.generation log.io;
+            IO.clear ~generation:t.generation l.io;
             IO.close l.io)
           t.log_async;
         may
