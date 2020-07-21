@@ -136,12 +136,12 @@ struct
 
   let clear = clear' ~hook:(fun _ -> ())
 
-  let flush_instance ?(with_fsync = false) instance =
+  let flush_instance ?no_callback ?(with_fsync = false) instance =
     Log.debug (fun l ->
         l "[%s] flushing instance" (Filename.basename instance.root));
     if instance.config.readonly then raise RO_not_allowed;
-    may (fun log -> IO.flush ~with_fsync log.io) instance.log;
-    may (fun log -> IO.flush ~with_fsync log.io) instance.log_async
+    may (fun log -> IO.flush ?no_callback ~with_fsync log.io) instance.log;
+    may (fun log -> IO.flush ?no_callback ~with_fsync log.io) instance.log_async
 
   let flush ?(with_fsync = false) t =
     let t = check_open t in
@@ -642,8 +642,15 @@ struct
                   Tbl.replace log.mem key value;
                   append_key_value log.io key value)
                 log_async.mem;
-              IO.flush log.io;
+
+              (* IO.flush can fail due to an exception in [auto_flush_callback]. *)
+              (try IO.flush log.io
+               with exn ->
+                 Mutex.unlock t.merge_lock;
+                 raise exn);
+
               t.log_async <- None);
+
           IO.clear ~generation:(Int64.succ generation) log_async.io;
           IO.close log_async.io;
           hook `After;
@@ -772,7 +779,8 @@ struct
               Log.debug (fun l ->
                   l "[%s] last open instance: closing the file descriptor"
                     (Filename.basename t.root));
-              if not t.config.readonly then flush_instance ~with_fsync:true t;
+              if not t.config.readonly then
+                flush_instance ~no_callback:() ~with_fsync:true t;
               may
                 (fun l ->
                   Tbl.clear l.mem;

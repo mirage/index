@@ -68,7 +68,14 @@ module Value = struct
   let pp s = Fmt.fmt "%s" s
 end
 
-module Index = Index_unix.Private.Make (Key) (Value) (Index.Cache.Unbounded)
+module Index = struct
+  include Index_unix.Private.Make (Key) (Value) (Index.Cache.Unbounded)
+
+  let replace_random t =
+    let ((key, value) as binding) = (Key.v (), Value.v ()) in
+    replace t key value;
+    binding
+end
 
 module Make_context (Config : sig
   val root : string
@@ -92,23 +99,31 @@ struct
 
   let ( >> ) f g x = g (f x)
 
-  let empty_index ?throttle () =
+  let empty_index ?(log_size = 4) ?auto_flush_callback ?throttle () =
     let name = fresh_name "empty_index" in
     let cache = Index.empty_cache () in
-    let rw = Index.v ?throttle ~cache ~fresh:true ~log_size:4 name in
+    let rw =
+      Index.v ?auto_flush_callback ?throttle ~cache ~fresh:true ~log_size name
+    in
     let close_all = ref (fun () -> Index.close rw) in
     let tbl = Hashtbl.create 0 in
     let clone ?(fresh = false) ~readonly () =
-      let t = Index.v ?throttle ~cache ~fresh ~log_size:4 ~readonly name in
+      let t =
+        Index.v ?auto_flush_callback ?throttle ~cache ~fresh ~log_size ~readonly
+          name
+      in
       (close_all := !close_all >> fun () -> Index.close t);
       t
     in
     { rw; tbl; clone; close_all = (fun () -> !close_all ()) }
 
-  let full_index ?(size = 103) ?throttle () =
+  let full_index ?(size = 103) ?(log_size = 4) ?auto_flush_callback ?throttle ()
+      =
     let name = fresh_name "full_index" in
     let cache = Index.empty_cache () in
-    let rw = Index.v ?throttle ~cache ~fresh:true ~log_size:4 name in
+    let rw =
+      Index.v ?auto_flush_callback ?throttle ~cache ~fresh:true ~log_size name
+    in
     let close_all = ref (fun () -> Index.close rw) in
     let tbl = Hashtbl.create 0 in
     for _ = 1 to size do
@@ -119,7 +134,10 @@ struct
     done;
     Index.flush rw;
     let clone ?(fresh = false) ~readonly () =
-      let t = Index.v ?throttle ~cache ~fresh ~log_size:4 ~readonly name in
+      let t =
+        Index.v ?auto_flush_callback ?throttle ~cache ~fresh ~log_size ~readonly
+          name
+      in
       (close_all := !close_all >> fun () -> Index.close t);
       t
     in
@@ -130,11 +148,13 @@ struct
     t.close_all ();
     a
 
-  let with_empty_index ?throttle () f =
-    call_then_close (empty_index ?throttle ()) f
+  let with_empty_index ?log_size ?auto_flush_callback ?throttle () f =
+    call_then_close (empty_index ?log_size ?auto_flush_callback ?throttle ()) f
 
-  let with_full_index ?throttle ?size () f =
-    call_then_close (full_index ?throttle ?size ()) f
+  let with_full_index ?log_size ?auto_flush_callback ?throttle ?size () f =
+    call_then_close
+      (full_index ?log_size ?auto_flush_callback ?throttle ?size ())
+      f
 end
 
 let ( let* ) f k = f k

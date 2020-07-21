@@ -134,7 +134,14 @@ module type S = sig
     t
   (** The constructor for indexes.
 
-      @param auto_flush_callback adds a callback before an auto flush.
+      @param auto_flush_callback A function to be called before any new bindings
+      are automatically persisted to disk (explicit calls to {!flush} and
+      {!close} are not included).
+
+      This can be used to ensure certain pre-conditions are met before bindings
+      are persisted to disk. (For instance, if the index bindings are pointers
+      into another data-structure [d], it may be necessary to flush [d] first to
+      avoid creating dangling pointers.)
       @param cache used for instance sharing.
       @param fresh whether an existing index should be overwritten.
       @param read_only whether read-only mode is enabled for this index.
@@ -181,7 +188,8 @@ module type S = sig
       [true], this also flushes the OS caches for each [IO] instance. *)
 
   val close : t -> unit
-  (** Closes all resources used by [t]. *)
+  (** Closes all resources used by [t], flushing any internal buffers in the
+      instance. *)
 
   val sync : t -> unit
   (** [sync t] syncs a read-only index with the files on disk. Raises

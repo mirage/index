@@ -42,9 +42,9 @@ module IO : Index.IO = struct
     auto_flush_callback : unit -> unit;
   }
 
-  let flush ?(with_fsync = false) t =
+  let flush ?no_callback ?(with_fsync = false) t =
     if t.readonly then raise RO_not_allowed;
-    t.auto_flush_callback ();
+    (match no_callback with Some () -> () | None -> t.auto_flush_callback ());
     let buf = Buffer.contents t.buf in
     let offset = t.offset in
     Buffer.clear t.buf;

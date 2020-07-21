@@ -662,4 +662,5 @@ let () =
       ("readonly", Readonly.tests);
       ("close", Close.tests);
       ("filter", Filter.tests);
+      ("auto_flush_callback", Auto_flush_callback.tests);
     ]

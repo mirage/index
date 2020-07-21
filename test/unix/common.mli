@@ -18,7 +18,12 @@ module Value : sig
   val v : unit -> t
 end
 
-module Index : Index.Private.S with type key = Key.t and type value = Value.t
+module Index : sig
+  include Index.Private.S with type key = Key.t and type value = Value.t
+
+  val replace_random : t -> key * value
+  (** Add a random fresh binding to the given index. *)
+end
 
 (** Helper constructors for fresh pre-initialised indices *)
 module Make_context (Config : sig
@@ -35,11 +40,18 @@ end) : sig
   (** [fresh_name typ] is a clean directory for a resource of type [typ]. *)
 
   val with_empty_index :
-    ?throttle:[ `Overcommit_memory | `Block_writes ] -> unit -> (t -> 'a) -> 'a
+    ?log_size:int ->
+    ?auto_flush_callback:(unit -> unit) ->
+    ?throttle:[ `Overcommit_memory | `Block_writes ] ->
+    unit ->
+    (t -> 'a) ->
+    'a
   (** [with_empty_index f] applies [f] to a fresh empty index. Afterwards, the
       index and any clones are closed. *)
 
   val with_full_index :
+    ?log_size:int ->
+    ?auto_flush_callback:(unit -> unit) ->
     ?throttle:[ `Overcommit_memory | `Block_writes ] ->
     ?size:int ->
     unit ->
