@@ -31,7 +31,7 @@ module IO : Index.IO = struct
   let ( -- ) = Int64.sub
 
   type t = {
-    file : string;
+    mutable file : string;
     mutable header : int64;
     mutable raw : Raw.t;
     mutable offset : int64;
@@ -64,6 +64,7 @@ module IO : Index.IO = struct
     Raw.close dst.raw;
     Unix.rename src.file dst.file;
     Buffer.clear dst.buf;
+    src.file <- dst.file;
     dst.header <- src.header;
     dst.fan_size <- src.fan_size;
     dst.offset <- src.offset;
