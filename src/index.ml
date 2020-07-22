@@ -713,7 +713,7 @@ struct
     if t.config.readonly then raise RO_not_allowed;
     Mutex.is_locked t.merge_lock
 
-  let replace t key value =
+  let replace' ?hook t key value =
     let t = check_open t in
     Stats.incr_nb_replace ();
     Log.info (fun l ->
@@ -732,10 +732,14 @@ struct
     in
     if log_limit_reached then
       match t.config.throttle with
-      | `Overcommit_memory -> ()
+      | `Overcommit_memory -> None
       | `Block_writes ->
-          ignore
-            (merge ~witness:{ key; key_hash = K.hash key; value } t : _ async)
+          let hook = hook |> Option.map (fun f stage -> f (`Merge stage)) in
+          Some (merge ?hook ~witness:{ key; key_hash = K.hash key; value } t)
+    else None
+
+  let replace t key value =
+    ignore (replace' ?hook:None t key value : _ async option)
 
   let replace_with_timer ?sampling_interval t key value =
     if sampling_interval <> None then Stats.start_replace ();
@@ -826,19 +830,27 @@ module Private = struct
     let v f = f
   end
 
+  type merge_stages = [ `After | `After_clear | `After_first_entry | `Before ]
+
+  type merge_result = [ `Completed | `Aborted ]
+
   module type S = sig
     include S
 
     type 'a async
 
+    val replace' :
+      ?hook:[ `Merge of merge_stages ] Hook.t ->
+      t ->
+      key ->
+      value ->
+      merge_result async option
+
     val close' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
 
     val clear' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
 
-    val force_merge :
-      ?hook:[ `After | `After_clear | `After_first_entry | `Before ] Hook.t ->
-      t ->
-      [ `Completed | `Aborted ] async
+    val force_merge : ?hook:merge_stages Hook.t -> t -> merge_result async
 
     val await : 'a async -> ('a, [ `Async_exn of exn ]) result
 
