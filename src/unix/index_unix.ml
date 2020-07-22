@@ -44,12 +44,14 @@ module IO : Index.IO = struct
 
   let flush ?no_callback ?(with_fsync = false) t =
     if t.readonly then raise RO_not_allowed;
-    (match no_callback with Some () -> () | None -> t.auto_flush_callback ());
     let buf = Buffer.contents t.buf in
     let offset = t.offset in
     Buffer.clear t.buf;
     if buf = "" then ()
     else (
+      (match no_callback with
+      | Some () -> ()
+      | None -> t.auto_flush_callback ());
       Log.debug (fun l -> l "[%s] flushing %d bytes" t.file (String.length buf));
       Raw.unsafe_write t.raw ~off:t.flushed buf;
       Raw.Offset.set t.raw offset;
