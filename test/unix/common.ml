@@ -106,6 +106,13 @@ module Index = struct
     (binding, replace' ?hook t key value)
 
   let check_binding index = check_entry (find index) "index"
+
+  let check_not_found index k =
+    match find index k with
+    | exception Not_found -> ()
+    | v ->
+        Alcotest.failf "Found binding %a but expected key to be absent"
+          pp_binding (k, v)
 end
 
 module Make_context (Config : sig

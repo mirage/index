@@ -39,6 +39,9 @@ module Index : sig
 
   val check_binding : t -> Key.t -> Value.t -> unit
   (** Check that a binding exists in the index.*)
+
+  val check_not_found : t -> Key.t -> unit
+  (** Check that a key does not exist in the index. *)
 end
 
 (** Helper constructors for fresh pre-initialised indices *)
