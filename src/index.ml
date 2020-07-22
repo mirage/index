@@ -80,6 +80,7 @@ struct
     readonly : bool;
     fresh : bool;
     throttle : throttle;
+    auto_flush_callback : unit -> unit;
   }
 
   type index = { io : IO.t; fan_out : Fan.t }
@@ -314,8 +315,8 @@ struct
           Log.debug (fun l ->
               l "[%s] no changes detected" (Filename.basename t.root))
 
-  let v_no_cache ?auto_flush_callback ~throttle ~fresh ~readonly ~log_size root
-      =
+  let v_no_cache ?(auto_flush_callback = fun () -> ()) ~throttle ~fresh
+      ~readonly ~log_size root =
     Log.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
@@ -323,14 +324,20 @@ struct
       if not readonly then Some (IO.lock (lock_path root)) else None
     in
     let config =
-      { log_size = log_size * entry_size; readonly; fresh; throttle }
+      {
+        log_size = log_size * entry_size;
+        readonly;
+        fresh;
+        throttle;
+        auto_flush_callback;
+      }
     in
     let log_path = log_path root in
     let log =
       if readonly then if fresh then raise RO_not_allowed else None
       else
         let io =
-          IO.v ?auto_flush_callback ~fresh ~readonly ~generation:0L ~fan_size:0L
+          IO.v ~auto_flush_callback ~fresh ~readonly ~generation:0L ~fan_size:0L
             log_path
         in
         let entries = Int64.div (IO.offset io) entry_sizeL in
@@ -349,7 +356,7 @@ struct
        there is no need to do it here. *)
     if (not readonly) && Sys.file_exists log_async_path then (
       let io =
-        IO.v ?auto_flush_callback ~fresh ~readonly:false ~generation:0L
+        IO.v ~auto_flush_callback ~fresh ~readonly:false ~generation:0L
           ~fan_size:0L log_async_path
       in
       let entries = Int64.div (IO.offset io) entry_sizeL in
@@ -568,8 +575,9 @@ struct
     let log_async =
       let io =
         let log_async_path = log_async_path t.root in
-        IO.v ~fresh:true ~readonly:false ~generation:(Int64.succ t.generation)
-          ~fan_size:0L log_async_path
+        IO.v ~auto_flush_callback:t.config.auto_flush_callback ~fresh:true
+          ~readonly:false ~generation:(Int64.succ t.generation) ~fan_size:0L
+          log_async_path
       in
       let mem = Tbl.create 0 in
       { io; mem }
