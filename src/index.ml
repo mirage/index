@@ -374,8 +374,10 @@ struct
       let index_path = index_path root in
       if Sys.file_exists index_path then
         let io =
-          IO.v ?auto_flush_callback ~fresh ~readonly ~generation ~fan_size:0L
-            index_path
+          (* NOTE: No [auto_flush_callback] on the Index IO as any bindings it
+             flushes were previously persisted in either [log] or [log_async]. *)
+          IO.v ?auto_flush_callback:None ~fresh ~readonly ~generation
+            ~fan_size:0L index_path
         in
         let entries = Int64.div (IO.offset io) entry_sizeL in
         if entries = 0L then None
