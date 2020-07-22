@@ -135,8 +135,8 @@ module type S = sig
   (** The constructor for indexes.
 
       @param auto_flush_callback A function to be called before any new bindings
-      are automatically persisted to disk (explicit calls to {!flush} and
-      {!close} are not included).
+      are persisted to disk (including both automatic flushing and explicit
+      calls to {!flush}). Values flushed during {!close} are excluded.
 
       This can be used to ensure certain pre-conditions are met before bindings
       are persisted to disk. (For instance, if the index bindings are pointers

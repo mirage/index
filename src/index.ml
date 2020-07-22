@@ -141,8 +141,16 @@ struct
     Log.debug (fun l ->
         l "[%s] flushing instance" (Filename.basename instance.root));
     if instance.config.readonly then raise RO_not_allowed;
-    may (fun log -> IO.flush ?no_callback ~with_fsync log.io) instance.log;
-    may (fun log -> IO.flush ?no_callback ~with_fsync log.io) instance.log_async
+    instance.log
+    |> may (fun log ->
+           Log.debug (fun l ->
+               l "[%s] flushing log" (Filename.basename instance.root));
+           IO.flush ?no_callback ~with_fsync log.io);
+    instance.log_async
+    |> may (fun log ->
+           Log.debug (fun l ->
+               l "[%s] flushing log_async" (Filename.basename instance.root));
+           IO.flush ?no_callback ~with_fsync log.io)
 
   let flush ?(with_fsync = false) t =
     let t = check_open t in
@@ -653,7 +661,11 @@ struct
                   append_key_value log.io key value)
                 log_async.mem;
 
-              (* IO.flush can fail due to an exception in [auto_flush_callback]. *)
+              (* NOTE: It {i may} not be necessary to trigger the
+                 [auto_flush_callback] here. If the instance has been recently
+                 flushed (or [log_async] just reached the [auto_flush_limit]),
+                 we're just moving already-persisted values around. However, we
+                 trigger the callback anyway for simplicity. *)
               (try IO.flush log.io
                with exn ->
                  Mutex.unlock t.merge_lock;
