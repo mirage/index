@@ -27,30 +27,13 @@ let random_existing_key tbl =
     Alcotest.fail "Provided table contains no keys."
   with Found k -> k
 
-let check_entry findf k v =
-  match findf k with
-  | v' when v = v' -> ()
-  | v' (* v =/= v' *) ->
-      Alcotest.failf "Wrong insertion: found %s when expected %s at key %s." v'
-        v k
-  | exception Not_found ->
-      Alcotest.failf "Wrong insertion: %s key is missing." k
-
-let check_index_entry index = check_entry (Index.find index)
-
-let check_tbl_entry tbl = check_entry (Hashtbl.find tbl)
-
-let check_equivalence index htbl =
-  Hashtbl.iter (check_index_entry index) htbl;
-  Index.iter (check_tbl_entry htbl) index
-
 let test_replace t =
   let k = Key.v () in
   let v = Value.v () in
   let v' = Value.v () in
   Index.replace t k v;
   Index.replace t k v';
-  check_index_entry t k v'
+  Index.check_binding t k v'
 
 let test_find_absent t tbl =
   let rec loop i =
@@ -187,8 +170,8 @@ module DuplicateInstance = struct
     let rw2 = clone ~readonly:false () in
     let k2, v2 = (Key.v (), Value.v ()) in
     Index.replace rw2 k2 v2;
-    check_index_entry rw k2 v2;
-    check_index_entry rw2 k1 v1
+    Index.check_binding rw k2 v2;
+    Index.check_binding rw2 k1 v1
 
   let tests =
     [
@@ -225,7 +208,7 @@ module Readonly = struct
     Index.close rw;
     Index.close ro;
     let rw = clone ~readonly:false () in
-    check_index_entry rw k v
+    Index.check_binding rw k v
 
   let readonly_clear () =
     let check_no_index_entry index k =
@@ -244,15 +227,15 @@ module Readonly = struct
     let ro = clone ~readonly:true () in
     let k, v = (Key.v (), Value.v ()) in
     Index.replace rw k v;
-    check_index_entry rw k v;
+    Index.check_binding rw k v;
     check_no_index_entry ro k;
     Index.flush rw;
     Index.sync ro;
-    check_index_entry rw k v;
-    check_index_entry ro k v;
+    Index.check_binding rw k v;
+    Index.check_binding ro k v;
     Index.clear rw;
     check_no_index_entry rw k;
-    check_index_entry ro k v;
+    Index.check_binding ro k v;
     Index.sync ro;
     check_no_index_entry rw k;
     check_no_index_entry ro k
@@ -284,7 +267,7 @@ module Readonly = struct
     let ro = clone ~readonly:true () in
     Log.info (fun m ->
         m "Checking that RO observes the flushed binding %a" pp_binding (k, v));
-    check_index_entry ro k v
+    Index.check_binding ro k v
 
   (** Readonly finds value in log before and after clear. Before sync the
       deleted value is still found. *)
@@ -295,9 +278,9 @@ module Readonly = struct
     Index.replace rw k1 v1;
     Index.flush rw;
     Index.sync ro;
-    check_index_entry ro k1 v1;
+    Index.check_binding ro k1 v1;
     Index.clear rw;
-    check_index_entry ro k1 v1;
+    Index.check_binding ro k1 v1;
     Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1))
@@ -313,9 +296,9 @@ module Readonly = struct
     let thread = Index.force_merge rw in
     Index.await thread |> check_completed;
     Index.sync ro;
-    check_index_entry ro k1 v1;
+    Index.check_binding ro k1 v1;
     Index.clear rw;
-    check_index_entry ro k1 v1;
+    Index.check_binding ro k1 v1;
     Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1))
@@ -329,14 +312,14 @@ module Readonly = struct
     Index.replace rw k1 v1;
     Index.flush rw;
     Index.sync ro;
-    check_index_entry ro k1 v1;
+    Index.check_binding ro k1 v1;
     Index.clear rw;
     let k2, v2 = (Key.v (), Value.v ()) in
     Index.replace rw k2 v2;
     Index.flush rw;
-    check_index_entry ro k1 v1;
+    Index.check_binding ro k1 v1;
     Index.sync ro;
-    check_index_entry ro k2 v2;
+    Index.check_binding ro k2 v2;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find rw k1));
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
@@ -359,13 +342,13 @@ module Readonly = struct
     Index.replace rw k2 v2;
     let t = Index.force_merge rw in
     Index.await t |> check_completed;
-    check_index_entry ro k1 v1;
+    Index.check_binding ro k1 v1;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find rw k1));
     Index.sync ro;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
       Not_found (fun () -> ignore_value (Index.find ro k1));
-    check_index_entry ro k2 v2
+    Index.check_binding ro k2 v2
 
   let readonly_open_after_clear () =
     let* Context.{ clone; rw; _ } = Context.with_full_index () in
@@ -377,12 +360,9 @@ module Readonly = struct
   let readonly_sync_and_merge () =
     let* Context.{ clone; rw; _ } = Context.with_empty_index () in
     let ro = clone ~readonly:true () in
-    let lock () =
-      let m = Mutex.create () in
-      Mutex.lock m;
-      m
-    in
-    let replace = lock () and merge = lock () and sync = lock () in
+    let replace = locked_mutex ()
+    and merge = locked_mutex ()
+    and sync = locked_mutex () in
     let merge_hook =
       I.Private.Hook.v @@ function
       | `Before ->
@@ -413,8 +393,8 @@ module Readonly = struct
     Index.sync' ~hook:sync_hook ro;
     Index.await thread |> check_completed;
     Mutex.unlock sync;
-    check_index_entry ro k2 v2;
-    check_index_entry ro k3 v3
+    Index.check_binding ro k2 v2;
+    Index.check_binding ro k3 v3
 
   let tests =
     [
@@ -539,10 +519,7 @@ module Close = struct
          - [abort_signalled] is dropped by the parent thread to signal to the
            child to continue the merge operation (which must then abort prematurely).
       *)
-      let m1, m2 = (Mutex.create (), Mutex.create ()) in
-      Mutex.lock m1;
-      Mutex.lock m2;
-      (m1, m2)
+      (locked_mutex (), locked_mutex ())
     in
     let hook = function
       | `Before ->

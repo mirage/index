@@ -1,3 +1,5 @@
+let ( >> ) f g x = g (f x)
+
 let reporter ?(prefix = "") () =
   let report src level ~over k msgf =
     let k _ =
@@ -65,16 +67,45 @@ module Value = struct
 
   let encoded_size = string_size
 
+  let equal = String.equal
+
   let pp s = Fmt.fmt "%s" s
+end
+
+type binding = Key.t * Value.t
+
+let pp_binding ppf (key, value) =
+  Fmt.pf ppf "{ %a → %a }" Key.pp key Value.pp value
+
+let check_entry findf typ k v =
+  match findf k with
+  | v' when Value.equal v v' -> ()
+  | v' (* v =/= v' *) ->
+      Alcotest.failf "Found %s when checking for binding %a in %s" v' pp_binding
+        (k, v) typ
+  | exception Not_found ->
+      Alcotest.failf "Expected key %s is missing in %s" k typ
+
+module Tbl = struct
+  let v ~size =
+    let h = Hashtbl.create size in
+    for _ = 1 to size do
+      Hashtbl.add h (Key.v ()) (Value.v ())
+    done;
+    assert (Hashtbl.length h = size);
+    h
+
+  let check_binding tbl = check_entry (Hashtbl.find tbl) "table"
 end
 
 module Index = struct
   include Index_unix.Private.Make (Key) (Value) (Index.Cache.Unbounded)
 
-  let replace_random t =
+  let replace_random ?hook t =
     let ((key, value) as binding) = (Key.v (), Value.v ()) in
-    replace t key value;
-    binding
+    (binding, replace' ?hook t key value)
+
+  let check_binding index = check_entry (find index) "index"
 end
 
 module Make_context (Config : sig
@@ -97,7 +128,7 @@ struct
     close_all : unit -> unit;
   }
 
-  let ( >> ) f g x = g (f x)
+  let ignore (_ : t) = ()
 
   let empty_index ?(log_size = 4) ?auto_flush_callback ?throttle () =
     let name = fresh_name "empty_index" in
@@ -117,12 +148,18 @@ struct
     in
     { rw; tbl; clone; close_all = (fun () -> !close_all ()) }
 
-  let full_index ?(size = 103) ?(log_size = 4) ?auto_flush_callback ?throttle ()
-      =
+  let full_index ?(size = 103) ?(log_size = 4)
+      ?(auto_flush_callback = fun () -> ()) ?throttle () =
+    let f =
+      (* Disable [auto_flush_callback] while adding initial entries *)
+      ref (fun () -> ())
+    in
     let name = fresh_name "full_index" in
     let cache = Index.empty_cache () in
     let rw =
-      Index.v ?auto_flush_callback ?throttle ~cache ~fresh:true ~log_size name
+      Index.v
+        ~auto_flush_callback:(fun () -> !f ())
+        ?throttle ~cache ~fresh:true ~log_size name
     in
     let close_all = ref (fun () -> Index.close rw) in
     let tbl = Hashtbl.create 0 in
@@ -133,9 +170,10 @@ struct
       Hashtbl.replace tbl k v
     done;
     Index.flush rw;
+    f := auto_flush_callback (* Enable [auto_flush_callback] *);
     let clone ?(fresh = false) ~readonly () =
       let t =
-        Index.v ?auto_flush_callback ?throttle ~cache ~fresh ~log_size ~readonly
+        Index.v ~auto_flush_callback ?throttle ~cache ~fresh ~log_size ~readonly
           name
       in
       (close_all := !close_all >> fun () -> Index.close t);
@@ -159,14 +197,29 @@ end
 
 let ( let* ) f k = f k
 
+let uncurry f (x, y) = f x y
+
 let ignore_value (_ : Value.t) = ()
 
 let ignore_bool (_ : bool) = ()
 
 let ignore_index (_ : Index.t) = ()
 
-let pp_binding ppf (key, value) =
-  Fmt.pf ppf "{ %a → %a }" Key.pp key Value.pp value
+let check_equivalence index htbl =
+  Hashtbl.iter (Index.check_binding index) htbl;
+  Index.iter (Tbl.check_binding htbl) index
+
+let check_disjoint index htbl =
+  Hashtbl.iter
+    (fun k v ->
+      match Index.find index k with
+      | exception Not_found -> ()
+      | v' when Value.equal v v' ->
+          Alcotest.failf "Binding %a should not be present" pp_binding (k, v)
+      | v' ->
+          Alcotest.failf "Found value %a when checking for the absence of %a"
+            Value.pp v' pp_binding (k, v))
+    htbl
 
 let check_completed = function
   | Ok `Completed -> ()
@@ -174,3 +227,8 @@ let check_completed = function
   | Error (`Async_exn exn) ->
       Alcotest.failf "Unexpected asynchronous exception: %s"
         (Printexc.to_string exn)
+
+let locked_mutex () =
+  let m = Mutex.create () in
+  Mutex.lock m;
+  m

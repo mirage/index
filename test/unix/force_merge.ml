@@ -357,8 +357,7 @@ let test_throttle () =
   let* Context.{ rw; tbl; _ } =
     Context.with_full_index ~throttle:`Overcommit_memory ()
   in
-  let m = Mutex.create () in
-  Mutex.lock m;
+  let m = locked_mutex () in
   let hook = Hook.v @@ function `Before -> Mutex.lock m | _ -> () in
   add_bindings rw;
   let thread = Index.force_merge ~hook rw in
