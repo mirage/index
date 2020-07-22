@@ -137,7 +137,7 @@ struct
 
   let clear = clear' ~hook:(fun _ -> ())
 
-  let flush_instance ?no_callback ?(with_fsync = false) instance =
+  let flush_instance ?no_async ?no_callback ?(with_fsync = false) instance =
     Log.debug (fun l ->
         l "[%s] flushing instance" (Filename.basename instance.root));
     if instance.config.readonly then raise RO_not_allowed;
@@ -146,11 +146,13 @@ struct
            Log.debug (fun l ->
                l "[%s] flushing log" (Filename.basename instance.root));
            IO.flush ?no_callback ~with_fsync log.io);
-    instance.log_async
-    |> may (fun log ->
-           Log.debug (fun l ->
-               l "[%s] flushing log_async" (Filename.basename instance.root));
-           IO.flush ?no_callback ~with_fsync log.io)
+
+    match (no_async, instance.log_async) with
+    | Some (), _ | None, None -> ()
+    | None, Some log ->
+        Log.debug (fun l ->
+            l "[%s] flushing log_async" (Filename.basename instance.root));
+        IO.flush ?no_callback ~with_fsync log.io
 
   let flush ?(with_fsync = false) t =
     let t = check_open t in
@@ -389,8 +391,9 @@ struct
       let index_path = index_path root in
       if Sys.file_exists index_path then
         let io =
-          (* NOTE: No [auto_flush_callback] on the Index IO as any bindings it
-             flushes were previously persisted in either [log] or [log_async]. *)
+          (* NOTE: No [auto_flush_callback] on the Index IO as we maintain the
+             invariant that any bindings it contains were previously persisted
+             in either [log] or [log_async]. *)
           IO.v ?auto_flush_callback:None ~fresh ~readonly ~generation
             ~fan_size:0L index_path
         in
@@ -579,7 +582,6 @@ struct
     Mutex.lock t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
     Stats.incr_nb_merge ();
-    flush_instance ~with_fsync:true t;
     let log_async =
       let io =
         let log_async_path = log_async_path t.root in
@@ -591,6 +593,12 @@ struct
       { io; mem }
     in
     t.log_async <- Some log_async;
+    (* NOTE: We flush [log] {i after} enabling [log_async] to ensure that no
+       unflushed bindings make it into [log] before being merged into the index.
+       This satisfies the invariant that all bindings are {i first} persisted in
+       a log, so that the [index] IO doesn't need to trigger the
+       [auto_flush_callback]. *)
+    flush_instance ~no_async:() ~with_fsync:true t;
 
     let go () =
       hook `Before;
