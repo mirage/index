@@ -19,7 +19,7 @@ build: [
 ]
 
 depends: [
-  "ocaml"   {>= "4.06.0"}
+  "ocaml"   {>= "4.08.0"}
   "dune"    {>= "2.0.0"}
   "fmt"
   "logs"
@@ -27,8 +27,6 @@ depends: [
   "alcotest" {with-test}
   "crowbar" {with-test}
   "re" {with-test}
-  "stdlib-shims"
-  "ocaml-syntax-shims" {with-test}
 ]
 synopsis: "A platform-agnostic multi-level index for OCaml"
 description:"""

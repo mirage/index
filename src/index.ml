@@ -80,6 +80,7 @@ struct
     readonly : bool;
     fresh : bool;
     throttle : throttle;
+    flush_callback : unit -> unit;
   }
 
   type index = { io : IO.t; fan_out : Fan.t }
@@ -136,17 +137,28 @@ struct
 
   let clear = clear' ~hook:(fun _ -> ())
 
-  let flush_instance ?(with_fsync = false) instance =
+  let flush_instance ?no_async ?no_callback ?(with_fsync = false) instance =
     Log.debug (fun l ->
         l "[%s] flushing instance" (Filename.basename instance.root));
     if instance.config.readonly then raise RO_not_allowed;
-    may (fun log -> IO.flush ~with_fsync log.io) instance.log;
-    may (fun log -> IO.flush ~with_fsync log.io) instance.log_async
+    instance.log
+    |> may (fun log ->
+           Log.debug (fun l ->
+               l "[%s] flushing log" (Filename.basename instance.root));
+           IO.flush ?no_callback ~with_fsync log.io);
 
-  let flush ?(with_fsync = false) t =
+    match (no_async, instance.log_async) with
+    | Some (), _ | None, None -> ()
+    | None, Some log ->
+        Log.debug (fun l ->
+            l "[%s] flushing log_async" (Filename.basename instance.root));
+        IO.flush ?no_callback ~with_fsync log.io
+
+  let flush ?no_callback ?(with_fsync = false) t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
-    Mutex.with_lock t.rename_lock (fun () -> flush_instance ~with_fsync t)
+    Mutex.with_lock t.rename_lock (fun () ->
+        flush_instance ?no_callback ~with_fsync t)
 
   let ( // ) = Filename.concat
 
@@ -314,8 +326,8 @@ struct
           Log.debug (fun l ->
               l "[%s] no changes detected" (Filename.basename t.root))
 
-  let v_no_cache ?auto_flush_callback ~throttle ~fresh ~readonly ~log_size root
-      =
+  let v_no_cache ?(flush_callback = fun () -> ()) ~throttle ~fresh ~readonly
+      ~log_size root =
     Log.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
@@ -323,14 +335,20 @@ struct
       if not readonly then Some (IO.lock (lock_path root)) else None
     in
     let config =
-      { log_size = log_size * entry_size; readonly; fresh; throttle }
+      {
+        log_size = log_size * entry_size;
+        readonly;
+        fresh;
+        throttle;
+        flush_callback;
+      }
     in
     let log_path = log_path root in
     let log =
       if readonly then if fresh then raise RO_not_allowed else None
       else
         let io =
-          IO.v ?auto_flush_callback ~fresh ~readonly ~generation:0L ~fan_size:0L
+          IO.v ~flush_callback ~fresh ~readonly ~generation:0L ~fan_size:0L
             log_path
         in
         let entries = Int64.div (IO.offset io) entry_sizeL in
@@ -349,8 +367,8 @@ struct
        there is no need to do it here. *)
     if (not readonly) && Sys.file_exists log_async_path then (
       let io =
-        IO.v ?auto_flush_callback ~fresh ~readonly:false ~generation:0L
-          ~fan_size:0L log_async_path
+        IO.v ~flush_callback ~fresh ~readonly:false ~generation:0L ~fan_size:0L
+          log_async_path
       in
       let entries = Int64.div (IO.offset io) entry_sizeL in
       Log.debug (fun l ->
@@ -374,7 +392,10 @@ struct
       let index_path = index_path root in
       if Sys.file_exists index_path then
         let io =
-          IO.v ?auto_flush_callback ~fresh ~readonly ~generation ~fan_size:0L
+          (* NOTE: No [flush_callback] on the Index IO as we maintain the
+             invariant that any bindings it contains were previously persisted
+             in either [log] or [log_async]. *)
+          IO.v ?flush_callback:None ~fresh ~readonly ~generation ~fan_size:0L
             index_path
         in
         let entries = Int64.div (IO.offset io) entry_sizeL in
@@ -408,13 +429,12 @@ struct
 
   let empty_cache = Cache.create
 
-  let v ?(auto_flush_callback = fun () -> ()) ?(cache = empty_cache ())
+  let v ?(flush_callback = fun () -> ()) ?(cache = empty_cache ())
       ?(fresh = false) ?(readonly = false) ?(throttle = `Block_writes) ~log_size
       root =
     let new_instance () =
       let instance =
-        v_no_cache ~auto_flush_callback ~fresh ~readonly ~log_size ~throttle
-          root
+        v_no_cache ~flush_callback ~fresh ~readonly ~log_size ~throttle root
       in
       if readonly then sync_log instance;
       Cache.add cache (root, readonly) instance;
@@ -562,17 +582,22 @@ struct
     Mutex.lock t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
     Stats.incr_nb_merge ();
-    flush_instance ~with_fsync:true t;
     let log_async =
       let io =
         let log_async_path = log_async_path t.root in
-        IO.v ~fresh:true ~readonly:false ~generation:(Int64.succ t.generation)
-          ~fan_size:0L log_async_path
+        IO.v ~flush_callback:t.config.flush_callback ~fresh:true ~readonly:false
+          ~generation:(Int64.succ t.generation) ~fan_size:0L log_async_path
       in
       let mem = Tbl.create 0 in
       { io; mem }
     in
     t.log_async <- Some log_async;
+    (* NOTE: We flush [log] {i after} enabling [log_async] to ensure that no
+       unflushed bindings make it into [log] before being merged into the index.
+       This satisfies the invariant that all bindings are {i first} persisted in
+       a log, so that the [index] IO doesn't need to trigger the
+       [flush_callback]. *)
+    flush_instance ~no_async:() ~with_fsync:true t;
 
     let go () =
       hook `Before;
@@ -642,8 +667,19 @@ struct
                   Tbl.replace log.mem key value;
                   append_key_value log.io key value)
                 log_async.mem;
-              IO.flush log.io;
+
+              (* NOTE: It {i may} not be necessary to trigger the
+                 [flush_callback] here. If the instance has been recently
+                 flushed (or [log_async] just reached the [auto_flush_limit]),
+                 we're just moving already-persisted values around. However, we
+                 trigger the callback anyway for simplicity. *)
+              (try IO.flush log.io
+               with exn ->
+                 Mutex.unlock t.merge_lock;
+                 raise exn);
+
               t.log_async <- None);
+
           IO.clear ~generation:(Int64.succ generation) log_async.io;
           IO.close log_async.io;
           hook `After;
@@ -696,7 +732,7 @@ struct
     if t.config.readonly then raise RO_not_allowed;
     Mutex.is_locked t.merge_lock
 
-  let replace t key value =
+  let replace' ?hook t key value =
     let t = check_open t in
     Stats.incr_nb_replace ();
     Log.info (fun l ->
@@ -715,10 +751,14 @@ struct
     in
     if log_limit_reached then
       match t.config.throttle with
-      | `Overcommit_memory -> ()
+      | `Overcommit_memory -> None
       | `Block_writes ->
-          ignore
-            (merge ~witness:{ key; key_hash = K.hash key; value } t : _ async)
+          let hook = hook |> Option.map (fun f stage -> f (`Merge stage)) in
+          Some (merge ?hook ~witness:{ key; key_hash = K.hash key; value } t)
+    else None
+
+  let replace t key value =
+    ignore (replace' ?hook:None t key value : _ async option)
 
   let replace_with_timer ?sampling_interval t key value =
     if sampling_interval <> None then Stats.start_replace ();
@@ -808,19 +848,27 @@ module Private = struct
     let v f = f
   end
 
+  type merge_stages = [ `After | `After_clear | `After_first_entry | `Before ]
+
+  type merge_result = [ `Completed | `Aborted ]
+
   module type S = sig
     include S
 
     type 'a async
 
+    val replace' :
+      ?hook:[ `Merge of merge_stages ] Hook.t ->
+      t ->
+      key ->
+      value ->
+      merge_result async option
+
     val close' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
 
     val clear' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
 
-    val force_merge :
-      ?hook:[ `After | `After_clear | `After_first_entry | `Before ] Hook.t ->
-      t ->
-      [ `Completed | `Aborted ] async
+    val force_merge : ?hook:merge_stages Hook.t -> t -> merge_result async
 
     val await : 'a async -> ('a, [ `Async_exn of exn ]) result
 

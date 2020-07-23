@@ -124,7 +124,7 @@ module type S = sig
   (** Construct a new empty cache of index instances. *)
 
   val v :
-    ?auto_flush_callback:(unit -> unit) ->
+    ?flush_callback:(unit -> unit) ->
     ?cache:cache ->
     ?fresh:bool ->
     ?readonly:bool ->
@@ -134,7 +134,14 @@ module type S = sig
     t
   (** The constructor for indexes.
 
-      @param auto_flush_callback adds a callback before an auto flush.
+      @param flush_callback A function to be called before any new bindings are
+      persisted to disk (including both automatic flushing and explicit calls to
+      {!flush} or {!close}).
+
+      This can be used to ensure certain pre-conditions are met before bindings
+      are persisted to disk. (For instance, if the index bindings are pointers
+      into another data-structure [d], it may be necessary to flush [d] first to
+      avoid creating dangling pointers.)
       @param cache used for instance sharing.
       @param fresh whether an existing index should be overwritten.
       @param read_only whether read-only mode is enabled for this index.
@@ -176,12 +183,17 @@ module type S = sig
       - May not observe recent concurrent updates to the index by other
         processes. *)
 
-  val flush : ?with_fsync:bool -> t -> unit
-  (** Flushes all internal buffers of the [IO] instances. If [with_fsync] is
-      [true], this also flushes the OS caches for each [IO] instance. *)
+  val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
+  (** Flushes all internal buffers of the [IO] instances.
+
+      - Passing [~no_callback:()] disables calling the [flush_callback] passed
+        to {!v}.
+      - If [with_fsync] is [true], this also flushes the OS caches for each [IO]
+        instance. *)
 
   val close : t -> unit
-  (** Closes all resources used by [t]. *)
+  (** Closes all resources used by [t], flushing any internal buffers in the
+      instance. *)
 
   val sync : t -> unit
   (** [sync t] syncs a read-only index with the files on disk. Raises
@@ -279,8 +291,33 @@ module type Index = sig
 
     module Fan : module type of Fan
 
+    type merge_stages = [ `After | `After_clear | `After_first_entry | `Before ]
+    (** Some operations that trigger a merge can have hooks inserted at the
+        following stages:
+
+        - [`Before]: immediately before merging (while holding the merge lock);
+        - [`After_clear]: immediately after clearing the log, at the end of a
+          merge;
+        - [`After_first_entry]: immediately after adding the first entry in the
+          merge file, if the data file contains at least one entry;
+        - [`After]: immediately after merging (while holding the merge lock). *)
+
+    type merge_result = [ `Completed | `Aborted ]
+
     module type S = sig
       include S
+
+      type 'a async
+      (** The type of asynchronous computation. *)
+
+      val replace' :
+        ?hook:[ `Merge of merge_stages ] Hook.t ->
+        t ->
+        key ->
+        value ->
+        merge_result async option
+      (** [replace' t k v] is like {!replace t k v} but returns a promise of a
+          merge result if the {!replace} call triggered one. *)
 
       val close' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
       (** [`Abort_signalled]: after the cancellation signal has been sent to any
@@ -289,23 +326,8 @@ module type Index = sig
 
       val clear' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
 
-      type 'a async
-      (** The type of asynchronous computation. *)
-
-      val force_merge :
-        ?hook:[ `After | `After_clear | `After_first_entry | `Before ] Hook.t ->
-        t ->
-        [ `Completed | `Aborted ] async
-      (** [force_merge t] forces a merge for [t]. Optionally, a hook can be
-          passed that will be called twice:
-
-          - [`Before]: immediately before merging (while holding the merge
-            lock);
-          - [`After_clear]: immediately after clearing the log, at the end of a
-            merge;
-          - [`After_first_entry]: immediately after adding the first entry in
-            the merge file, if the data file contains at least one entry;
-          - [`After]: immediately after merging (while holding the merge lock). *)
+      val force_merge : ?hook:merge_stages Hook.t -> t -> merge_result async
+      (** [force_merge t] forces a merge for [t]. *)
 
       val await : 'a async -> ('a, [ `Async_exn of exn ]) result
       (** Wait for an asynchronous computation to finish. *)

@@ -39,17 +39,17 @@ module IO : Index.IO = struct
     mutable fan_size : int64;
     readonly : bool;
     buf : Buffer.t;
-    auto_flush_callback : unit -> unit;
+    flush_callback : unit -> unit;
   }
 
-  let flush ?(with_fsync = false) t =
+  let flush ?no_callback ?(with_fsync = false) t =
     if t.readonly then raise RO_not_allowed;
-    t.auto_flush_callback ();
     let buf = Buffer.contents t.buf in
     let offset = t.offset in
     Buffer.clear t.buf;
     if buf = "" then ()
     else (
+      (match no_callback with Some () -> () | None -> t.flush_callback ());
       Log.debug (fun l -> l "[%s] flushing %d bytes" t.file (String.length buf));
       Raw.unsafe_write t.raw ~off:t.flushed buf;
       Raw.Offset.set t.raw offset;
@@ -166,8 +166,8 @@ module IO : Index.IO = struct
 
   let () = assert (String.length current_version = 8)
 
-  let v ?(auto_flush_callback = fun () -> ()) ~readonly ~fresh ~generation
-      ~fan_size file =
+  let v ?(flush_callback = fun () -> ()) ~readonly ~fresh ~generation ~fan_size
+      file =
     let v ~fan_size ~offset raw =
       let header = 8L ++ 8L ++ 8L ++ 8L ++ fan_size in
       {
@@ -179,7 +179,7 @@ module IO : Index.IO = struct
         fan_size;
         buf = Buffer.create (4 * 1024);
         flushed = header ++ offset;
-        auto_flush_callback;
+        flush_callback;
       }
     in
     let mode = Unix.(if readonly then O_RDONLY else O_RDWR) in

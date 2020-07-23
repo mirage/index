@@ -19,7 +19,7 @@ module type S = sig
   type t
 
   val v :
-    ?auto_flush_callback:(unit -> unit) ->
+    ?flush_callback:(unit -> unit) ->
     readonly:bool ->
     fresh:bool ->
     generation:int64 ->
@@ -39,7 +39,7 @@ module type S = sig
 
   val clear : generation:int64 -> t -> unit
 
-  val flush : ?with_fsync:bool -> t -> unit
+  val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
 
   val version : t -> string
 
