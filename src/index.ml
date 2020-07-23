@@ -80,7 +80,7 @@ struct
     readonly : bool;
     fresh : bool;
     throttle : throttle;
-    auto_flush_callback : unit -> unit;
+    flush_callback : unit -> unit;
   }
 
   type index = { io : IO.t; fan_out : Fan.t }
@@ -325,8 +325,8 @@ struct
           Log.debug (fun l ->
               l "[%s] no changes detected" (Filename.basename t.root))
 
-  let v_no_cache ?(auto_flush_callback = fun () -> ()) ~throttle ~fresh
-      ~readonly ~log_size root =
+  let v_no_cache ?(flush_callback = fun () -> ()) ~throttle ~fresh ~readonly
+      ~log_size root =
     Log.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
@@ -339,7 +339,7 @@ struct
         readonly;
         fresh;
         throttle;
-        auto_flush_callback;
+        flush_callback;
       }
     in
     let log_path = log_path root in
@@ -347,7 +347,7 @@ struct
       if readonly then if fresh then raise RO_not_allowed else None
       else
         let io =
-          IO.v ~auto_flush_callback ~fresh ~readonly ~generation:0L ~fan_size:0L
+          IO.v ~flush_callback ~fresh ~readonly ~generation:0L ~fan_size:0L
             log_path
         in
         let entries = Int64.div (IO.offset io) entry_sizeL in
@@ -366,8 +366,8 @@ struct
        there is no need to do it here. *)
     if (not readonly) && Sys.file_exists log_async_path then (
       let io =
-        IO.v ~auto_flush_callback ~fresh ~readonly:false ~generation:0L
-          ~fan_size:0L log_async_path
+        IO.v ~flush_callback ~fresh ~readonly:false ~generation:0L ~fan_size:0L
+          log_async_path
       in
       let entries = Int64.div (IO.offset io) entry_sizeL in
       Log.debug (fun l ->
@@ -391,11 +391,11 @@ struct
       let index_path = index_path root in
       if Sys.file_exists index_path then
         let io =
-          (* NOTE: No [auto_flush_callback] on the Index IO as we maintain the
+          (* NOTE: No [flush_callback] on the Index IO as we maintain the
              invariant that any bindings it contains were previously persisted
              in either [log] or [log_async]. *)
-          IO.v ?auto_flush_callback:None ~fresh ~readonly ~generation
-            ~fan_size:0L index_path
+          IO.v ?flush_callback:None ~fresh ~readonly ~generation ~fan_size:0L
+            index_path
         in
         let entries = Int64.div (IO.offset io) entry_sizeL in
         if entries = 0L then None
@@ -428,13 +428,12 @@ struct
 
   let empty_cache = Cache.create
 
-  let v ?(auto_flush_callback = fun () -> ()) ?(cache = empty_cache ())
+  let v ?(flush_callback = fun () -> ()) ?(cache = empty_cache ())
       ?(fresh = false) ?(readonly = false) ?(throttle = `Block_writes) ~log_size
       root =
     let new_instance () =
       let instance =
-        v_no_cache ~auto_flush_callback ~fresh ~readonly ~log_size ~throttle
-          root
+        v_no_cache ~flush_callback ~fresh ~readonly ~log_size ~throttle root
       in
       if readonly then sync_log instance;
       Cache.add cache (root, readonly) instance;
@@ -585,9 +584,8 @@ struct
     let log_async =
       let io =
         let log_async_path = log_async_path t.root in
-        IO.v ~auto_flush_callback:t.config.auto_flush_callback ~fresh:true
-          ~readonly:false ~generation:(Int64.succ t.generation) ~fan_size:0L
-          log_async_path
+        IO.v ~flush_callback:t.config.flush_callback ~fresh:true ~readonly:false
+          ~generation:(Int64.succ t.generation) ~fan_size:0L log_async_path
       in
       let mem = Tbl.create 0 in
       { io; mem }
@@ -597,7 +595,7 @@ struct
        unflushed bindings make it into [log] before being merged into the index.
        This satisfies the invariant that all bindings are {i first} persisted in
        a log, so that the [index] IO doesn't need to trigger the
-       [auto_flush_callback]. *)
+       [flush_callback]. *)
     flush_instance ~no_async:() ~with_fsync:true t;
 
     let go () =
@@ -670,7 +668,7 @@ struct
                 log_async.mem;
 
               (* NOTE: It {i may} not be necessary to trigger the
-                 [auto_flush_callback] here. If the instance has been recently
+                 [flush_callback] here. If the instance has been recently
                  flushed (or [log_async] just reached the [auto_flush_limit]),
                  we're just moving already-persisted values around. However, we
                  trigger the callback anyway for simplicity. *)

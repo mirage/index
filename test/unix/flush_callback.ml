@@ -2,15 +2,15 @@ module I = Index
 open Common
 
 module Context = Common.Make_context (struct
-  let root = Filename.concat "_tests" "unix.auto_flush_callback"
+  let root = Filename.concat "_tests" "unix.flush_callback"
 end)
 
 module Mutable_callback = struct
   type t = {
-    auto_flush_callback : unit -> unit;
+    flush_callback : unit -> unit;
     require_callback :
       'a. ?at_least_once:unit -> ?callback:(unit -> unit) -> (unit -> 'a) -> 'a;
-        (** Locally override the definition of [auto_flush_callback] inside a
+        (** Locally override the definition of [flush_callback] inside a
             continuation. The default [callback] is the identity function.
 
             - The continuation must trigger the callback exactly once (unless
@@ -29,7 +29,7 @@ module Mutable_callback = struct
       (top :=
          fun () ->
            match (at_least_once, !called) with
-           | None, true -> Alcotest.fail "auto_flush_callback already triggered"
+           | None, true -> Alcotest.fail "flush_callback already triggered"
            | _, _ ->
                called := true;
                (* Ensure the callback does not recursively invoke an auto-flush. *)
@@ -38,12 +38,12 @@ module Mutable_callback = struct
                callback ();
                top := saved_top);
       let a = f () in
-      if not !called then Alcotest.fail "auto_flush_callback was not called";
+      if not !called then Alcotest.fail "flush_callback was not called";
       top := prev_top;
       a
     in
-    let auto_flush_callback () = !top () in
-    { require_callback; auto_flush_callback }
+    let flush_callback () = !top () in
+    { require_callback; flush_callback }
 end
 
 let check_no_merge binding = function
@@ -52,31 +52,28 @@ let check_no_merge binding = function
       Alcotest.failf "New binding %a triggered an unexpected merge operation"
         pp_binding binding
 
-(** Tests that [close] does not trigger the [auto_flush_callback] *)
+(** Tests that [close] does not trigger the [flush_callback] *)
 let test_close () =
   let fail typ () =
-    Alcotest.failf "Closing <%s> should not trigger the auto_flush_callback" typ
+    Alcotest.failf "Closing <%s> should not trigger the flush_callback" typ
   in
-  Context.with_empty_index ~auto_flush_callback:(fail "empty index") ()
+  Context.with_empty_index ~flush_callback:(fail "empty index") ()
     Context.ignore;
 
-  Context.with_full_index ~auto_flush_callback:(fail "fresh index") ()
-    Context.ignore;
+  Context.with_full_index ~flush_callback:(fail "fresh index") () Context.ignore;
 
-  Context.with_empty_index ~auto_flush_callback:(fail "dirty index") ()
+  Context.with_empty_index ~flush_callback:(fail "dirty index") ()
     (fun Context.{ rw; _ } ->
       Index.replace_random rw
       |> uncurry check_no_merge
       |> (ignore : binding -> unit))
 
-(** Test that [flush] triggers the [auto_flush_callback] when necessary. *)
+(** Test that [flush] triggers the [flush_callback] when necessary. *)
 let test_flush () =
-  let Mutable_callback.{ require_callback; auto_flush_callback } =
+  let Mutable_callback.{ require_callback; flush_callback } =
     Mutable_callback.v ()
   in
-  let* Context.{ rw; clone; _ } =
-    Context.with_empty_index ~auto_flush_callback ()
-  in
+  let* Context.{ rw; clone; _ } = Context.with_empty_index ~flush_callback () in
   let ro = clone ~readonly:true () in
 
   Index.flush rw (* No callback, since there are no bindings to persist *);
@@ -95,8 +92,7 @@ let test_flush () =
   Index.sync ro;
   uncurry (Index.check_binding ro) binding
 
-(** Test that flushes due to [replace] operations trigger the
-    [auto_flush_callback]:
+(** Test that flushes due to [replace] operations trigger the [flush_callback]:
 
     - 1. Initial flush of [log] before an automatic merge.
     - 2. Flushing of [log_async] while a merge is ongoing. *)
@@ -104,11 +100,11 @@ let test_replace () =
   let log_size = 8 in
   let bindings = Tbl.v ~size:log_size in
   let binding_list = bindings |> Hashtbl.to_seq |> List.of_seq in
-  let Mutable_callback.{ require_callback; auto_flush_callback } =
+  let Mutable_callback.{ require_callback; flush_callback } =
     Mutable_callback.v ()
   in
   let* Context.{ rw; clone; _ } =
-    Context.with_empty_index ~log_size ~auto_flush_callback ()
+    Context.with_empty_index ~log_size ~flush_callback ()
   in
   let ro = clone ~readonly:true () in
 
@@ -129,7 +125,7 @@ let test_replace () =
         Log.app (fun m ->
             m
               "Checking newly-added bindings are not visible from a synced RO \
-               instance until [auto_flush_callback] is called");
+               instance until [flush_callback] is called");
         Index.sync ro;
         check_disjoint ro bindings)
       (fun () ->

@@ -124,7 +124,7 @@ module type S = sig
   (** Construct a new empty cache of index instances. *)
 
   val v :
-    ?auto_flush_callback:(unit -> unit) ->
+    ?flush_callback:(unit -> unit) ->
     ?cache:cache ->
     ?fresh:bool ->
     ?readonly:bool ->
@@ -134,9 +134,9 @@ module type S = sig
     t
   (** The constructor for indexes.
 
-      @param auto_flush_callback A function to be called before any new bindings
-      are persisted to disk (including both automatic flushing and explicit
-      calls to {!flush}). Values flushed during {!close} are excluded.
+      @param flush_callback A function to be called before any new bindings are
+      persisted to disk (including both automatic flushing and explicit calls to
+      {!flush}). Values flushed during {!close} are excluded.
 
       This can be used to ensure certain pre-conditions are met before bindings
       are persisted to disk. (For instance, if the index bindings are pointers

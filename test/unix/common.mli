@@ -62,7 +62,7 @@ end) : sig
 
   val with_empty_index :
     ?log_size:int ->
-    ?auto_flush_callback:(unit -> unit) ->
+    ?flush_callback:(unit -> unit) ->
     ?throttle:[ `Overcommit_memory | `Block_writes ] ->
     unit ->
     (t -> 'a) ->
@@ -72,7 +72,7 @@ end) : sig
 
   val with_full_index :
     ?log_size:int ->
-    ?auto_flush_callback:(unit -> unit) ->
+    ?flush_callback:(unit -> unit) ->
     ?throttle:[ `Overcommit_memory | `Block_writes ] ->
     ?size:int ->
     unit ->
