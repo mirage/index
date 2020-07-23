@@ -90,7 +90,12 @@ let test_flush () =
   Log.app (fun m ->
       m "After the flush, binding %a should be visible" pp_binding binding);
   Index.sync ro;
-  uncurry (Index.check_binding ro) binding
+  uncurry (Index.check_binding ro) binding;
+
+  let _ = Index.replace_random rw |> uncurry check_no_merge in
+  Index.flush ~no_callback:() rw (* No callback, by user request *);
+
+  ()
 
 (** Test that flushes due to [replace] operations trigger the [flush_callback]:
 

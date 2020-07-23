@@ -183,9 +183,13 @@ module type S = sig
       - May not observe recent concurrent updates to the index by other
         processes. *)
 
-  val flush : ?with_fsync:bool -> t -> unit
-  (** Flushes all internal buffers of the [IO] instances. If [with_fsync] is
-      [true], this also flushes the OS caches for each [IO] instance. *)
+  val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
+  (** Flushes all internal buffers of the [IO] instances.
+
+      - Passing [~no_callback:()] disables calling the [flush_callback] passed
+        to {!v}.
+      - If [with_fsync] is [true], this also flushes the OS caches for each [IO]
+        instance. *)
 
   val close : t -> unit
   (** Closes all resources used by [t], flushing any internal buffers in the

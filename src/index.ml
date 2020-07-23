@@ -154,10 +154,11 @@ struct
             l "[%s] flushing log_async" (Filename.basename instance.root));
         IO.flush ?no_callback ~with_fsync log.io
 
-  let flush ?(with_fsync = false) t =
+  let flush ?no_callback ?(with_fsync = false) t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
-    Mutex.with_lock t.rename_lock (fun () -> flush_instance ~with_fsync t)
+    Mutex.with_lock t.rename_lock (fun () ->
+        flush_instance ?no_callback ~with_fsync t)
 
   let ( // ) = Filename.concat
 
