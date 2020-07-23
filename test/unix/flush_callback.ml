@@ -62,11 +62,16 @@ let test_close () =
 
   Context.with_full_index ~flush_callback:(fail "fresh index") () Context.ignore;
 
-  Context.with_empty_index ~flush_callback:(fail "dirty index") ()
+  let calls = ref 0 in
+  Context.with_empty_index
+    ~flush_callback:(fun () -> incr calls)
+    ()
     (fun Context.{ rw; _ } ->
       Index.replace_random rw
       |> uncurry check_no_merge
-      |> (ignore : binding -> unit))
+      |> (ignore : binding -> unit));
+  Alcotest.(check int)
+    "Closing a dirty index should trigger the flush_callback once" 1 !calls
 
 (** Test that [flush] triggers the [flush_callback] when necessary. *)
 let test_flush () =

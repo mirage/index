@@ -136,7 +136,7 @@ module type S = sig
 
       @param flush_callback A function to be called before any new bindings are
       persisted to disk (including both automatic flushing and explicit calls to
-      {!flush}). Values flushed during {!close} are excluded.
+      {!flush} or {!close}).
 
       This can be used to ensure certain pre-conditions are met before bindings
       are persisted to disk. (For instance, if the index bindings are pointers

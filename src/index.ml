@@ -812,8 +812,7 @@ struct
               Log.debug (fun l ->
                   l "[%s] last open instance: closing the file descriptor"
                     (Filename.basename t.root));
-              if not t.config.readonly then
-                flush_instance ~no_callback:() ~with_fsync:true t;
+              if not t.config.readonly then flush_instance ~with_fsync:true t;
               may
                 (fun l ->
                   Tbl.clear l.mem;
