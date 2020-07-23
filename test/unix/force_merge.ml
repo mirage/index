@@ -349,22 +349,50 @@ let test_is_merging () =
   add_binding_and_merge ~hook:(after (f "after" true));
   add_binding_and_merge ~hook:(after_clear (f "after clear" true))
 
+let add_bindings index =
+  let k1, v1 = (Key.v (), Value.v ()) in
+  Index.replace index k1 v1
+
 let test_throttle () =
   let* Context.{ rw; tbl; _ } =
     Context.with_full_index ~throttle:`Overcommit_memory ()
   in
-  let add_bindings () =
-    let k1, v1 = (Key.v (), Value.v ()) in
-    Index.replace rw k1 v1
-  in
   let m = Mutex.create () in
   Mutex.lock m;
   let hook = Hook.v @@ function `Before -> Mutex.lock m | _ -> () in
-  add_bindings ();
+  add_bindings rw;
   let thread = Index.force_merge ~hook rw in
   Hashtbl.iter (fun k v -> Index.replace rw k v) tbl;
   Mutex.unlock m;
   Index.await thread |> check_completed
+
+let test_non_blocking_clear () =
+  let* Context.{ rw; _ } = Context.with_empty_index () in
+  let lock () =
+    let m = Mutex.create () in
+    Mutex.lock m;
+    m
+  in
+  let merge_started = lock () and merge = lock () in
+  let merge_hook =
+    Hook.v @@ function
+    | `Before ->
+        Mutex.unlock merge_started;
+        Mutex.lock merge
+    | `After -> Alcotest.fail "Merge should have been aborted by clear"
+    | _ -> ()
+  in
+  let clear_hook =
+    Hook.v @@ function `Abort_signalled -> Mutex.unlock merge
+  in
+  add_bindings rw;
+  let thread = Index.force_merge ~hook:merge_hook rw in
+  Mutex.lock merge_started;
+  add_bindings rw;
+  Index.clear' ~hook:clear_hook rw;
+  match Index.await thread with
+  | Ok `Aborted -> ()
+  | _ -> Alcotest.fail "merge should have aborted"
 
 let tests =
   [
@@ -380,4 +408,5 @@ let tests =
     ("merge during ro sync", `Quick, merge_during_sync);
     ("is_merging", `Quick, test_is_merging);
     ("throttle", `Quick, test_throttle);
+    ("clear is not blocking", `Quick, test_non_blocking_clear);
   ]
