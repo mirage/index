@@ -240,6 +240,56 @@ module Readonly = struct
     check_no_index_entry rw k;
     check_no_index_entry ro k
 
+  let hashtbl_pick tbl =
+    match Hashtbl.fold (fun k v acc -> (k, v) :: acc) tbl [] with
+    | h :: _ -> h
+    | _ -> assert false
+
+  let before l m =
+    I.Private.Hook.v @@ function
+    | `Before -> Mutex.lock l
+    | `After -> Mutex.unlock m
+    | _ -> ()
+
+  let after l m =
+    I.Private.Hook.v @@ function
+    | `After_offset_read ->
+        Mutex.unlock l;
+        Mutex.lock m
+    | _ -> ()
+
+  (* check that the ro instance is "snapshot isolated", e.g. it can read old
+     values, even when rw overwrites them. *)
+  let readonly_snapshot () =
+    let* Context.{ rw; clone; tbl; _ } =
+      Context.with_full_index ~throttle:`Overcommit_memory ()
+    in
+    let ro = clone ~readonly:true () in
+    let tbl2 =
+      let h = Hashtbl.create 0 in
+      Hashtbl.iter (fun k _ -> Hashtbl.add h k (Value.v ())) tbl;
+      h
+    in
+    let lock () =
+      let m = Mutex.create () in
+      Mutex.lock m;
+      m
+    in
+    let merge = lock () and sync = lock () in
+    let k, v = hashtbl_pick tbl2 in
+
+    Index.clear rw;
+    Index.replace rw k v;
+    let thread = Index.force_merge ~hook:(before merge sync) rw in
+    Hashtbl.iter (Index.replace rw) tbl2;
+    Index.flush rw;
+    check_equivalence rw tbl2;
+    check_equivalence ro tbl;
+    Index.sync' ~hook:(after merge sync) ro;
+    check_equivalence ro tbl2;
+    Mutex.unlock merge;
+    Index.await thread |> check_completed
+
   let fail_readonly_add () =
     let* Context.{ clone; _ } = Context.with_empty_index () in
     let ro = clone ~readonly:true () in
@@ -400,6 +450,7 @@ module Readonly = struct
     [
       ("add", `Quick, readonly);
       ("read after clear", `Quick, readonly_clear);
+      ("snapshot isolation", `Quick, readonly_snapshot);
       ("Readonly v after replace", `Quick, readonly_v_after_replace);
       ("add not allowed", `Quick, fail_readonly_add);
       ("fail read if no flush", `Quick, fail_readonly_read);
