@@ -299,7 +299,7 @@ module Readonly = struct
     Index.replace rw k v;
     let thread = Index.force_merge ~hook:(before merge sync) rw in
     Hashtbl.iter (Index.replace rw) tbl2;
-    Index.flush ~with_fsync:true rw;
+    Index.flush rw;
     check_equivalence rw tbl2;
     check_equivalence ro tbl;
     Index.sync' ~hook:(after merge sync) ro;
