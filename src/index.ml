@@ -727,10 +727,12 @@ struct
   (** [t.merge_lock] is used to detect an ongoing merge. Other operations can
       take this lock, but as they are not async, we consider this to be a good
       enough approximations. *)
+  let instance_is_merging t = Mutex.is_locked t.merge_lock
+
   let is_merging t =
     let t = check_open t in
     if t.config.readonly then raise RO_not_allowed;
-    Mutex.is_locked t.merge_lock
+    instance_is_merging t
 
   let replace' ?hook t key value =
     let t = check_open t in
@@ -750,9 +752,12 @@ struct
           Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
     in
     if log_limit_reached then
-      match t.config.throttle with
-      | `Overcommit_memory -> None
-      | `Block_writes ->
+      let is_merging = instance_is_merging t in
+      match (t.config.throttle, is_merging) with
+      | `Overcommit_memory, true ->
+          (* Merging now would block on completion of the ongoing merge *)
+          None
+      | `Overcommit_memory, false | `Block_writes, _ ->
           let hook = hook |> Option.map (fun f stage -> f (`Merge stage)) in
           Some (merge ?hook ~witness:{ key; key_hash = K.hash key; value } t)
     else None

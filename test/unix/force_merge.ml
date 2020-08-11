@@ -353,18 +353,6 @@ let add_bindings index =
   let k1, v1 = (Key.v (), Value.v ()) in
   Index.replace index k1 v1
 
-let test_throttle () =
-  let* Context.{ rw; tbl; _ } =
-    Context.with_full_index ~throttle:`Overcommit_memory ()
-  in
-  let m = locked_mutex () in
-  let hook = Hook.v @@ function `Before -> Mutex.lock m | _ -> () in
-  add_bindings rw;
-  let thread = Index.force_merge ~hook rw in
-  Hashtbl.iter (fun k v -> Index.replace rw k v) tbl;
-  Mutex.unlock m;
-  Index.await thread |> check_completed
-
 (** Test that a clear is aborting the merge.*)
 let test_non_blocking_clear () =
   let* Context.{ rw; _ } = Context.with_empty_index () in
@@ -445,7 +433,6 @@ let tests =
     ("sync and find after log cleared", `Quick, sync_after_clear_log);
     ("merge during ro sync", `Quick, merge_during_sync);
     ("is_merging", `Quick, test_is_merging);
-    ("throttle", `Quick, test_throttle);
     ("clear is not blocking", `Quick, test_non_blocking_clear);
     ("close aborts merge", `Quick, test_close_aborts_merge);
     ("clear aborts merge", `Quick, test_clear_aborts_merge);

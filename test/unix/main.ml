@@ -1,3 +1,4 @@
+module Hook = Index.Private.Hook
 module I = Index
 open Common
 
@@ -679,6 +680,65 @@ module Filter = struct
     ]
 end
 
+(** Tests of [Index.v ~throttle]*)
+module Throttle = struct
+  let add_binding ?hook t =
+    match Index.replace_random ?hook t with
+    | binding, None -> binding
+    | binding, Some _ ->
+        Alcotest.failf "New binding %a triggered an unexpected merge operation"
+          pp_binding binding
+
+  let add_overflow_binding ?hook t =
+    match Index.replace_random ?hook t with
+    | binding, Some merge_result -> (binding, merge_result)
+    | binding, None ->
+        Alcotest.failf "Expected new binding %a to trigger a merge operation"
+          pp_binding binding
+
+  let force_merge () =
+    let* Context.{ rw; tbl; _ } =
+      Context.with_full_index ~throttle:`Overcommit_memory ()
+    in
+    let m = locked_mutex () in
+    let hook = Hook.v @@ function `Before -> Mutex.lock m | _ -> () in
+    let (_ : binding) = add_binding rw in
+    let merge_result = Index.force_merge ~hook rw in
+    Hashtbl.iter (fun k v -> Index.replace rw k v) tbl;
+    Mutex.unlock m;
+    Index.await merge_result |> check_completed
+
+  let implicit_merge () =
+    let log_size = 4 in
+    let* Context.{ rw; _ } =
+      Context.with_empty_index ~log_size ~throttle:`Overcommit_memory ()
+    in
+    let m = locked_mutex () in
+    let hook = Hook.v @@ function `Merge `Before -> Mutex.lock m | _ -> () in
+    for _ = 1 to log_size do
+      ignore (add_binding rw : binding)
+    done;
+    Log.app (fun m -> m "Triggering an implicit merge");
+    let _, merge_result = add_overflow_binding ~hook rw in
+    Log.app (fun m -> m "Overcommitting to the log while a merge is ongoing");
+    for _ = 1 to log_size + 1 do
+      ignore (add_binding rw : binding)
+    done;
+    Mutex.unlock m;
+    Index.await merge_result |> check_completed;
+    Log.app (fun m ->
+        m "Triggering a second implicit merge (with an overcommitted log)");
+    let _, merge_result = add_overflow_binding rw in
+    Index.await merge_result |> check_completed;
+    ()
+
+  let tests =
+    [
+      ("force merge", `Quick, force_merge);
+      ("implicit merge", `Quick, implicit_merge);
+    ]
+end
+
 let () =
   Common.report ();
   Alcotest.run "index.unix"
@@ -691,4 +751,5 @@ let () =
       ("close", Close.tests);
       ("filter", Filter.tests);
       ("flush_callback", Flush_callback.tests);
+      ("throttle", Throttle.tests);
     ]
