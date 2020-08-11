@@ -701,7 +701,32 @@ module Throttle = struct
     Mutex.unlock m;
     Index.await thread |> check_completed
 
-  let tests = [ ("force merge", `Quick, force_merge) ]
+  let implicit_merge () =
+    let log_size = 4 in
+    let* Context.{ rw; _ } =
+      Context.with_empty_index ~log_size ~throttle:`Overcommit_memory ()
+    in
+    let m = locked_mutex () in
+    let hook = Hook.v @@ function `Merge `Before -> Mutex.lock m | _ -> () in
+    for _ = 1 to log_size do
+      add_binding rw
+    done;
+    (* Next replace triggers an asynchronous merge *)
+    let overflow_binding, merge_result = Index.replace_random ~hook rw in
+    let _merge_result =
+      match merge_result with
+      | Some x -> x
+      | None ->
+          Alcotest.failf "Expected binding %a to trigger a merge operation"
+            pp_binding overflow_binding
+    in
+    ()
+
+  let tests =
+    [
+      ("force merge", `Quick, force_merge);
+      ("implicit merge", `Quick, implicit_merge);
+    ]
 end
 
 let () =
