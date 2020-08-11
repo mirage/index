@@ -1,3 +1,4 @@
+module Hook = Index.Private.Hook
 module I = Index
 open Common
 
@@ -679,6 +680,30 @@ module Filter = struct
     ]
 end
 
+(** Tests of [Index.v ~throttle]*)
+module Throttle = struct
+  let add_binding ?hook t =
+    match Index.replace_random ?hook t with
+    | binding, Some _merge_result ->
+        Alcotest.failf "New binding %a triggered an unexpected merge operation"
+          pp_binding binding
+    | _, None -> ()
+
+  let force_merge () =
+    let* Context.{ rw; tbl; _ } =
+      Context.with_full_index ~throttle:`Overcommit_memory ()
+    in
+    let m = locked_mutex () in
+    let hook = Hook.v @@ function `Before -> Mutex.lock m | _ -> () in
+    add_binding rw;
+    let thread = Index.force_merge ~hook rw in
+    Hashtbl.iter (fun k v -> Index.replace rw k v) tbl;
+    Mutex.unlock m;
+    Index.await thread |> check_completed
+
+  let tests = [ ("force merge", `Quick, force_merge) ]
+end
+
 let () =
   Common.report ();
   Alcotest.run "index.unix"
@@ -691,4 +716,5 @@ let () =
       ("close", Close.tests);
       ("filter", Filter.tests);
       ("flush_callback", Flush_callback.tests);
+      ("throttle", Throttle.tests);
     ]
