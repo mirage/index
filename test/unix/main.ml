@@ -684,10 +684,17 @@ end
 module Throttle = struct
   let add_binding ?hook t =
     match Index.replace_random ?hook t with
-    | binding, Some _merge_result ->
+    | binding, None -> binding
+    | binding, Some _ ->
         Alcotest.failf "New binding %a triggered an unexpected merge operation"
           pp_binding binding
-    | _, None -> ()
+
+  let add_overflow_binding ?hook t =
+    match Index.replace_random ?hook t with
+    | binding, Some merge_result -> (binding, merge_result)
+    | binding, None ->
+        Alcotest.failf "Expected new binding %a to trigger a merge operation"
+          pp_binding binding
 
   let force_merge () =
     let* Context.{ rw; tbl; _ } =
@@ -695,11 +702,11 @@ module Throttle = struct
     in
     let m = locked_mutex () in
     let hook = Hook.v @@ function `Before -> Mutex.lock m | _ -> () in
-    add_binding rw;
-    let thread = Index.force_merge ~hook rw in
+    let (_ : binding) = add_binding rw in
+    let merge_result = Index.force_merge ~hook rw in
     Hashtbl.iter (fun k v -> Index.replace rw k v) tbl;
     Mutex.unlock m;
-    Index.await thread |> check_completed
+    Index.await merge_result |> check_completed
 
   let implicit_merge () =
     let log_size = 4 in
@@ -709,17 +716,20 @@ module Throttle = struct
     let m = locked_mutex () in
     let hook = Hook.v @@ function `Merge `Before -> Mutex.lock m | _ -> () in
     for _ = 1 to log_size do
-      add_binding rw
+      ignore (add_binding rw : binding)
     done;
-    (* Next replace triggers an asynchronous merge *)
-    let overflow_binding, merge_result = Index.replace_random ~hook rw in
-    let _merge_result =
-      match merge_result with
-      | Some x -> x
-      | None ->
-          Alcotest.failf "Expected binding %a to trigger a merge operation"
-            pp_binding overflow_binding
-    in
+    Log.app (fun m -> m "Triggering an implicit merge");
+    let _, merge_result = add_overflow_binding ~hook rw in
+    Log.app (fun m -> m "Overcommitting to the log while a merge is ongoing");
+    for _ = 1 to log_size + 1 do
+      ignore (add_binding rw : binding)
+    done;
+    Mutex.unlock m;
+    Index.await merge_result |> check_completed;
+    Log.app (fun m ->
+        m "Triggering a second implicit merge (with an overcommitted log)");
+    let _, merge_result = add_overflow_binding rw in
+    Index.await merge_result |> check_completed;
     ()
 
   let tests =
