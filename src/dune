@@ -1,5 +1,5 @@
 (library
  (public_name index)
  (name index)
- (modules_without_implementation io)
+ (modules_without_implementation platform)
  (libraries logs fmt stdlib-shims mtime mtime.clock.os))

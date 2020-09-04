@@ -47,7 +47,7 @@ let mkdir dirname =
   in
   (aux [@tailcall]) dirname (fun () -> ())
 
-module IO : Index.Io.S = struct
+module IO : Index.Platform.IO = struct
   let ( ++ ) = Int64.add
   let ( -- ) = Int64.sub
 

@@ -32,8 +32,8 @@ exception Closed
 module Make_private
     (K : Key)
     (V : Value)
-    (IO : Io.S)
-    (Lock : Io.Lock)
+    (IO : Platform.IO)
+    (Lock : Platform.Lock)
     (Mutex : MUTEX)
     (Thread : THREAD)
     (Cache : Cache.S) =

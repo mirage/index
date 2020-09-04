@@ -31,7 +31,7 @@ module type S = sig
   val v : io -> t
 end
 
-module Make (IO : Io.S) (Elt : ELT) :
+module Make (IO : Platform.IO) (Elt : ELT) :
   S with type io = IO.t and type elt = Elt.t = struct
   module Elt = struct
     include Elt
