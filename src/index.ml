@@ -35,7 +35,7 @@ module Make_private
     (IO : Platform.IO)
     (Lock : Platform.Lock)
     (Mutex : MUTEX)
-    (Thread : THREAD)
+    (Thread : Thread.S)
     (Cache : Cache.S) =
 struct
   type 'a async = 'a Thread.t

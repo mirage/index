@@ -61,6 +61,7 @@ module type Value = sig
 end
 
 module Platform = Platform
+module Thread = Thread
 
 module type MUTEX = sig
   (** Locks for mutual exclusion *)
@@ -84,27 +85,6 @@ module type MUTEX = sig
 
   val is_locked : t -> bool
   (** [is_locked t] returns [true] if the mutex is locked, without locking [t]. *)
-end
-
-module type THREAD = sig
-  (** Cooperative threads. *)
-
-  type 'a t
-  (** The type of thread handles. *)
-
-  val async : (unit -> 'a) -> 'a t
-  (** [async f] creates a new thread of control which executes [f ()] and
-      returns the corresponding thread handle. The thread terminates whenever
-      [f ()] returns a value or raises an exception. *)
-
-  val await : 'a t -> ('a, [ `Async_exn of exn ]) result
-  (** [await t] blocks on the termination of [t]. *)
-
-  val return : 'a -> 'a t
-  (** [return ()] is a pre-terminated thread handle. *)
-
-  val yield : unit -> unit
-  (** Re-schedule the calling thread without suspending it. *)
 end
 
 module type S = sig
@@ -223,14 +203,10 @@ module type Index = sig
   end
 
   module Platform = Platform
+  module Thread = Thread
 
   module type MUTEX = sig
     include MUTEX
-    (** @inline *)
-  end
-
-  module type THREAD = sig
-    include THREAD
     (** @inline *)
   end
 
@@ -265,7 +241,7 @@ module type Index = sig
       (IO : Platform.IO)
       (Lock : Platform.Lock)
       (M : MUTEX)
-      (T : THREAD)
+      (T : Thread.S)
       (C : Cache.S) : S with type key = K.t and type value = V.t
 
   (** Run-time metric tracking for index instances. *)
@@ -353,7 +329,7 @@ module type Index = sig
         (IO : Platform.IO)
         (Lock : Platform.Lock)
         (M : MUTEX)
-        (T : THREAD)
+        (T : Thread.S)
         (C : Cache.S) : S with type key = K.t and type value = V.t
   end
 end
