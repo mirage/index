@@ -47,12 +47,6 @@ module type S = sig
 
   val close : t -> unit
 
-  type lock
-
-  val lock : string -> lock
-
-  val unlock : lock -> unit
-
   module Header : sig
     type header = { offset : int64; generation : int64 }
 
@@ -60,4 +54,12 @@ module type S = sig
 
     val get : t -> header
   end
+end
+
+module type Lock = sig
+  type t
+
+  val lock : string -> t
+
+  val unlock : t -> unit
 end

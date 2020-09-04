@@ -25,9 +25,30 @@ let current_version = "00000001"
 
 module Stats = Index.Stats
 
-module IO : Index.IO = struct
-  let ( ++ ) = Int64.add
+let protect_unix_exn = function
+  | Unix.Unix_error _ as e -> failwith (Printexc.to_string e)
+  | e -> raise e
 
+let ignore_enoent = function
+  | Unix.Unix_error (Unix.ENOENT, _, _) -> ()
+  | e -> raise e
+
+let protect f x = try f x with e -> protect_unix_exn e
+let safe f x = try f x with e -> ignore_enoent e
+
+let mkdir dirname =
+  let rec aux dir k =
+    if Sys.file_exists dir && Sys.is_directory dir then k ()
+    else (
+      if Sys.file_exists dir then safe Unix.unlink dir;
+      (aux [@tailcall]) (Filename.dirname dir) @@ fun () ->
+      protect (Unix.mkdir dir) 0o755;
+      k ())
+  in
+  (aux [@tailcall]) dirname (fun () -> ())
+
+module IO : Index.Io.S = struct
+  let ( ++ ) = Int64.add
   let ( -- ) = Int64.sub
 
   type t = {
@@ -119,29 +140,6 @@ module IO : Index.IO = struct
       Raw.Header.(set t.raw { offset; version; generation })
   end
 
-  let protect_unix_exn = function
-    | Unix.Unix_error _ as e -> failwith (Printexc.to_string e)
-    | e -> raise e
-
-  let ignore_enoent = function
-    | Unix.Unix_error (Unix.ENOENT, _, _) -> ()
-    | e -> raise e
-
-  let protect f x = try f x with e -> protect_unix_exn e
-
-  let safe f x = try f x with e -> ignore_enoent e
-
-  let mkdir dirname =
-    let rec aux dir k =
-      if Sys.file_exists dir && Sys.is_directory dir then k ()
-      else (
-        if Sys.file_exists dir then safe Unix.unlink dir;
-        (aux [@tailcall]) (Filename.dirname dir) @@ fun () ->
-        protect (Unix.mkdir dir) 0o755;
-        k ())
-    in
-    (aux [@tailcall]) dirname (fun () -> ())
-
   let clear ~generation t =
     t.offset <- 0L;
     t.flushed <- t.header;
@@ -199,8 +197,10 @@ module IO : Index.IO = struct
           let offset = Raw.Offset.get raw in
           let fan_size = Raw.Fan.get_size raw in
           v ~fan_size ~offset raw
+end
 
-  type lock = { path : string; fd : Unix.file_descr }
+module Lock = struct
+  type t = { path : string; fd : Unix.file_descr }
 
   exception Locked of string
 
@@ -282,7 +282,6 @@ module Thread = struct
     Async { thread; result }
 
   let yield = Thread.yield
-
   let return a = Value a
 
   let await t =
@@ -297,12 +296,15 @@ module Thread = struct
 end
 
 module Make (K : Index.Key) (V : Index.Value) =
-  Index.Make (K) (V) (IO) (Mutex) (Thread)
+  Index.Make (K) (V) (IO) (Lock) (Mutex) (Thread)
+
 module Syscalls = Syscalls
 
 module Private = struct
   module IO = IO
+  module Lock = Lock
   module Raw = Raw
+
   module Make (K : Index.Key) (V : Index.Value) =
-    Index.Private.Make (K) (V) (IO) (Mutex) (Thread)
+    Index.Private.Make (K) (V) (IO) (Lock) (Mutex) (Thread)
 end

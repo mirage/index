@@ -60,7 +60,7 @@ module type Value = sig
   val pp : t Fmt.t
 end
 
-module type IO = Io.S
+module Io = Io
 
 module type MUTEX = sig
   (** Locks for mutual exclusion *)
@@ -222,10 +222,7 @@ module type Index = sig
     (** @inline *)
   end
 
-  module type IO = sig
-    include Io.S
-    (** @inline *)
-  end
+  module Io = Io
 
   module type MUTEX = sig
     include MUTEX
@@ -265,7 +262,8 @@ module type Index = sig
   module Make
       (K : Key)
       (V : Value)
-      (IO : IO)
+      (IO : Io.S)
+      (Lock : Io.Lock)
       (M : MUTEX)
       (T : THREAD)
       (C : Cache.S) : S with type key = K.t and type value = V.t
@@ -352,7 +350,8 @@ module type Index = sig
     module Make
         (K : Key)
         (V : Value)
-        (IO : IO)
+        (IO : Io.S)
+        (Lock : Io.Lock)
         (M : MUTEX)
         (T : THREAD)
         (C : Cache.S) : S with type key = K.t and type value = V.t
