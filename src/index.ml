@@ -27,7 +27,7 @@ exception RO_not_allowed
 
 exception RW_not_allowed
 
-exception Closed
+exception Closed = Closeable.Closed
 
 module Make_private
     (K : Key)
@@ -106,13 +106,10 @@ struct
   let check_pending_cancel instance =
     match instance.pending_cancel with true -> `Abort | false -> `Continue
 
-  type t = instance option ref
-
-  let check_open t =
-    match !t with Some instance -> instance | None -> raise Closed
+  type t = instance Closeable.t
 
   let clear' ~hook t =
-    let t = check_open t in
+    let t = Closeable.get_exn t in
     Log.debug (fun l -> l "clear %S" t.root);
     if t.config.readonly then raise RO_not_allowed;
     t.pending_cancel <- true;
@@ -156,7 +153,7 @@ struct
         IO.flush ?no_callback ~with_fsync log.io
 
   let flush ?no_callback ?(with_fsync = false) t =
-    let t = check_open t in
+    let t = Closeable.get_exn t in
     Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
     Mutex.with_lock t.rename_lock (fun () ->
         flush_instance ?no_callback ~with_fsync t)
@@ -439,7 +436,7 @@ struct
       in
       if readonly then sync_log instance;
       Cache.add cache (root, readonly) instance;
-      ref (Some instance)
+      Closeable.v instance
     in
     Log.info (fun l ->
         l "[%s] v fresh=%b readonly=%b log_size=%d" (Filename.basename root)
@@ -465,7 +462,7 @@ struct
                 l "[%s] found in cache" (Filename.basename root));
             t.open_instances <- t.open_instances + 1;
             if readonly then sync_log t;
-            let t = ref (Some t) in
+            let t = Closeable.v t in
             if fresh then clear t;
             t)
 
@@ -502,12 +499,12 @@ struct
         @~ find_log_index)
 
   let find t key =
-    let t = check_open t in
+    let t = Closeable.get_exn t in
     Log.info (fun l -> l "[%s] find %a" (Filename.basename t.root) K.pp key);
     find_instance t key
 
   let mem t key =
-    let t = check_open t in
+    let t = Closeable.get_exn t in
     Log.info (fun l -> l "[%s] mem %a" (Filename.basename t.root) K.pp key);
     match find_instance t key with _ -> true | exception Not_found -> false
 
@@ -716,7 +713,7 @@ struct
                 Some (decode_entry buf 0)))
 
   let force_merge ?hook t =
-    let t = check_open t in
+    let t = Closeable.get_exn t in
     Log.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
     let witness = Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
     match witness with
@@ -731,12 +728,12 @@ struct
   let instance_is_merging t = Mutex.is_locked t.merge_lock
 
   let is_merging t =
-    let t = check_open t in
+    let t = Closeable.get_exn t in
     if t.config.readonly then raise RO_not_allowed;
     instance_is_merging t
 
   let replace' ?hook t key value =
-    let t = check_open t in
+    let t = Closeable.get_exn t in
     Stats.incr_nb_replace ();
     Log.info (fun l ->
         l "[%s] replace %a %a" (Filename.basename t.root) K.pp key V.pp value);
@@ -774,7 +771,7 @@ struct
     | Some sampling_interval -> Stats.end_replace ~sampling_interval
 
   let filter t f =
-    let t = check_open t in
+    let t = Closeable.get_exn t in
     Log.info (fun l -> l "[%s] filter" (Filename.basename t.root));
     if t.config.readonly then raise RO_not_allowed;
     let witness = Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
@@ -789,7 +786,7 @@ struct
               (Printexc.to_string exn))
 
   let iter f t =
-    let t = check_open t in
+    let t = Closeable.get_exn t in
     Log.info (fun l -> l "[%s] iter" (Filename.basename t.root));
     match t.log with
     | None -> ()
@@ -805,14 +802,14 @@ struct
               t.index)
 
   let close' ~hook it =
-    match !it with
-    | None -> Log.info (fun l -> l "close: instance already closed")
-    | Some t ->
+    match Closeable.get it with
+    | `Closed -> Log.info (fun l -> l "close: instance already closed")
+    | `Open t ->
         Log.info (fun l -> l "[%s] close" (Filename.basename t.root));
         t.pending_cancel <- true;
         hook `Abort_signalled;
         Mutex.with_lock t.merge_lock (fun () ->
-            it := None;
+            Closeable.close it;
             t.open_instances <- t.open_instances - 1;
             if t.open_instances = 0 then (
               Log.debug (fun l ->
@@ -832,7 +829,7 @@ struct
   let sync' ?hook t =
     let f t =
       Stats.incr_nb_sync ();
-      let t = check_open t in
+      let t = Closeable.get_exn t in
       Log.info (fun l -> l "[%s] sync" (Filename.basename t.root));
       if t.config.readonly then sync_log ?hook t else raise RW_not_allowed
     in
