@@ -62,6 +62,7 @@ module Make
   (** Improves over binary search in cases where the values in some array are
       uniformly distributed according to some metric (such as a hash). *)
   let interpolation_search array key ~low ~high =
+    Log.debug (fun m -> m "Searching in range [%Ld, %Ld]" low high);
     let key_metric = Metric.of_key key in
     (* The core of the search *)
     let rec search low high lowest_entry highest_entry =

@@ -358,7 +358,7 @@ struct
         Some { io; mem }
     in
     let generation =
-      match log with None -> 0L | Some log -> IO.get_generation log.io
+      match log with None -> 0L | Some log -> IO.Header.get_generation log.io
     in
     let log_async_path = log_async_path root in
     (* If we are in readonly mode, the log_async will be read during sync_log so

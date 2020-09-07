@@ -1,9 +1,11 @@
 module Hook = Index.Private.Hook
-open Common
 
 let root = Filename.concat "_tests" "unix.force_merge"
 
-module Context = Common.Make_context (struct
+open Common
+open Common
+
+module Context = Make_context (struct
   let root = root
 end)
 

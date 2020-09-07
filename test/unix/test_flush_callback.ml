@@ -1,9 +1,12 @@
 module I = Index
-open Common
 
 module Context = Common.Make_context (struct
   let root = Filename.concat "_tests" "unix.flush_callback"
 end)
+
+module Mutex = Index_unix.Private.Mutex
+open Common
+open Common
 
 module Mutable_callback = struct
   type t = {

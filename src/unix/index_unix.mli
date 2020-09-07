@@ -28,6 +28,10 @@ module Private : sig
 
   module Lock : Index.Platform.Lock
 
+  module Mutex : Index.MUTEX
+
+  module Thread : Index.Thread.S
+
   module Raw = Raw
 
   module Make (K : Index.Key) (V : Index.Value) (C : Index.Cache.S) :

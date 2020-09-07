@@ -1,4 +1,11 @@
+(library
+ (name index_test)
+ (public_name index.test)
+ (modules index_test common)
+ (libraries index alcotest logs logs.fmt logs.threaded fmt))
+
 (test
- (name main)
+ (name test)
  (package index)
- (libraries index alcotest))
+ (modules test test_cache test_search)
+ (libraries index index.test alcotest threads.posix))

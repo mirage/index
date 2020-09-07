@@ -16,7 +16,7 @@ module type S = sig
   (** [return ()] is a pre-terminated thread handle. *)
 
   val yield : unit -> unit
-                        (** Re-schedule the calling thread without suspending it. *)
+  (** Re-schedule the calling thread without suspending it. *)
 end
 
 module Identity : S = struct

@@ -34,6 +34,7 @@ let ignore_enoent = function
   | e -> raise e
 
 let protect f x = try f x with e -> protect_unix_exn e
+
 let safe f x = try f x with e -> ignore_enoent e
 
 let mkdir dirname =
@@ -49,6 +50,7 @@ let mkdir dirname =
 
 module IO : Index.Platform.IO = struct
   let ( ++ ) = Int64.add
+
   let ( -- ) = Int64.sub
 
   type t = {
@@ -109,11 +111,6 @@ module IO : Index.Platform.IO = struct
 
   let offset t = t.offset
 
-  let get_generation t =
-    let i = Raw.Generation.get t.raw in
-    Log.debug (fun m -> m "get_generation: %Ld" i);
-    i
-
   let get_fanout t = Raw.Fan.get t.raw
 
   let set_fanout t buf =
@@ -121,23 +118,28 @@ module IO : Index.Platform.IO = struct
     Raw.Fan.set t.raw buf
 
   module Header = struct
-    type header = { offset : int64; generation : int64 }
+    open Index.Platform
 
-    let pp ppf { offset; generation } =
+    let pp ppf ({ offset; generation } : header) =
       Format.fprintf ppf "{ offset = %Ld; generation = %Ld }" offset generation
 
     let get t =
       let Raw.Header.{ offset; generation; _ } = Raw.Header.get t.raw in
       t.offset <- offset;
-      let headers = { offset; generation } in
+      let headers = ({ offset; generation } : header) in
       Log.debug (fun m -> m "[%s] get_headers: %a" t.file pp headers);
       headers
 
-    let set t { offset; generation } =
+    let set t ({ offset; generation } : header) =
       let version = current_version in
       Log.debug (fun m ->
           m "[%s] set_header %a" t.file pp { offset; generation });
       Raw.Header.(set t.raw { offset; version; generation })
+
+    let get_generation t =
+      let i = Raw.Generation.get t.raw in
+      Log.debug (fun m -> m "get_generation: %Ld" i);
+      i
   end
 
   let clear ~generation t =
@@ -282,6 +284,7 @@ module Thread = struct
     Async { thread; result }
 
   let yield = Thread.yield
+
   let return a = Value a
 
   let await t =
@@ -297,14 +300,14 @@ end
 
 module Make (K : Index.Key) (V : Index.Value) =
   Index.Make (K) (V) (IO) (Lock) (Mutex) (Thread)
-
 module Syscalls = Syscalls
 
 module Private = struct
   module IO = IO
   module Lock = Lock
+  module Mutex = Mutex
+  module Thread = Thread
   module Raw = Raw
-
   module Make (K : Index.Key) (V : Index.Value) =
     Index.Private.Make (K) (V) (IO) (Lock) (Mutex) (Thread)
 end

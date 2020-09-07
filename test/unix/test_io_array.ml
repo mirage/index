@@ -1,12 +1,15 @@
+module I = Index
 module IO = Index_unix.Private.IO
+open Common
+open Common
+
+let root = Filename.concat "_tests" "unix.io_array"
 
 let ( // ) = Filename.concat
 
-let root = "_tests" // "unix.io_array"
-
 module Entry = struct
-  module Key = Common.Key
-  module Value = Common.Value
+  module Key = Key
+  module Value = Value
 
   type t = Key.t * Value.t
 
@@ -25,7 +28,7 @@ module Entry = struct
     IO.append io encoded_value
 end
 
-module IOArray = Index.Private.Io_array.Make (IO) (Entry)
+module IOArray = I.Private.Io_array.Make (IO) (Entry)
 
 let entry = Alcotest.(pair string string)
 
