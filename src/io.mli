@@ -27,23 +27,13 @@ module type S = sig
     string ->
     t
 
-  val name : t -> string
-
   val offset : t -> int64
-
-  val force_offset : t -> int64
-
-  val readonly : t -> bool
 
   val read : t -> off:int64 -> len:int -> bytes -> int
 
   val clear : generation:int64 -> t -> unit
 
   val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
-
-  val version : t -> string
-
-  val set_generation : t -> int64 -> unit
 
   val get_generation : t -> int64
 

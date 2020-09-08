@@ -57,8 +57,6 @@ module IO : Index.IO = struct
       t.flushed <- offset ++ t.header);
     if with_fsync then Raw.fsync t.raw
 
-  let name t = t.file
-
   let rename ~src ~dst =
     flush ~with_fsync:true src;
     Raw.close dst.raw;
@@ -90,20 +88,10 @@ module IO : Index.IO = struct
 
   let offset t = t.offset
 
-  let force_offset t =
-    t.offset <- Raw.Offset.get t.raw;
-    t.offset
-
-  let version _ = current_version
-
   let get_generation t =
     let i = Raw.Generation.get t.raw in
     Log.debug (fun m -> m "get_generation: %Ld" i);
     i
-
-  let set_generation t i =
-    Log.debug (fun m -> m "set_generation: %Ld" i);
-    Raw.Generation.set t.raw i
 
   let get_fanout t = Raw.Fan.get t.raw
 
@@ -125,13 +113,11 @@ module IO : Index.IO = struct
       headers
 
     let set t { offset; generation } =
-      let version = version () in
+      let version = current_version in
       Log.debug (fun m ->
           m "[%s] set_header %a" t.file pp { offset; generation });
       Raw.Header.(set t.raw { offset; version; generation })
   end
-
-  let readonly t = t.readonly
 
   let protect_unix_exn = function
     | Unix.Unix_error _ as e -> failwith (Printexc.to_string e)
