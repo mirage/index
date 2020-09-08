@@ -37,7 +37,7 @@ let really_write fd fd_offset buffer =
         (fd_offset ++ Int64.of_int w)
         (buffer_offset + w) (length - w)
   in
-  (aux [@tailcall]) fd_offset 0 (Bytes.length buffer)
+  aux fd_offset 0 (Bytes.length buffer)
 
 let really_read fd fd_offset length buffer =
   let rec aux fd_offset buffer_offset length =
@@ -49,7 +49,7 @@ let really_read fd fd_offset length buffer =
         (fd_offset ++ Int64.of_int r)
         (buffer_offset + r) (length - r)
   in
-  (aux [@tailcall]) fd_offset 0 length
+  aux fd_offset 0 length
 
 let fsync t = Syscalls.fsync t.fd
 
