@@ -22,15 +22,8 @@ module type Key = sig
   val equal : t -> t -> bool
   (** The equality function for keys. *)
 
-  val hash : t -> int
-  (** Note: Unevenly distributed hash functions may result in performance drops. *)
-
-  val hash_size : int
-  (** The number of bits necessary to encode the maximum output value of
-      {!hash}. `Hashtbl.hash` uses 30 bits.
-
-      Overestimating the [hash_size] will result in performance drops;
-      underestimation will result in undefined behavior. *)
+  val hash : t -> int64
+  (** Note: This function is required to be evenly distributed on 64 bits. *)
 
   val encode : t -> string
   (** [encode] is an encoding function. The resultant encoded values must have

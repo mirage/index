@@ -15,7 +15,7 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
-type t = { fans : int64 array; mask : int; shift : int }
+type t = { fans : int64 array; mask : int64; shift : int }
 
 let equal t t' =
   let rec loop i =
@@ -23,34 +23,46 @@ let equal t t' =
     else if Int64.equal t.fans.(i) t'.fans.(i) then loop (i + 1)
     else false
   in
-  t.mask = t'.mask
+  Int64.equal t.mask t'.mask
   && t.shift = t'.shift
   && Array.length t.fans = Array.length t'.fans
   && loop 0
 
 let log2 a = log a /. log 2.
 
-let v ~hash_size ~entry_size n =
+let hash_size = 64
+
+let ( lsr ) = Int64.shift_right_logical
+
+let ( lsl ) = Int64.shift_left
+
+let ( land ) = Int64.logand
+
+let v ~entry_size n =
   let entry_sizef = float_of_int entry_size in
   let entries_per_page = 4096. /. entry_sizef in
   let raw_nb_fans = float_of_int n /. entries_per_page in
   let size = max 0 (int_of_float (ceil (log2 raw_nb_fans))) in
-  let nb_fans = 1 lsl size in
+  let nb_fans = Stdlib.(1 lsl size) in
   let shift = hash_size - size in
-  { fans = Array.make nb_fans 0L; mask = (nb_fans - 1) lsl shift; shift }
+  {
+    fans = Array.make nb_fans 0L;
+    mask = Int64.of_int (nb_fans - 1) lsl shift;
+    shift;
+  }
 
 let nb_fans t = Array.length t.fans
 
-let fan t h = (h land t.mask) lsr t.shift
+let fan t h = (h land t.mask) lsr t.shift |> Int64.to_int
 
 let search t h =
   let fan = fan t h in
   let low = if fan = 0 then 0L else t.fans.(fan - 1) in
   (low, t.fans.(fan))
 
-let update t hash off =
+let update t ~hash ~offset =
   let fan = fan t hash in
-  t.fans.(fan) <- off
+  t.fans.(fan) <- offset
 
 let finalize t =
   let rec loop curr i =
@@ -95,7 +107,7 @@ let export t =
   loop 0;
   Buffer.contents buf
 
-let import ~hash_size buf =
+let import buf =
   let nb_fans = String.length buf / 8 in
   let fans =
     Array.init nb_fans (fun i ->
@@ -104,5 +116,5 @@ let import ~hash_size buf =
   in
   let size = int_of_float (log2 (float_of_int nb_fans)) in
   let shift = hash_size - size in
-  let mask = (nb_fans - 1) lsl shift in
+  let mask = Int64.of_int (nb_fans - 1) lsl shift in
   { fans; mask; shift }

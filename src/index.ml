@@ -45,7 +45,7 @@ struct
 
   type value = V.t
 
-  type entry = { key : key; key_hash : int; value : value }
+  type entry = { key : key; key_hash : int64; value : value }
 
   let entry_size = K.encoded_size + V.encoded_size
 
@@ -71,7 +71,11 @@ struct
     let value = V.decode string (off + K.encoded_size) in
     { key; key_hash = K.hash key; value }
 
-  module Tbl = Hashtbl.Make (K)
+  module Tbl = Hashtbl.Make (struct
+    include K
+
+    let hash x = hash x |> Int64.to_int
+  end)
 
   type throttle = [ `Overcommit_memory | `Block_writes ]
 
@@ -219,21 +223,23 @@ struct
   module Search =
     Search.Make (Entry) (IOArray)
       (struct
-        type t = int
+        type t = int64
 
         module Entry = Entry
 
-        let compare : int -> int -> int = compare
+        let compare = Int64.unsigned_compare
 
         let of_entry e = e.key_hash
 
         let of_key = K.hash
 
+        let unsigned_to_float x = Printf.sprintf "%Lu" x |> float_of_string
+
         let linear_interpolate ~low:(low_index, low_metric)
             ~high:(high_index, high_metric) key_metric =
-          let low_in = float_of_int low_metric in
-          let high_in = float_of_int high_metric in
-          let target_in = float_of_int key_metric in
+          let low_in = unsigned_to_float low_metric in
+          let high_in = unsigned_to_float high_metric in
+          let target_in = unsigned_to_float key_metric in
           let low_out = Int64.to_float low_index in
           let high_out = Int64.to_float high_index in
           (* Fractional position of [target_in] along the line from [low_in] to [high_in] *)
@@ -280,7 +286,7 @@ struct
       let io =
         IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L index_path
       in
-      let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
+      let fan_out = Fan.import (IO.get_fanout io) in
       if IO.offset io = 0L then t.index <- None
       else t.index <- Some { fan_out; io }
 
@@ -404,7 +410,7 @@ struct
           Log.debug (fun l ->
               l "[%s] index file detected. Loading %Ld entries"
                 (Filename.basename root) entries);
-          let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
+          let fan_out = Fan.import (IO.get_fanout io) in
           Some { fan_out; io })
       else (
         Log.debug (fun l ->
@@ -511,18 +517,18 @@ struct
     match find_instance t key with _ -> true | exception Not_found -> false
 
   let append_buf_fanout fan_out hash buf_str dst_io =
-    Fan.update fan_out hash (IO.offset dst_io);
+    Fan.update fan_out ~hash ~offset:(IO.offset dst_io);
     IO.append dst_io buf_str
 
   let append_entry_fanout fan_out entry dst_io =
-    Fan.update fan_out entry.key_hash (IO.offset dst_io);
+    Fan.update fan_out ~hash:entry.key_hash ~offset:(IO.offset dst_io);
     append_key_value dst_io entry.key entry.value
 
   let rec merge_from_log fan_out log log_i hash_e dst_io =
     if log_i >= Array.length log then log_i
     else
       let v = log.(log_i) in
-      if v.key_hash >= hash_e then log_i
+      if Int64.unsigned_compare v.key_hash hash_e >= 0 then log_i
       else (
         append_entry_fanout fan_out v dst_io;
         (merge_from_log [@tailcall]) fan_out log (log_i + 1) hash_e dst_io)
@@ -604,7 +610,9 @@ struct
       let log = assert_and_get t.log in
       let generation = Int64.succ t.generation in
       let log_array =
-        let compare_entry e e' = compare e.key_hash e'.key_hash in
+        let compare_entry e e' =
+          Int64.unsigned_compare e.key_hash e'.key_hash
+        in
         Tbl.filter_map_inplace
           (fun key value -> if filter (key, value) then Some value else None)
           log.mem;
@@ -625,7 +633,7 @@ struct
             (Int64.to_int (IO.offset index.io) / entry_size)
             + Array.length log_array
       in
-      let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
+      let fan_out = Fan.v ~entry_size fan_size in
       let merge =
         let merge_path = merge_path t.root in
         IO.v ~fresh:true ~readonly:false ~generation

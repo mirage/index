@@ -41,9 +41,8 @@ module Key = struct
 
   let v = random_string
 
-  let hash = Hashtbl.hash
-
-  let hash_size = 30
+  let hash x =
+    Hashtbl.hash x |> Int64.of_int |> fun h -> Int64.shift_left h (64 - 30)
 
   let encode s = s
 

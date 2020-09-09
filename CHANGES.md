@@ -25,6 +25,8 @@
 - Caching of `Index` instances is now explicit: `Index.Make` requires a cache
   implementation, and `Index.v` may be passed a cache to be used for instance
   sharing. The default behaviour is _not_ to share instances. (#188)
+- Module `Key` does not require `hash_size` anymore; function `hash` now returns
+  `int64` hashes and is required to be evenly distributed over 64 bits. (#222)
 
 ## Fixed
 
