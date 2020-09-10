@@ -115,6 +115,13 @@ module Index = struct
           pp_binding (k, v)
 end
 
+let check_completed = function
+  | Ok `Completed -> ()
+  | Ok `Aborted -> Alcotest.fail "Unexpected asynchronous abort"
+  | Error (`Async_exn exn) ->
+     Alcotest.failf "Unexpected asynchronous exception: %s"
+       (Printexc.to_string exn)
+
 module Make_context (Config : sig
   val root : string
 end) =
@@ -176,6 +183,7 @@ struct
       Hashtbl.replace tbl k v
     done;
     Index.flush rw;
+    Index.force_merge rw |> Index.await |> check_completed;
     f := flush_callback (* Enable [flush_callback] *);
     let clone ?(fresh = false) ~readonly () =
       let t =
@@ -223,13 +231,6 @@ let check_disjoint index htbl =
           Alcotest.failf "Found value %a when checking for the absence of %a"
             Value.pp v' pp_binding (k, v))
     htbl
-
-let check_completed = function
-  | Ok `Completed -> ()
-  | Ok `Aborted -> Alcotest.fail "Unexpected asynchronous abort"
-  | Error (`Async_exn exn) ->
-      Alcotest.failf "Unexpected asynchronous exception: %s"
-        (Printexc.to_string exn)
 
 let locked_mutex () =
   let m = Mutex.create () in
