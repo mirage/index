@@ -9,5 +9,3 @@ external pwrite : Unix.file_descr -> int64 -> bytes -> int -> int -> int
 
 let pwrite ~fd ~fd_offset ~buffer ~buffer_offset ~length =
   pwrite fd fd_offset buffer buffer_offset length
-
-external fsync : Unix.file_descr -> unit = "caml_index_fsync"

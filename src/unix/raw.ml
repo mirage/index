@@ -51,7 +51,7 @@ let really_read fd fd_offset length buffer =
   in
   aux fd_offset 0 length
 
-let fsync t = Syscalls.fsync t.fd
+let fsync t = Unix.fsync t.fd
 
 let close t = Unix.close t.fd
 
