@@ -20,10 +20,3 @@ val pwrite :
     [buffer_offset]) to the file descriptor [fd] (starting at position
     [fd_offset]). Returns the number of bytes actually written. [fd]'s cursor
     position is unchanged. *)
-
-val fsync : Unix.file_descr -> unit
-(** Flushes all modified buffer cache pages for a given file descriptor to the
-    disk device, so that all changed information can be retrieved even if the
-    system crashes or is rebooted. This includes writing through or flushing a
-    disk cache if present. Blocks until the device reports that the transfer has
-    completed. *)
