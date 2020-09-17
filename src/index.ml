@@ -586,7 +586,7 @@ struct
       let io =
         let log_async_path = log_async_path t.root in
         IO.v ~flush_callback:t.config.flush_callback ~fresh:true ~readonly:false
-          ~generation:(Int64.succ t.generation) ~fan_size:0L log_async_path
+          ~generation:t.generation ~fan_size:0L log_async_path
       in
       let mem = Tbl.create 0 in
       { io; mem }
@@ -680,7 +680,7 @@ struct
 
               t.log_async <- None);
 
-          IO.clear ~generation:(Int64.succ generation) log_async.io;
+          IO.clear ~generation log_async.io;
           IO.close log_async.io;
           hook `After;
           Mutex.unlock t.merge_lock;

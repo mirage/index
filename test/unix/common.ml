@@ -119,8 +119,8 @@ let check_completed = function
   | Ok `Completed -> ()
   | Ok `Aborted -> Alcotest.fail "Unexpected asynchronous abort"
   | Error (`Async_exn exn) ->
-     Alcotest.failf "Unexpected asynchronous exception: %s"
-       (Printexc.to_string exn)
+      Alcotest.failf "Unexpected asynchronous exception: %s"
+        (Printexc.to_string exn)
 
 module Make_context (Config : sig
   val root : string
