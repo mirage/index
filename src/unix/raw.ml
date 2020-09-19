@@ -30,6 +30,7 @@ let v fd = { fd }
 
 let really_write fd fd_offset buffer =
   let rec aux fd_offset buffer_offset length =
+    Thread.yield ();
     let w = Syscalls.pwrite ~fd ~fd_offset ~buffer ~buffer_offset ~length in
     if w = 0 || w = length then ()
     else
@@ -41,6 +42,7 @@ let really_write fd fd_offset buffer =
 
 let really_read fd fd_offset length buffer =
   let rec aux fd_offset buffer_offset length =
+    Thread.yield ();
     let r = Syscalls.pread ~fd ~fd_offset ~buffer ~buffer_offset ~length in
     if r = 0 then buffer_offset (* end of file *)
     else if r = length then buffer_offset + r
