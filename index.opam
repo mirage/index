@@ -25,7 +25,7 @@ depends: [
   "logs"
   "mtime"   {>= "1.0.0"}
   "alcotest" {with-test}
-  "crowbar" {with-test}
+  "crowbar" {with-test & >= "0.2"}
   "re" {with-test}
 ]
 synopsis: "A platform-agnostic multi-level index for OCaml"

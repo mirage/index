@@ -14,4 +14,4 @@
   main.exe
   (source_tree ../input))
  (action
-  (run afl-fuzz -i ../input -o output ./main.exe @@)))
+  (run afl-fuzz -i ../input -o output -m 2048 ./main.exe @@)))

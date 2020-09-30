@@ -50,18 +50,14 @@ let check_updates (fan, updates) =
     (fun (hash, off) ->
       let low, high = Fan.search fan hash in
       if off < low || high < off then
-        (* Use Crowbar.failf on next release *)
-        fail
-          (Printf.sprintf
-             "hash %d was added at off %Ld, but got low=%Ld, high=%Ld" hash off
-             low high))
+        failf "hash %d was added at off %Ld, but got low=%Ld, high=%Ld" hash off
+          low high)
     updates
 
 let check_fan_size (fan, size) =
   let nb_fans = Fan.nb_fans fan in
   let fan_size = size / nb_fans in
-  if fan_size * entry_size > 4096 then
-    fail (Printf.sprintf "Fan size is too big: %d" fan_size)
+  if fan_size * entry_size > 4096 then failf "Fan size is too big: %d" fan_size
 
 let () =
   add_test ~name:"Export size" [ fan ] check_export_size;
