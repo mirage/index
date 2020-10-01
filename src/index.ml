@@ -667,20 +667,22 @@ struct
                   Tbl.replace log.mem key value;
                   append_key_value log.io key value)
                 log_async.mem;
-
               (* NOTE: It {i may} not be necessary to trigger the
                  [flush_callback] here. If the instance has been recently
                  flushed (or [log_async] just reached the [auto_flush_limit]),
                  we're just moving already-persisted values around. However, we
                  trigger the callback anyway for simplicity. *)
-              (try IO.flush log.io
+              (* `fsync` is necessary, since bindings in `log_async` may have
+                 been explicitely `fsync`ed during the merge, so we need to
+                 maintain their durability. *)
+              (try IO.flush ~with_fsync:true log.io
                with exn ->
                  Mutex.unlock t.merge_lock;
                  raise exn);
-
+              IO.clear ~generation:(Int64.succ generation) log_async.io;
+              (* log_async.mem does not need to be cleared as we are discarding
+                 it. *)
               t.log_async <- None);
-
-          IO.clear ~generation:(Int64.succ generation) log_async.io;
           IO.close log_async.io;
           hook `After;
           Mutex.unlock t.merge_lock;
