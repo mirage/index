@@ -200,6 +200,8 @@ module IO : Index.IO = struct
           let fan_size = Raw.Fan.get_size raw in
           v ~fan_size ~offset raw
 
+  let exists = Sys.file_exists
+
   type lock = { path : string; fd : Unix.file_descr }
 
   exception Locked of string
