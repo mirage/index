@@ -160,20 +160,6 @@ struct
     Mutex.with_lock t.rename_lock (fun () ->
         flush_instance ?no_callback ~with_fsync t)
 
-  let ( // ) = Filename.concat
-
-  let index_dir root = root // "index"
-
-  let log_path root = index_dir root // "log"
-
-  let log_async_path root = index_dir root // "log_async"
-
-  let index_path root = index_dir root // "data"
-
-  let lock_path root = index_dir root // "lock"
-
-  let merge_path root = index_dir root // "merge"
-
   let page_size = Int64.mul entry_sizeL 1_000L
 
   let iter_io_off ?min:(min_off = 0L) ?max:max_off f io =
@@ -248,7 +234,7 @@ struct
     Log.debug (fun l ->
         l "[%s] checking on-disk %s file" (Filename.basename t.root)
           (Filename.basename path));
-    if Sys.file_exists path then (
+    if IO.exists path then (
       let io =
         IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
       in
@@ -264,7 +250,7 @@ struct
 
   let sync_log_async t =
     match t.log_async with
-    | None -> t.log_async <- try_load_log t (log_async_path t.root)
+    | None -> t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
     | Some log ->
         let offset = IO.offset log.io in
         let h = IO.Header.get log.io in
@@ -274,8 +260,8 @@ struct
 
   let sync_index ~generation t =
     may (fun (i : index) -> IO.close i.io) t.index;
-    let index_path = index_path t.root in
-    if not (Sys.file_exists index_path) then t.index <- None
+    let index_path = Layout.data ~root:t.root in
+    if not (IO.exists index_path) then t.index <- None
     else
       let io =
         IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L index_path
@@ -288,7 +274,7 @@ struct
     Log.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
     (match t.log with
-    | None -> t.log <- try_load_log t (log_path t.root)
+    | None -> t.log <- try_load_log t (Layout.log ~root:t.root)
     | Some _ -> ());
     (* there is a race between sync and merge:
 
@@ -332,7 +318,7 @@ struct
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
     let writer_lock =
-      if not readonly then Some (IO.lock (lock_path root)) else None
+      if not readonly then Some (IO.lock (Layout.lock ~root)) else None
     in
     let config =
       {
@@ -343,7 +329,7 @@ struct
         flush_callback;
       }
     in
-    let log_path = log_path root in
+    let log_path = Layout.log ~root in
     let log =
       if readonly then if fresh then raise RO_not_allowed else None
       else
@@ -362,10 +348,10 @@ struct
     let generation =
       match log with None -> 0L | Some log -> IO.get_generation log.io
     in
-    let log_async_path = log_async_path root in
+    let log_async_path = Layout.log_async ~root in
     (* If we are in readonly mode, the log_async will be read during sync_log so
        there is no need to do it here. *)
-    if (not readonly) && Sys.file_exists log_async_path then (
+    if (not readonly) && IO.exists log_async_path then (
       let io =
         IO.v ~flush_callback ~fresh ~readonly:false ~generation:0L ~fan_size:0L
           log_async_path
@@ -389,8 +375,8 @@ struct
           log;
       IO.close io);
     let index =
-      let index_path = index_path root in
-      if Sys.file_exists index_path then
+      let index_path = Layout.data ~root in
+      if IO.exists index_path then
         let io =
           (* NOTE: No [flush_callback] on the Index IO as we maintain the
              invariant that any bindings it contains were previously persisted
@@ -443,9 +429,7 @@ struct
     Log.info (fun l ->
         l "[%s] v fresh=%b readonly=%b log_size=%d" (Filename.basename root)
           fresh readonly log_size);
-    match
-      (Cache.find cache (root, readonly), Sys.file_exists (index_dir root))
-    with
+    match (Cache.find cache (root, readonly), IO.exists (Layout.log ~root)) with
     | None, _ -> new_instance ()
     | Some _, false ->
         Log.debug (fun l ->
@@ -584,7 +568,7 @@ struct
     Stats.incr_nb_merge ();
     let log_async =
       let io =
-        let log_async_path = log_async_path t.root in
+        let log_async_path = Layout.log_async ~root:t.root in
         IO.v ~flush_callback:t.config.flush_callback ~fresh:true ~readonly:false
           ~generation:(Int64.succ t.generation) ~fan_size:0L log_async_path
       in
@@ -627,7 +611,7 @@ struct
       in
       let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
       let merge =
-        let merge_path = merge_path t.root in
+        let merge_path = Layout.merge ~root:t.root in
         IO.v ~fresh:true ~readonly:false ~generation
           ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
           merge_path
@@ -640,7 +624,7 @@ struct
             | `Continue ->
                 let io =
                   IO.v ~fresh:true ~readonly:false ~generation ~fan_size:0L
-                    (index_path t.root)
+                    (Layout.data ~root:t.root)
                 in
                 append_remaining_log fan_out log_array 0 merge;
                 `Index { io; fan_out })

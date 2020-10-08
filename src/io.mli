@@ -60,4 +60,8 @@ module type S = sig
 
     val get : t -> header
   end
+
+  val exists : string -> bool
+  (** [exists name] is true iff there is a pre-existing IO instance called
+      [name]. *)
 end

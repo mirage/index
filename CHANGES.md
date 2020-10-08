@@ -16,6 +16,9 @@
   [`Overcommit_memory] does not block but continue to fill the cache instead.
   (#209, @samoht)
 
+- Add `IO.exists` obligation for IO implementations, to be used for lazy
+  creation of IO instances. (#233, @CraigFe)
+
 ## Changed
 
 - `Index.close` will now abort an ongoing asynchronous merge operation, rather
