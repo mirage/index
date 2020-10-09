@@ -228,10 +228,14 @@ module IO : Index.IO = struct
           Unix.close fd;
           raise e
 
-    let err_rw_lock path =
+    let with_ic path f =
       let ic = open_in path in
-      let line = input_line ic in
+      let a = f ic in
       close_in ic;
+      a
+
+    let err_rw_lock path =
+      let line = with_ic path input_line in
       let pid = int_of_string line in
       Log.err (fun l ->
           l
@@ -249,6 +253,16 @@ module IO : Index.IO = struct
     let unlock { path; fd } =
       Log.debug (fun l -> l "Unlocking %s" path);
       Unix.close fd
+
+    let pp_dump path =
+      match Sys.file_exists path with
+      | false -> None
+      | true ->
+          let contents =
+            with_ic path (fun ic ->
+                really_input_string ic (in_channel_length ic))
+          in
+          Some (fun ppf -> Fmt.string ppf contents)
   end
 end
 

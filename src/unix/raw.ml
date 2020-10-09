@@ -53,6 +53,8 @@ let fsync t = Unix.fsync t.fd
 
 let close t = Unix.close t.fd
 
+let fstat t = Unix.fstat t.fd
+
 let unsafe_write t ~off buf =
   let buf = Bytes.unsafe_of_string buf in
   really_write t.fd off buf;

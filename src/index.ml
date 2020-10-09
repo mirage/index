@@ -842,6 +842,8 @@ struct
     Stats.sync_with_timer (fun () -> f t)
 
   let sync = sync' ?hook:None
+
+  module Checks = Checks.Make (K) (V) (IO)
 end
 
 module Make = Make_private

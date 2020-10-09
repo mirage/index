@@ -22,6 +22,8 @@ val fsync : t -> unit
 
 val close : t -> unit
 
+val fstat : t -> Unix.stats
+
 module Version : sig
   val get : t -> string
 

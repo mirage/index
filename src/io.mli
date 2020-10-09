@@ -53,6 +53,9 @@ module type S = sig
     val lock : string -> t
 
     val unlock : t -> unit
+
+    val pp_dump : string -> (Format.formatter -> unit) option
+    (** To be used for debugging purposes only. *)
   end
 
   module Header : sig
@@ -66,4 +69,11 @@ module type S = sig
   val exists : string -> bool
   (** [exists name] is true iff there is a pre-existing IO instance called
       [name]. *)
+
+  val size : t -> int
+  (** Returns the true size of the underlying data representation in bytes. Note
+      that this is not necessarily equal to the total size of {i observable}
+      data, which is given by {!offset}.
+
+      To be used for debugging purposes only. *)
 end

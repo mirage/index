@@ -171,6 +171,8 @@ module type S = sig
   val is_merging : t -> bool
   (** [is_merging t] returns true if [t] is running a merge. Raises
       {!RO_not_allowed} if called by a read-only index. *)
+
+  module Checks : Checks.S
 end
 
 module Private_types = struct
