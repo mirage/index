@@ -330,6 +330,8 @@ module type Index = sig
 
     module Search : module type of Search
 
+    module Io = Io
+
     module Io_array : module type of Io_array
 
     module Fan : module type of Fan

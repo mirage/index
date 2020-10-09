@@ -72,6 +72,18 @@ struct
 
   module Tbl = Hashtbl.Make (K)
 
+  module IO = struct
+    include Io.Extend (IO)
+
+    let page_size = Int64.mul entry_sizeL 1_000L
+
+    let iter ?min ?max f =
+      iter ~page_size ?min ?max (fun ~off ~buf ~buf_off ->
+          let entry = Entry.decode buf buf_off in
+          f off entry;
+          Entry.encoded_size)
+  end
+
   type throttle = [ `Overcommit_memory | `Block_writes ]
 
   type config = {
@@ -161,31 +173,6 @@ struct
     Mutex.with_lock t.rename_lock (fun () ->
         flush_instance ?no_callback ~with_fsync t)
 
-  let page_size = Int64.mul entry_sizeL 1_000L
-
-  let iter_io_off ?min:(min_off = 0L) ?max:max_off f io =
-    let max_off = match max_off with None -> IO.offset io | Some m -> m in
-    let rec aux offset =
-      let remaining = Int64.sub max_off offset in
-      if remaining <= 0L then ()
-      else
-        let len = Int64.to_int (min remaining page_size) in
-        let raw = Bytes.create len in
-        let n = IO.read io ~off:offset ~len raw in
-        let rec read_page page off =
-          if off = n then ()
-          else
-            let entry = Entry.decode page off in
-            f Int64.(add (of_int off) offset) entry;
-            (read_page [@tailcall]) page (off + Entry.encoded_size)
-        in
-        read_page (Bytes.unsafe_to_string raw) 0;
-        (aux [@tailcall]) Int64.(add offset page_size)
-    in
-    (aux [@tailcall]) min_off
-
-  let iter_io ?min ?max f io = iter_io_off ?min ?max (fun _ e -> f e) io
-
   module IOArray = Io_array.Make (IO) (Entry)
 
   module Search =
@@ -225,14 +212,14 @@ struct
         IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
       in
       let mem = Tbl.create 0 in
-      iter_io (fun e -> Tbl.replace mem e.key e.value) io;
+      IO.iter (fun _ e -> Tbl.replace mem e.key e.value) io;
       Some { io; mem })
     else None
 
   let sync_log_entries ?min log =
     let add_log_entry (e : Entry.t) = Tbl.replace log.mem e.key e.value in
     if min = None then Tbl.clear log.mem;
-    iter_io ?min add_log_entry log.io
+    IO.iter ?min (fun _ -> add_log_entry) log.io
 
   let sync_log_async t =
     match t.log_async with
@@ -328,7 +315,7 @@ struct
             l "[%s] log file detected. Loading %Ld entries"
               (Filename.basename root) entries);
         let mem = Tbl.create (Int64.to_int entries) in
-        iter_io (fun e -> Tbl.replace mem e.key e.value) io;
+        IO.iter (fun _ e -> Tbl.replace mem e.key e.value) io;
         Some { io; mem }
     in
     let generation =
@@ -352,8 +339,8 @@ struct
         may
           (fun log ->
             let append_io = IO.append log.io in
-            iter_io
-              (fun e ->
+            IO.iter
+              (fun _ e ->
                 Tbl.replace log.mem e.key e.value;
                 Entry.encode e append_io)
               io;
@@ -769,13 +756,15 @@ struct
     | None -> ()
     | Some log ->
         Tbl.iter f log.mem;
-        may (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io) t.index;
+        may
+          (fun (i : index) -> IO.iter (fun _ e -> f e.key e.value) i.io)
+          t.index;
         Mutex.with_lock t.rename_lock (fun () ->
             (match t.log_async with
             | None -> ()
             | Some log -> Tbl.iter f log.mem);
             may
-              (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io)
+              (fun (i : index) -> IO.iter (fun _ e -> f e.key e.value) i.io)
               t.index)
 
   let close' ~hook ?immediately it =
@@ -825,6 +814,7 @@ module Make = Make_private
 
 module Private = struct
   module Fan = Fan
+  module Io = Io
   module Io_array = Io_array
   module Search = Search
 
