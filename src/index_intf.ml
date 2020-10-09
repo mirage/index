@@ -125,12 +125,6 @@ module type S = sig
   val mem : t -> key -> bool
   (** [mem t k] is [true] iff [k] is bound in [t]. *)
 
-  exception Invalid_key_size of key
-
-  exception Invalid_value_size of value
-  (** The exceptions raised when trying to add a key or a value of different
-      size than encoded_size *)
-
   val replace : t -> key -> value -> unit
   (** [replace t k v] binds [k] to [v] in [t], replacing any existing binding of
       [k]. *)
@@ -322,6 +316,8 @@ module type Index = sig
     include module type of Stats
     (** @inline *)
   end
+
+  module Data = Data
 
   (** These modules should not be used. They are exposed purely for testing
       purposes. *)

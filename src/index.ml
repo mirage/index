@@ -18,6 +18,7 @@ all copies or substantial portions of the Software. *)
 include Index_intf
 module Stats = Stats
 module Cache = Cache
+module Data = Data
 
 module Key = struct
   module type S = Key
@@ -57,31 +58,17 @@ struct
 
   type value = V.t
 
-  type entry = { key : key; key_hash : int; value : value }
+  module Entry = struct
+    include Data.Entry.Make (K) (V)
+    module Key = K
+    module Value = V
 
-  let entry_size = K.encoded_size + V.encoded_size
+    let to_key { key; _ } = key
 
-  let entry_sizeL = Int64.of_int entry_size
+    let to_value { value; _ } = value
+  end
 
-  exception Invalid_key_size of key
-
-  exception Invalid_value_size of value
-
-  let append_key_value io key value =
-    let encoded_key = K.encode key in
-    let encoded_value = V.encode value in
-    if String.length encoded_key <> K.encoded_size then
-      raise (Invalid_key_size key);
-    if String.length encoded_value <> V.encoded_size then
-      raise (Invalid_value_size value);
-    IO.append io encoded_key;
-    IO.append io encoded_value
-
-  let decode_entry bytes off =
-    let string = Bytes.unsafe_to_string bytes in
-    let key = K.decode string off in
-    let value = V.decode string (off + K.encoded_size) in
-    { key; key_hash = K.hash key; value }
+  let entry_sizeL = Int64.of_int Entry.encoded_size
 
   module Tbl = Hashtbl.Make (K)
 
@@ -188,31 +175,16 @@ struct
         let rec read_page page off =
           if off = n then ()
           else
-            let entry = decode_entry page off in
+            let entry = Entry.decode page off in
             f Int64.(add (of_int off) offset) entry;
-            (read_page [@tailcall]) page (off + entry_size)
+            (read_page [@tailcall]) page (off + Entry.encoded_size)
         in
-        read_page raw 0;
+        read_page (Bytes.unsafe_to_string raw) 0;
         (aux [@tailcall]) Int64.(add offset page_size)
     in
     (aux [@tailcall]) min_off
 
   let iter_io ?min ?max f io = iter_io_off ?min ?max (fun _ e -> f e) io
-
-  module Entry = struct
-    type t = entry
-
-    module Key = K
-    module Value = V
-
-    let encoded_size = entry_size
-
-    let decode = decode_entry
-
-    let to_key e = e.key
-
-    let to_value e = e.value
-  end
 
   module IOArray = Io_array.Make (IO) (Entry)
 
@@ -225,7 +197,7 @@ struct
 
         let compare : int -> int -> int = compare
 
-        let of_entry e = e.key_hash
+        let of_entry e = e.Entry.key_hash
 
         let of_key = K.hash
 
@@ -258,7 +230,7 @@ struct
     else None
 
   let sync_log_entries ?min log =
-    let add_log_entry e = Tbl.replace log.mem e.key e.value in
+    let add_log_entry (e : Entry.t) = Tbl.replace log.mem e.key e.value in
     if min = None then Tbl.clear log.mem;
     iter_io ?min add_log_entry log.io
 
@@ -336,7 +308,7 @@ struct
     in
     let config =
       {
-        log_size = log_size * entry_size;
+        log_size = log_size * Entry.encoded_size;
         readonly;
         fresh;
         throttle;
@@ -379,10 +351,11 @@ struct
       if not fresh then
         may
           (fun log ->
+            let append_io = IO.append log.io in
             iter_io
               (fun e ->
                 Tbl.replace log.mem e.key e.value;
-                append_key_value log.io e.key e.value)
+                Entry.encode e append_io)
               io;
             IO.flush log.io;
             IO.clear ~generation io)
@@ -513,14 +486,14 @@ struct
     IO.append dst_io buf_str
 
   let append_entry_fanout fan_out entry dst_io =
-    Fan.update fan_out entry.key_hash (IO.offset dst_io);
-    append_key_value dst_io entry.key entry.value
+    Fan.update fan_out entry.Entry.key_hash (IO.offset dst_io);
+    Entry.encode entry (IO.append dst_io)
 
   let rec merge_from_log fan_out log log_i hash_e dst_io =
     if log_i >= Array.length log then log_i
     else
       let v = log.(log_i) in
-      if v.key_hash >= hash_e then log_i
+      if v.Entry.key_hash >= hash_e then log_i
       else (
         append_entry_fanout fan_out v dst_io;
         (merge_from_log [@tailcall]) fan_out log (log_i + 1) hash_e dst_io)
@@ -534,7 +507,7 @@ struct
      satisfy [filter (k, v)]. [log] must be sorted by key hashes. *)
   let merge_with ~hook ~yield ~filter log (index : index) dst_io =
     let entries = 10_000 in
-    let len = entries * entry_size in
+    let len = entries * Entry.encoded_size in
     let buf = Bytes.create len in
     let refill off = ignore (IO.read index.io ~off ~len buf) in
     let index_end = IO.offset index.io in
@@ -545,9 +518,9 @@ struct
         append_remaining_log fan_out log log_i dst_io;
         `Completed)
       else
-        let buf_str = Bytes.sub buf buf_offset entry_size in
+        let buf_str = Bytes.sub buf buf_offset Entry.encoded_size in
         let index_offset = Int64.add index_offset entry_sizeL in
-        let e = Entry.decode buf_str 0 in
+        let e = Entry.decode (Bytes.unsafe_to_string buf_str) 0 in
         let log_i = merge_from_log fan_out log log_i e.key_hash dst_io in
         match yield () with
         | `Abort -> `Aborted
@@ -564,7 +537,7 @@ struct
                 dst_io;
             if first_entry then hook `After_first_entry;
             let buf_offset =
-              let n = buf_offset + entry_size in
+              let n = buf_offset + Entry.encoded_size in
               if n >= Bytes.length buf then (
                 refill index_offset;
                 0)
@@ -602,14 +575,16 @@ struct
       let log = assert_and_get t.log in
       let generation = Int64.succ t.generation in
       let log_array =
-        let compare_entry e e' = compare e.key_hash e'.key_hash in
+        let compare_entry (e : Entry.t) (e' : Entry.t) =
+          compare e.key_hash e'.key_hash
+        in
         Tbl.filter_map_inplace
           (fun key value -> if filter (key, value) then Some value else None)
           log.mem;
         let b = Array.make (Tbl.length log.mem) witness in
         Tbl.fold
           (fun key value i ->
-            b.(i) <- { key; key_hash = K.hash key; value };
+            b.(i) <- Entry.v key value;
             i + 1)
           log.mem 0
         |> ignore;
@@ -620,10 +595,12 @@ struct
         match t.index with
         | None -> Tbl.length log.mem
         | Some index ->
-            (Int64.to_int (IO.offset index.io) / entry_size)
+            (Int64.to_int (IO.offset index.io) / Entry.encoded_size)
             + Array.length log_array
       in
-      let fan_out = Fan.v ~hash_size:K.hash_size ~entry_size fan_size in
+      let fan_out =
+        Fan.v ~hash_size:K.hash_size ~entry_size:Entry.encoded_size fan_size
+      in
       let merge =
         let merge_path = Layout.merge ~root:t.root in
         IO.v ~fresh:true ~readonly:false ~generation
@@ -660,10 +637,11 @@ struct
               Tbl.clear log.mem;
               hook `After_clear;
               let log_async = assert_and_get t.log_async in
+              let append_io = IO.append log.io in
               Tbl.iter
                 (fun key value ->
                   Tbl.replace log.mem key value;
-                  append_key_value log.io key value)
+                  Entry.encode' key value append_io)
                 log_async.mem;
               (* NOTE: It {i may} not be necessary to trigger the
                  [flush_callback] here. If the instance has been recently
@@ -697,22 +675,19 @@ struct
     match t.log with
     | None -> None
     | Some log -> (
-        let exception Found of entry in
+        let exception Found of Entry.t in
         match
-          Tbl.iter
-            (fun key value ->
-              raise (Found { key; value; key_hash = K.hash key }))
-            log.mem
+          Tbl.iter (fun key value -> raise (Found (Entry.v key value))) log.mem
         with
         | exception Found e -> Some e
         | () -> (
             match t.index with
             | None -> None
             | Some index ->
-                let buf = Bytes.create entry_size in
-                let n = IO.read index.io ~off:0L ~len:entry_size buf in
-                assert (n = entry_size);
-                Some (decode_entry buf 0)))
+                let buf = Bytes.create Entry.encoded_size in
+                let n = IO.read index.io ~off:0L ~len:Entry.encoded_size buf in
+                assert (n = Entry.encoded_size);
+                Some (Entry.decode (Bytes.unsafe_to_string buf) 0)))
 
   let force_merge ?hook t =
     let t = check_open t in
@@ -747,7 +722,7 @@ struct
             | Some log -> log
             | None -> assert_and_get t.log
           in
-          append_key_value log.io key value;
+          Entry.encode' key value (IO.append log.io);
           Tbl.replace log.mem key value;
           Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
     in
@@ -759,7 +734,7 @@ struct
           None
       | `Overcommit_memory, false | `Block_writes, _ ->
           let hook = hook |> Option.map (fun f stage -> f (`Merge stage)) in
-          Some (merge ?hook ~witness:{ key; key_hash = K.hash key; value } t)
+          Some (merge ?hook ~witness:(Entry.v key value) t)
     else None
 
   let replace t key value =

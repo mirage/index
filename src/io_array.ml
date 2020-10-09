@@ -20,7 +20,7 @@ module type ELT = sig
 
   val encoded_size : int
 
-  val decode : Bytes.t -> int -> t
+  val decode : string -> int -> t
 end
 
 module type S = sig
@@ -53,14 +53,14 @@ module Make (IO : Io.S) (Elt : ELT) :
     let buf = Bytes.create Elt.encoded_size in
     let n = IO.read io ~off ~len:Elt.encoded_size buf in
     assert (n = Elt.encoded_size);
-    Elt.decode buf 0
+    Elt.decode (Bytes.unsafe_to_string buf) 0
 
   let ( -- ) = Int64.sub
 
   let get_entry_from_buffer buf off =
     let buf_off = Int64.(to_int @@ (off -- buf.low_off)) in
     assert (buf_off <= Bytes.length buf.buf);
-    Elt.decode buf.buf buf_off
+    Elt.decode (Bytes.unsafe_to_string buf.buf) buf_off
 
   let is_in_buffer t off =
     match t.buffer with

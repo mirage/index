@@ -1,3 +1,7 @@
+exception Invalid_size of string
+(** The exception raised when trying to encode a key or a value of size other
+    than encoded_size *)
+
 module type Key = sig
   type t
   (** The type for keys. *)
@@ -41,6 +45,52 @@ module type Value = sig
   val decode : string -> int -> t
 
   val pp : t Fmt.t
+end
+
+module Entry = struct
+  module type S = sig
+    type key
+
+    type value
+
+    type t = private { key : key; key_hash : int; value : value }
+
+    val v : key -> value -> t
+
+    val encoded_size : int
+
+    val decode : string -> int -> t
+
+    val encode : t -> (string -> unit) -> unit
+
+    val encode' : key -> value -> (string -> unit) -> unit
+  end
+
+  module Make (K : Key) (V : Value) :
+    S with type key := K.t and type value := V.t = struct
+    type t = { key : K.t; key_hash : int; value : V.t }
+
+    let v key value = { key; key_hash = K.hash key; value }
+
+    let encoded_size = K.encoded_size + V.encoded_size
+
+    let decode string off =
+      let key = K.decode string off in
+      let value = V.decode string (off + K.encoded_size) in
+      { key; key_hash = K.hash key; value }
+
+    let encode' key value f =
+      let encoded_key = K.encode key in
+      let encoded_value = V.encode value in
+      if String.length encoded_key <> K.encoded_size then
+        raise (Invalid_size encoded_key);
+      if String.length encoded_value <> V.encoded_size then
+        raise (Invalid_size encoded_value);
+      f encoded_key;
+      f encoded_value
+
+    let encode { key; value; _ } f = encode' key value f
+  end
 end
 
 module String_fixed (L : sig

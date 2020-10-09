@@ -20,7 +20,7 @@ module type ELT = sig
 
   val encoded_size : int
 
-  val decode : Bytes.t -> int -> t
+  val decode : string -> int -> t
 end
 
 module type S = sig

@@ -12,8 +12,7 @@ module Entry = struct
 
   let encoded_size = Key.encoded_size + Value.encoded_size
 
-  let decode bytes off =
-    let string = Bytes.unsafe_to_string bytes in
+  let decode string off =
     let key = Key.decode string off in
     let value = Value.decode string (off + Key.encoded_size) in
     (key, value)
