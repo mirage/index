@@ -24,8 +24,6 @@ let decode_int64 buf =
 
 type t = { fd : Unix.file_descr } [@@unboxed]
 
-type raw = t
-
 let v fd = { fd }
 
 let really_write fd fd_offset buffer =
