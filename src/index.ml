@@ -20,6 +20,8 @@ module Stats = Stats
 module Cache = Cache
 module Data = Data
 
+let pp = Irmin_type.Type.pp
+
 module Key = struct
   module type S = Key
 
@@ -460,12 +462,12 @@ struct
 
   let find t key =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] find %a" (Filename.basename t.root) K.pp key);
+    Log.info (fun l -> l "[%s] find %a" (Filename.basename t.root) (pp K.t) key);
     find_instance t key
 
   let mem t key =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] mem %a" (Filename.basename t.root) K.pp key);
+    Log.info (fun l -> l "[%s] mem %a" (Filename.basename t.root) (pp K.t) key);
     match find_instance t key with _ -> true | exception Not_found -> false
 
   let append_buf_fanout fan_out hash buf_str dst_io =
@@ -700,7 +702,8 @@ struct
     let t = check_open t in
     Stats.incr_nb_replace ();
     Log.info (fun l ->
-        l "[%s] replace %a %a" (Filename.basename t.root) K.pp key V.pp value);
+        l "[%s] replace %a %a" (Filename.basename t.root) (pp K.t) key (pp V.t)
+          value);
     if t.config.readonly then raise RO_not_allowed;
     let log_limit_reached =
       Mutex.with_lock t.rename_lock (fun () ->

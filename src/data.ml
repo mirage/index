@@ -3,7 +3,7 @@ exception Invalid_size of string
     than encoded_size *)
 
 module type Key = sig
-  type t
+  type t [@@deriving irmin]
   (** The type for keys. *)
 
   val equal : t -> t -> bool
@@ -30,21 +30,16 @@ module type Key = sig
   val decode : string -> int -> t
   (** [decode s off] is the decoded form of the encoded value at the offset
       [off] of string [s]. Must satisfy [decode (encode t) 0 = t]. *)
-
-  val pp : t Fmt.t
-  (** Formatter for keys *)
 end
 
 module type Value = sig
-  type t
+  type t [@@deriving irmin]
 
   val encode : t -> string
 
   val encoded_size : int
 
   val decode : string -> int -> t
-
-  val pp : t Fmt.t
 end
 
 module Entry = struct
@@ -54,6 +49,7 @@ module Entry = struct
     type value
 
     type t = private { key : key; key_hash : int; value : value }
+    [@@deriving irmin]
 
     val v : key -> value -> t
 
@@ -68,7 +64,7 @@ module Entry = struct
 
   module Make (K : Key) (V : Value) :
     S with type key := K.t and type value := V.t = struct
-    type t = { key : K.t; key_hash : int; value : V.t }
+    type t = { key : K.t; key_hash : int; value : V.t } [@@deriving irmin]
 
     let v key value = { key; key_hash = K.hash key; value }
 
@@ -102,7 +98,7 @@ end) : sig
 
   include Value with type t := string
 end = struct
-  type t = string
+  type t = string [@@deriving irmin]
 
   let hash = Hashtbl.hash
 
@@ -115,6 +111,4 @@ end = struct
   let encoded_size = L.length
 
   let equal = String.equal
-
-  let pp = Fmt.string
 end
