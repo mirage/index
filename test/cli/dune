@@ -29,4 +29,4 @@
    (with-stdout-to
     index-fsck-help.txt.gen
     (run %{exe:index_fsck.exe} --help=plain))
-   (diff index-fsck-help.txt index-fsck-help.txt.gen))))
+   (diff? index-fsck-help.txt index-fsck-help.txt.gen))))

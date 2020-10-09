@@ -2,7 +2,7 @@ No files are shown when running `stat` in a non-existent directory:
 
   $ ../index_fsck.exe stat ../data/non-existent-store
   >> Getting statistics for store: `../data/non-existent-store'
-     
+  
   {
     "entry_size": "40 B",
     "files": {}
@@ -13,7 +13,7 @@ Running `stat` on an index after 10 merges:
   $ ../index_fsck.exe stat ../data/random > log.txt 2>&1
   $ sed -re 's/"lock": "[0-9]+"/"lock": "<PID>"/g' log.txt  
   >> Getting statistics for store: `../data/random'
-     
+  
   {
     "entry_size": "40 B",
     "files": {

@@ -3,14 +3,29 @@ module T = Irmin_type.Type
 
 (** Offline integrity checking and recovery for an Index store *)
 
-module Make (K : Data.Key) (V : Data.Value) (Io : Io.S) = struct
-  (** This module never makes persistent changes *)
-  module Io = struct
-    include Io
+module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
+  module Entry = Data.Entry.Make (K) (V)
 
+  module IO = struct
+    include Io.Extend (IO)
+
+    (** This module never makes persistent changes *)
     let v =
       v ~fresh:false ~readonly:true ?flush_callback:None ~generation:0L
         ~fan_size:0L
+
+    let iter ?min ?max f =
+      iter ?min ?max
+        ~page_size:Int64.(mul (of_int Entry.encoded_size) 1000L)
+        (fun ~off ~buf ~buf_off ->
+          let entry = Entry.decode buf buf_off in
+          f ~off entry;
+          Entry.encoded_size)
+
+    let read_entry io off =
+      let buf = Bytes.create Entry.encoded_size in
+      let (_ : int) = IO.read io ~off ~len:Entry.encoded_size buf in
+      Entry.decode (Bytes.unsafe_to_string buf) 0
   end
 
   type size = Bytes of int [@@deriving irmin]
@@ -51,20 +66,20 @@ module Make (K : Data.Key) (V : Data.Value) (Io : Io.S) = struct
 
     type t = { entry_size : size; files : files } [@@deriving irmin]
 
-    let with_io : type a. string -> (Io.t -> a) -> a option =
+    let with_io : type a. string -> (IO.t -> a) -> a option =
      fun path f ->
-      match Io.exists path with
+      match IO.exists path with
       | false -> None
       | true ->
-          let io = Io.v path in
+          let io = IO.v path in
           let a = f io in
-          Io.close io;
+          IO.close io;
           Some a
 
     let io path =
       with_io path @@ fun io ->
-      let Io.Header.{ offset; generation } = Io.Header.get io in
-      let size = Bytes (Io.size io) in
+      let IO.Header.{ offset; generation } = IO.Header.get io in
+      let size = Bytes (IO.size io) in
       { size; offset; generation }
 
     let v ~root =
@@ -74,7 +89,7 @@ module Make (K : Data.Key) (V : Data.Value) (Io : Io.S) = struct
       let log_async = io (Layout.log_async ~root) in
       let merge = io (Layout.merge ~root) in
       let lock =
-        Io.Lock.pp_dump (Layout.lock ~root)
+        IO.Lock.pp_dump (Layout.lock ~root)
         |> Option.map (fun f ->
                f Format.str_formatter;
                Format.flush_str_formatter ())
@@ -86,11 +101,40 @@ module Make (K : Data.Key) (V : Data.Value) (Io : Io.S) = struct
       |> T.pp_json ~minify:false t Fmt.stdout
   end
 
-  (** Run extensive checks on the store:
-
-      - ensure that the [data] file is monotonic *)
   module Integrity_check = struct
-    let v ~root:_ = ()
+    let encoded_sizeL = Int64.of_int Entry.encoded_size
+
+    let get_window_around offset io context =
+      List.init
+        ((2 * context) + 1)
+        Int64.(fun i -> add offset (mul (of_int (i - context)) encoded_sizeL))
+      |> List.filter (fun off -> Int64.compare off 0L >= 0)
+      |> List.map (IO.read_entry io)
+
+    let v ~root =
+      let context = 2 in
+      let io = IO.v (Layout.data ~root) in
+      let io_offset = IO.offset io in
+      if Int64.compare io_offset encoded_sizeL < 0 then (
+        if not (Int64.equal io_offset 0L) then
+          Fmt.failwith
+            "Non-integer number of entries in file: { offset = %Ld; entry_size \
+             = %d }"
+            io_offset Entry.encoded_size)
+      else
+        let first_entry = IO.read_entry io 0L in
+        let previous = ref first_entry in
+        io
+        |> IO.iter ~min:encoded_sizeL (fun ~off e ->
+               if !previous.key_hash > e.key_hash then (
+                 Log.err (fun f -> f "Found non-monotonic region:@,");
+                 let entries_to_print = get_window_around off io context in
+                 Log.err (fun f ->
+                     f "%a@,"
+                       Fmt.(list ~sep:cut (T.pp Entry.t))
+                       entries_to_print));
+
+               previous := e)
   end
 
   module Cli = struct
@@ -119,10 +163,10 @@ module Make (K : Data.Key) (V : Data.Value) (Io : Io.S) = struct
             match level with
             | Logs.App ->
                 Fmt.kpf k Fmt.stderr
-                  ("%a@[<v 0>" ^^ fmt ^^ "@]@.")
+                  ("@[<v 0>%a" ^^ fmt ^^ "@]@.")
                   Fmt.(styled `Bold (styled (`Fg `Cyan) string))
                   ">> "
-            | _ -> Fmt.kpf k Fmt.stdout fmt
+            | _ -> Fmt.kpf k Fmt.stdout ("@[<v 0>" ^^ fmt ^^ "@]@.")
           in
           { Logs.report }
         in
