@@ -202,50 +202,54 @@ module IO : Index.IO = struct
 
   let exists = Sys.file_exists
 
-  type lock = { path : string; fd : Unix.file_descr }
+  let size { raw; _ } = (Raw.fstat raw).st_size
 
-  exception Locked of string
+  module Lock = struct
+    type t = { path : string; fd : Unix.file_descr }
 
-  let unsafe_lock op f =
-    mkdir (Filename.dirname f);
-    let fd = Unix.openfile f [ Unix.O_CREAT; Unix.O_RDWR ] 0o600
-    and pid = string_of_int (Unix.getpid ()) in
-    let pid_len = String.length pid in
-    try
-      Unix.lockf fd op 0;
-      if Unix.single_write_substring fd pid 0 pid_len <> pid_len then (
-        Unix.close fd;
-        failwith "Unable to write PID to lock file")
-      else Some fd
-    with
-    | Unix.Unix_error (Unix.EAGAIN, _, _) ->
-        Unix.close fd;
-        None
-    | e ->
-        Unix.close fd;
-        raise e
+    exception Locked of string
 
-  let err_rw_lock path =
-    let ic = open_in path in
-    let line = input_line ic in
-    close_in ic;
-    let pid = int_of_string line in
-    Log.err (fun l ->
-        l
-          "Cannot lock %s: index is already opened in write mode by PID %d. \
-           Current PID is %d."
-          path pid (Unix.getpid ()));
-    raise (Locked path)
+    let unsafe_lock op f =
+      mkdir (Filename.dirname f);
+      let fd = Unix.openfile f [ Unix.O_CREAT; Unix.O_RDWR ] 0o600
+      and pid = string_of_int (Unix.getpid ()) in
+      let pid_len = String.length pid in
+      try
+        Unix.lockf fd op 0;
+        if Unix.single_write_substring fd pid 0 pid_len <> pid_len then (
+          Unix.close fd;
+          failwith "Unable to write PID to lock file")
+        else Some fd
+      with
+      | Unix.Unix_error (Unix.EAGAIN, _, _) ->
+          Unix.close fd;
+          None
+      | e ->
+          Unix.close fd;
+          raise e
 
-  let lock path =
-    Log.debug (fun l -> l "Locking %s" path);
-    match unsafe_lock Unix.F_TLOCK path with
-    | Some fd -> { path; fd }
-    | None -> err_rw_lock path
+    let err_rw_lock path =
+      let ic = open_in path in
+      let line = input_line ic in
+      close_in ic;
+      let pid = int_of_string line in
+      Log.err (fun l ->
+          l
+            "Cannot lock %s: index is already opened in write mode by PID %d. \
+             Current PID is %d."
+            path pid (Unix.getpid ()));
+      raise (Locked path)
 
-  let unlock { path; fd } =
-    Log.debug (fun l -> l "Unlocking %s" path);
-    Unix.close fd
+    let lock path =
+      Log.debug (fun l -> l "Locking %s" path);
+      match unsafe_lock Unix.F_TLOCK path with
+      | Some fd -> { path; fd }
+      | None -> err_rw_lock path
+
+    let unlock { path; fd } =
+      Log.debug (fun l -> l "Unlocking %s" path);
+      Unix.close fd
+  end
 end
 
 module Mutex = struct

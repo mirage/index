@@ -107,7 +107,7 @@ struct
     mutable log : log option;
     mutable log_async : log option;
     mutable open_instances : int;
-    writer_lock : IO.lock option;
+    writer_lock : IO.Lock.t option;
     mutable merge_lock : Mutex.t;
     mutable rename_lock : Mutex.t;
     mutable pending_cancel : bool;
@@ -332,7 +332,7 @@ struct
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
     let writer_lock =
-      if not readonly then Some (IO.lock (Layout.lock ~root)) else None
+      if not readonly then Some (IO.Lock.lock (Layout.lock ~root)) else None
     in
     let config =
       {
@@ -828,7 +828,7 @@ struct
                   IO.close l.io)
                 t.log;
               may (fun (i : index) -> IO.close i.io) t.index;
-              may (fun lock -> IO.unlock lock) t.writer_lock))
+              may (fun lock -> IO.Lock.unlock lock) t.writer_lock))
 
   let close = close' ~hook:(fun _ -> ())
 
