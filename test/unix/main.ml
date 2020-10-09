@@ -575,7 +575,7 @@ module Close = struct
     in
     let hook = function
       | `Before ->
-          Fmt.pr "Child: issuing request to close the index\n%!";
+          Log.app (fun f -> f "Child: issuing request to close the index");
           Mutex.unlock close_request
       | `After_clear | `After | `After_first_entry ->
           Alcotest.fail "Merge completed despite concurrent close"
@@ -583,14 +583,14 @@ module Close = struct
     let merge_promise : _ Index.async =
       Index.force_merge ~hook:(I.Private.Hook.v hook) rw
     in
-    Fmt.pr "Parent: waiting for request to close the index\n%!";
+    Log.app (fun f -> f "Parent: waiting for request to close the index");
     Mutex.lock close_request;
-    Fmt.pr "Parent: closing the index\n%!";
+    Log.app (fun f -> f "Parent: closing the index");
     Index.close'
       ~hook:
         (I.Private.Hook.v (fun `Abort_signalled -> Mutex.unlock abort_signalled))
-      rw;
-    Fmt.pr "Parent: awaiting merge result\n%!";
+      ~immediately:() rw;
+    Log.app (fun f -> f "Parent: awaiting merge result");
     Index.await merge_promise |> function
     | Ok `Completed ->
         Alcotest.fail "Force_merge returned `Completed despite concurrent close"
