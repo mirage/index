@@ -271,21 +271,35 @@ module type Private = sig
 end
 
 module type Index = sig
-  (** The input of {!Make} for keys. *)
-  module type Key = sig
-    (* N.B. We use [sig ... end] redirections to avoid linking to the [_intf]
-       file in the generated docs. Once Odoc 2 is released, this can be
-       removed. *)
+  (* N.B. We use [sig ... end] redirections to avoid linking to the [_intf]
+     file in the generated docs. Once Odoc 2 is released, this can be
+     removed. *)
 
-    include Key
-    (** @inline *)
+  module Key : sig
+    (** The input of {!Make} for keys. *)
+    module type S = sig
+      include Key
+      (** @inline *)
+    end
+
+    (** String keys of a given fixed size in bytes. *)
+    module String_fixed (L : sig
+      val length : int
+    end) : S with type t = string
   end
 
-  (** The input of {!Make} for values. The same requirements as for {!Key}
-      apply. *)
-  module type Value = sig
-    include Value
-    (** @inline *)
+  module Value : sig
+    (** The input of {!Make} for values. The same requirements as for {!Key}
+        apply. *)
+    module type S = sig
+      include Value
+      (** @inline *)
+    end
+
+    (** String values of a given fixed size in bytes. *)
+    module String_fixed (L : sig
+      val length : int
+    end) : S with type t = string
   end
 
   module type IO = sig
@@ -329,8 +343,8 @@ module type Index = sig
       except for [close], which is idempotent. *)
 
   module Make
-      (K : Key)
-      (V : Value)
+      (K : Key.S)
+      (V : Value.S)
       (IO : IO)
       (M : MUTEX)
       (T : THREAD)

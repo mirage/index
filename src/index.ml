@@ -19,6 +19,44 @@ include Index_intf
 module Stats = Stats
 module Cache = Cache
 
+module String_fixed (L : sig
+  val length : int
+end) : sig
+  type t = string
+
+  include Key with type t := t
+
+  include Value with type t := t
+end = struct
+  type t = string
+
+  let hash = Hashtbl.hash
+
+  let hash_size = 30
+
+  let encode s = s
+
+  let decode s off = String.sub s off L.length
+
+  let encoded_size = L.length
+
+  let equal = String.equal
+
+  let pp = Fmt.string
+end
+
+module Key = struct
+  module type S = Key
+
+  module String_fixed = String_fixed
+end
+
+module Value = struct
+  module type S = Value
+
+  module String_fixed = String_fixed
+end
+
 let may f = function None -> () | Some bf -> f bf
 
 let assert_and_get = function None -> assert false | Some e -> e

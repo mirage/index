@@ -298,13 +298,13 @@ module Thread = struct
         | None -> assert false)
 end
 
-module Make (K : Index.Key) (V : Index.Value) =
+module Make (K : Index.Key.S) (V : Index.Value.S) =
   Index.Make (K) (V) (IO) (Mutex) (Thread)
 module Syscalls = Syscalls
 
 module Private = struct
   module IO = IO
   module Raw = Raw
-  module Make (K : Index.Key) (V : Index.Value) =
+  module Make (K : Index.Key.S) (V : Index.Value.S) =
     Index.Private.Make (K) (V) (IO) (Mutex) (Thread)
 end

@@ -28,48 +28,28 @@ let report () =
   Logs.set_level (Some Logs.Debug);
   Logs.set_reporter (reporter ())
 
-let string_size = 20
+module String_size = struct
+  let length = 20
+end
 
 let () = Random.self_init ()
 
 let random_char () = char_of_int (33 + Random.int 94)
 
-let random_string () = String.init string_size (fun _i -> random_char ())
+let random_string () = String.init String_size.length (fun _i -> random_char ())
 
 module Key = struct
-  type t = string
+  include Index.Key.String_fixed (String_size)
 
   let v = random_string
-
-  let hash = Hashtbl.hash
-
-  let hash_size = 30
-
-  let encode s = s
-
-  let decode s off = String.sub s off string_size
-
-  let encoded_size = string_size
-
-  let equal = String.equal
-
-  let pp s = Fmt.fmt "%s" s
 end
 
 module Value = struct
-  type t = string
+  include Index.Value.String_fixed (String_size)
 
   let v = random_string
 
-  let encode s = s
-
-  let decode s off = String.sub s off string_size
-
-  let encoded_size = string_size
-
   let equal = String.equal
-
-  let pp s = Fmt.fmt "%s" s
 end
 
 type binding = Key.t * Value.t
