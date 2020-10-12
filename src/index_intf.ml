@@ -191,9 +191,13 @@ module type S = sig
       - If [with_fsync] is [true], this also flushes the OS caches for each [IO]
         instance. *)
 
-  val close : t -> unit
+  val close : ?immediately:unit -> t -> unit
   (** Closes all resources used by [t], flushing any internal buffers in the
-      instance. *)
+      instance.
+
+      If [immediately] is passed, this operation will abort any ongoing
+      background processes. This guarantees not to corrupt the store, but may
+      require additional work to be done on the next startup. *)
 
   val sync : t -> unit
   (** [sync t] syncs a read-only index with the files on disk. Raises
@@ -319,7 +323,8 @@ module type Index = sig
       (** [replace' t k v] is like {!replace t k v} but returns a promise of a
           merge result if the {!replace} call triggered one. *)
 
-      val close' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
+      val close' :
+        hook:[ `Abort_signalled ] Hook.t -> ?immediately:unit -> t -> unit
       (** [`Abort_signalled]: after the cancellation signal has been sent to any
           concurrent merge operations, but {i before} blocking on those
           cancellations having completed. *)

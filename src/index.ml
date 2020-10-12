@@ -789,13 +789,17 @@ struct
               (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io)
               t.index)
 
-  let close' ~hook it =
+  let close' ~hook ?immediately it =
+    let abort_merge =
+      match immediately with Some () -> true | None -> false
+    in
     match !it with
     | None -> Log.info (fun l -> l "close: instance already closed")
     | Some t ->
         Log.info (fun l -> l "[%s] close" (Filename.basename t.root));
-        t.pending_cancel <- true;
-        hook `Abort_signalled;
+        if abort_merge then (
+          t.pending_cancel <- true;
+          hook `Abort_signalled);
         Mutex.with_lock t.merge_lock (fun () ->
             it := None;
             t.open_instances <- t.open_instances - 1;
@@ -855,7 +859,8 @@ module Private = struct
       value ->
       merge_result async option
 
-    val close' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
+    val close' :
+      hook:[ `Abort_signalled ] Hook.t -> ?immediately:unit -> t -> unit
 
     val clear' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
 

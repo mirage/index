@@ -353,7 +353,7 @@ let add_bindings index =
   let k1, v1 = (Key.v (), Value.v ()) in
   Index.replace index k1 v1
 
-(** Test that a clear is aborting the merge.*)
+(** Test that a clear aborts the merge. *)
 let test_non_blocking_clear () =
   let* Context.{ rw; _ } = Context.with_empty_index () in
   let lock () =
@@ -418,7 +418,8 @@ let test_abort_merge ~abort_merge () =
 
 let test_clear_aborts_merge = test_abort_merge ~abort_merge:Index.clear'
 
-let test_close_aborts_merge = test_abort_merge ~abort_merge:Index.close'
+let test_close_immediately_aborts_merge =
+  test_abort_merge ~abort_merge:(Index.close' ~immediately:())
 
 let tests =
   [
@@ -434,6 +435,8 @@ let tests =
     ("merge during ro sync", `Quick, merge_during_sync);
     ("is_merging", `Quick, test_is_merging);
     ("clear is not blocking", `Quick, test_non_blocking_clear);
-    ("close aborts merge", `Quick, test_close_aborts_merge);
-    ("clear aborts merge", `Quick, test_clear_aborts_merge);
+    ("`clear` aborts merge", `Quick, test_clear_aborts_merge);
+    ( "`close ~immediately` aborts merge",
+      `Quick,
+      test_close_immediately_aborts_merge );
   ]

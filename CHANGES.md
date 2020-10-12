@@ -19,10 +19,12 @@
 - Add `IO.exists` obligation for IO implementations, to be used for lazy
   creation of IO instances. (#233, @CraigFe)
 
+- `Index.close` now takes an `~immediately:()` argument. When passed, this
+  causes `close` to terminate any ongoing asynchronous merge operation, rather
+  than waiting for it to finish. (#185, #234)
+
 ## Changed
 
-- `Index.close` will now abort an ongoing asynchronous merge operation, rather
-  than waiting for it to finish. (#185)
 - `sync` has to be called by the read-only instance to synchronise with the
   files on disk. (#175)
 - Caching of `Index` instances is now explicit: `Index.Make` requires a cache
