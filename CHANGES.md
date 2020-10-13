@@ -23,6 +23,9 @@
   causes `close` to terminate any ongoing asynchronous merge operation, rather
   than waiting for it to finish. (#185, #234)
 
+- Added `Index.Checks.cli`, which provides offline integrity checking of Index
+  stores. (#236)
+
 ## Changed
 
 - `sync` has to be called by the read-only instance to synchronise with the
