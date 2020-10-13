@@ -30,7 +30,7 @@ let update_list =
 let fan_with_updates =
   map [ empty_fan; update_list ] (fun fan l ->
       List.iter (fun (hash, off) -> Fan.update fan hash off) l;
-      Fan.finalize fan;
+      let fan = Fan.finalize fan in
       (fan, l))
 
 let fan = map [ fan_with_updates ] fst

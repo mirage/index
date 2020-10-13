@@ -83,7 +83,7 @@ struct
     flush_callback : unit -> unit;
   }
 
-  type index = { io : IO.t; fan_out : Fan.t }
+  type index = { io : IO.t; fan_out : [ `Read ] Fan.t }
 
   type log = { io : IO.t; mem : value Tbl.t }
 
@@ -518,13 +518,12 @@ struct
 
   (* Merge [log] with [index] into [dst_io], ignoring bindings that do not
      satisfy [filter (k, v)]. [log] must be sorted by key hashes. *)
-  let merge_with ~hook ~yield ~filter log (index : index) dst_io =
+  let merge_with ~hook ~yield ~filter log index_io fan_out dst_io =
     let entries = 10_000 in
     let len = entries * entry_size in
     let buf = Bytes.create len in
-    let refill off = ignore (IO.read index.io ~off ~len buf) in
-    let index_end = IO.offset index.io in
-    let fan_out = index.fan_out in
+    let refill off = ignore (IO.read index_io ~off ~len buf) in
+    let index_end = IO.offset index_io in
     refill 0L;
     let rec go first_entry index_offset buf_offset log_i =
       if index_offset >= index_end then (
@@ -616,7 +615,7 @@ struct
           ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
           merge_path
       in
-      let merge_result : [ `Index of index | `Aborted ] =
+      let merge_result : [ `Index_io of IO.t | `Aborted ] =
         match t.index with
         | None -> (
             match yield () with
@@ -627,16 +626,18 @@ struct
                     (Layout.data ~root:t.root)
                 in
                 append_remaining_log fan_out log_array 0 merge;
-                `Index { io; fan_out })
+                `Index_io io)
         | Some index -> (
-            let index = { index with fan_out } in
-            match merge_with ~hook ~yield ~filter log_array index merge with
-            | `Completed -> `Index index
+            match
+              merge_with ~hook ~yield ~filter log_array index.io fan_out merge
+            with
+            | `Completed -> `Index_io index.io
             | `Aborted -> `Aborted)
       in
       match merge_result with
-      | `Index index ->
-          Fan.finalize index.fan_out;
+      | `Index_io io ->
+          let fan_out = Fan.finalize fan_out in
+          let index = { io; fan_out } in
           IO.set_fanout merge (Fan.export index.fan_out);
           Mutex.with_lock t.rename_lock (fun () ->
               IO.rename ~src:merge ~dst:index.io;
