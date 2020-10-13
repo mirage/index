@@ -208,6 +208,68 @@ module type S = sig
       {!RO_not_allowed} if called by a read-only index. *)
 end
 
+module Private_types = struct
+  type merge_stages = [ `After | `After_clear | `After_first_entry | `Before ]
+  (** Some operations that trigger a merge can have hooks inserted at the
+      following stages:
+
+      - [`Before]: immediately before merging (while holding the merge lock);
+      - [`After_clear]: immediately after clearing the log, at the end of a
+        merge;
+      - [`After_first_entry]: immediately after adding the first entry in the
+        merge file, if the data file contains at least one entry;
+      - [`After]: immediately after merging (while holding the merge lock). *)
+
+  type merge_result = [ `Completed | `Aborted ]
+end
+
+module type Private = sig
+  include S
+
+  type 'a hook
+
+  include module type of Private_types
+  (** @inline *)
+
+  type 'a async
+  (** The type of asynchronous computation. *)
+
+  val replace' :
+    ?hook:[ `Merge of merge_stages ] hook ->
+    t ->
+    key ->
+    value ->
+    merge_result async option
+  (** [replace' t k v] is like {!replace t k v} but returns a promise of a merge
+      result if the {!replace} call triggered one. *)
+
+  val close' : hook:[ `Abort_signalled ] hook -> ?immediately:unit -> t -> unit
+  (** [`Abort_signalled]: after the cancellation signal has been sent to any
+      concurrent merge operations, but {i before} blocking on those
+      cancellations having completed. *)
+
+  val clear' : hook:[ `Abort_signalled ] hook -> t -> unit
+
+  val force_merge : ?hook:merge_stages hook -> t -> merge_result async
+  (** [force_merge t] forces a merge for [t]. *)
+
+  val await : 'a async -> ('a, [ `Async_exn of exn ]) result
+  (** Wait for an asynchronous computation to finish. *)
+
+  val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit
+  (** Time replace operations. The reported time is an average on an number of
+      consecutive operations, which can be specified by [sampling_interval]. If
+      [sampling_interval] is not set, no operation is timed. *)
+
+  val sync' :
+    ?hook:[ `Before_offset_read | `After_offset_read ] hook -> t -> unit
+  (** Hooks:
+
+      - [`Before_offset_read]: before reading the generation number and the
+        offset.
+      - [`After_offset_read]: after reading the generation number and offset. *)
+end
+
 module type Index = sig
   (** The input of {!Make} for keys. *)
   module type Key = sig
@@ -295,64 +357,7 @@ module type Index = sig
 
     module Fan : module type of Fan
 
-    type merge_stages = [ `After | `After_clear | `After_first_entry | `Before ]
-    (** Some operations that trigger a merge can have hooks inserted at the
-        following stages:
-
-        - [`Before]: immediately before merging (while holding the merge lock);
-        - [`After_clear]: immediately after clearing the log, at the end of a
-          merge;
-        - [`After_first_entry]: immediately after adding the first entry in the
-          merge file, if the data file contains at least one entry;
-        - [`After]: immediately after merging (while holding the merge lock). *)
-
-    type merge_result = [ `Completed | `Aborted ]
-
-    module type S = sig
-      include S
-
-      type 'a async
-      (** The type of asynchronous computation. *)
-
-      val replace' :
-        ?hook:[ `Merge of merge_stages ] Hook.t ->
-        t ->
-        key ->
-        value ->
-        merge_result async option
-      (** [replace' t k v] is like {!replace t k v} but returns a promise of a
-          merge result if the {!replace} call triggered one. *)
-
-      val close' :
-        hook:[ `Abort_signalled ] Hook.t -> ?immediately:unit -> t -> unit
-      (** [`Abort_signalled]: after the cancellation signal has been sent to any
-          concurrent merge operations, but {i before} blocking on those
-          cancellations having completed. *)
-
-      val clear' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
-
-      val force_merge : ?hook:merge_stages Hook.t -> t -> merge_result async
-      (** [force_merge t] forces a merge for [t]. *)
-
-      val await : 'a async -> ('a, [ `Async_exn of exn ]) result
-      (** Wait for an asynchronous computation to finish. *)
-
-      val replace_with_timer :
-        ?sampling_interval:int -> t -> key -> value -> unit
-      (** Time replace operations. The reported time is an average on an number
-          of consecutive operations, which can be specified by
-          [sampling_interval]. If [sampling_interval] is not set, no operation
-          is timed. *)
-
-      val sync' :
-        ?hook:[ `Before_offset_read | `After_offset_read ] Hook.t -> t -> unit
-      (** Hooks:
-
-          - [`Before_offset_read]: before reading the generation number and the
-            offset.
-          - [`After_offset_read]: after reading the generation number and
-            offset. *)
-    end
+    module type S = Private with type 'a hook := 'a Hook.t
 
     module Make
         (K : Key)

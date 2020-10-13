@@ -102,6 +102,8 @@ struct
         (** Signal the merge thread to terminate prematurely *)
   }
 
+  include Private_types
+
   let check_pending_cancel instance =
     match instance.pending_cancel with true -> `Abort | false -> `Continue
 
@@ -843,36 +845,7 @@ module Private = struct
     let v f = f
   end
 
-  type merge_stages = [ `After | `After_clear | `After_first_entry | `Before ]
-
-  type merge_result = [ `Completed | `Aborted ]
-
-  module type S = sig
-    include S
-
-    type 'a async
-
-    val replace' :
-      ?hook:[ `Merge of merge_stages ] Hook.t ->
-      t ->
-      key ->
-      value ->
-      merge_result async option
-
-    val close' :
-      hook:[ `Abort_signalled ] Hook.t -> ?immediately:unit -> t -> unit
-
-    val clear' : hook:[ `Abort_signalled ] Hook.t -> t -> unit
-
-    val force_merge : ?hook:merge_stages Hook.t -> t -> merge_result async
-
-    val await : 'a async -> ('a, [ `Async_exn of exn ]) result
-
-    val replace_with_timer : ?sampling_interval:int -> t -> key -> value -> unit
-
-    val sync' :
-      ?hook:[ `Before_offset_read | `After_offset_read ] Hook.t -> t -> unit
-  end
+  module type S = Private with type 'a hook := 'a Hook.t
 
   module Make = Make_private
 end
