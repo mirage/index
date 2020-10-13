@@ -21,6 +21,8 @@ build: [
 depends: [
   "ocaml"   {>= "4.08.0"}
   "dune"    {>= "2.7.0"}
+  "repr"
+  "ppx_repr"
   "fmt"
   "logs"
   "mtime"   {>= "1.0.0"}
@@ -40,3 +42,8 @@ run-time can share a common singleton instance.
 
 Index supports multiple-reader/single-writer access. Concurrent access
 is safely managed using lock files."""
+
+pin-depends: [
+  [ "repr.dev"       "git+https://github.com/CraigFe/repr#b705653a96614787966b9dd63d071576ad18a2c9" ]
+  [ "ppx_repr.dev"   "git+https://github.com/CraigFe/repr#b705653a96614787966b9dd63d071576ad18a2c9" ]
+]

@@ -1,7 +1,4 @@
 include Checks_intf
-module T = Irmin_type.Type
-
-(** Offline integrity checking and recovery for an Index store *)
 
 module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
   module Entry = Data.Entry.Make (K) (V)
@@ -28,7 +25,7 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       Entry.decode (Bytes.unsafe_to_string buf) 0
   end
 
-  type size = Bytes of int [@@deriving irmin]
+  type size = Bytes of int [@@deriving repr]
 
   let size_t =
     let pp =
@@ -43,7 +40,7 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
             Format.fprintf ppf "%.1f MiB" (trunc (n /. (1024. ** 2.)))
         | n -> Format.fprintf ppf "%.1f GiB" (trunc (n /. (1024. ** 3.)))
     in
-    T.like
+    Repr.like
       ~json:
         ( (fun e t ->
             ignore @@ Jsonm.encode e (`Lexeme (`String (Fmt.to_to_string pp t)))),
@@ -53,7 +50,7 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
   (** Read basic metrics from an existing store. *)
   module Quick_stats = struct
     type io = { size : size; offset : int64; generation : int64 }
-    [@@deriving irmin]
+    [@@deriving repr]
 
     type files = {
       data : io option;
@@ -62,9 +59,9 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       merge : io option;
       lock : string option;
     }
-    [@@deriving irmin]
+    [@@deriving repr]
 
-    type t = { entry_size : size; files : files } [@@deriving irmin]
+    type t = { entry_size : size; files : files } [@@deriving repr]
 
     let with_io : type a. string -> (IO.t -> a) -> a option =
      fun path f ->

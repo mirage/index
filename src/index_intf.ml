@@ -166,7 +166,12 @@ module type S = sig
   (** [is_merging t] returns true if [t] is running a merge. Raises
       {!RO_not_allowed} if called by a read-only index. *)
 
-  module Checks : Checks.S
+  (** Offline [fsck]-like utility for checking the integrity of Index stores
+      built using this module. *)
+  module Checks : sig
+    include Checks.S
+    (** @inline *)
+  end
 end
 
 module Private_types = struct
@@ -317,7 +322,7 @@ module type Index = sig
     (** @inline *)
   end
 
-  module Data = Data
+  module Checks = Checks
 
   (** These modules should not be used. They are exposed purely for testing
       purposes. *)
@@ -328,13 +333,11 @@ module type Index = sig
       val v : ('a -> unit) -> 'a t
     end
 
-    module Search : module type of Search
-
+    module Search = Search
     module Io = Io
-
-    module Io_array : module type of Io_array
-
-    module Fan : module type of Fan
+    module Io_array = Io_array
+    module Fan = Fan
+    module Data = Data
 
     module type S = Private with type 'a hook := 'a Hook.t
 

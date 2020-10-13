@@ -2,8 +2,8 @@ type empty = |
 
 module type S = sig
   val cli : unit -> empty
-  (** Offline [fsck]-like utility for checking the integrity of Index stores
-      built using this module. *)
+  (** Run a [Cmdliner] binary containing tools for running offline integrity
+      checks. *)
 end
 
 module type Checks = sig

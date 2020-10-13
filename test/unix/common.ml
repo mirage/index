@@ -1,7 +1,5 @@
 let ( >> ) f g x = g (f x)
 
-let pp = Irmin_type.Type.pp
-
 let reporter ?(prefix = "") () =
   let report src level ~over k msgf =
     let k _ =
@@ -57,7 +55,7 @@ end
 type binding = Key.t * Value.t
 
 let pp_binding ppf (key, value) =
-  Fmt.pf ppf "{ %a → %a }" (pp Key.t) key (pp Value.t) value
+  Fmt.pf ppf "{ %a → %a }" (Repr.pp Key.t) key (Repr.pp Value.t) value
 
 let check_entry findf typ k v =
   match findf k with
@@ -211,7 +209,7 @@ let check_disjoint index htbl =
           Alcotest.failf "Binding %a should not be present" pp_binding (k, v)
       | v' ->
           Alcotest.failf "Found value %a when checking for the absence of %a"
-            (pp Value.t) v' pp_binding (k, v))
+            (Repr.pp Value.t) v' pp_binding (k, v))
     htbl
 
 let locked_mutex () =

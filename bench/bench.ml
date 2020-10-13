@@ -41,7 +41,7 @@ let replace_sampling_interval = ref 0
 
 module Context = struct
   module Key = struct
-    type t = string [@@deriving irmin]
+    type t = string [@@deriving repr]
 
     let v () = random_string key_size
 
@@ -59,7 +59,7 @@ module Context = struct
   end
 
   module Value = struct
-    type t = string [@@deriving irmin]
+    type t = string [@@deriving repr]
 
     let v () = random_string value_size
 

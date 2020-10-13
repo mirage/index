@@ -76,7 +76,7 @@ module Live = struct
     let* Context.{ rw; _ } = Context.with_empty_index () in
     let k = String.init 2 (fun _i -> random_char ()) in
     let v = Value.v () in
-    let exn = I.Data.Invalid_size k in
+    let exn = I.Private.Data.Invalid_size k in
     Alcotest.check_raises
       "Cannot add a key of a different size than string_size." exn (fun () ->
         Index.replace rw k v)
@@ -85,7 +85,7 @@ module Live = struct
     let* Context.{ rw; _ } = Context.with_empty_index () in
     let k = Key.v () in
     let v = String.init 200 (fun _i -> random_char ()) in
-    let exn = I.Data.Invalid_size v in
+    let exn = I.Private.Data.Invalid_size v in
     Alcotest.check_raises
       "Cannot add a value of a different size than string_size." exn (fun () ->
         Index.replace rw k v)
