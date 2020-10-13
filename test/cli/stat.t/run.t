@@ -4,7 +4,7 @@ No files are shown when running `stat` in a non-existent directory:
   >> Getting statistics for store: `../data/non-existent-store'
   
   {
-    "entry_size": "40 B",
+    "entry_size": "40.0 B",
     "files": {}
   }
 
@@ -15,7 +15,7 @@ Running `stat` on an index after 10 merges:
   >> Getting statistics for store: `../data/random'
   
   {
-    "entry_size": "40 B",
+    "entry_size": "40.0 B",
     "files": {
       "data": {
         "size": "35.6 KiB",
@@ -28,7 +28,7 @@ Running `stat` on an index after 10 merges:
         "generation": 9
       },
       "log_async": {
-        "size": "32 B",
+        "size": "32.0 B",
         "offset": 0,
         "generation": 10
       },

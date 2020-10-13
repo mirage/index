@@ -29,16 +29,7 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
 
   let size_t =
     let pp =
-      (* Round down to the nearest 0.1 *)
-      let trunc f = Float.trunc (f *. 10.) /. 10. in
-      fun ppf (Bytes x) ->
-        Int.to_float x |> function
-        | n when n < 1024. -> Format.fprintf ppf "%.0f B" (trunc n)
-        | n when n < 1024. ** 2. ->
-            Format.fprintf ppf "%.1f KiB" (trunc (n /. 1024.))
-        | n when n < 1024. ** 3. ->
-            Format.fprintf ppf "%.1f MiB" (trunc (n /. (1024. ** 2.)))
-        | n -> Format.fprintf ppf "%.1f GiB" (trunc (n /. (1024. ** 3.)))
+      Fmt.using (fun (Bytes b) -> Int64.of_int b) Progress.Units.Bytes.pp
     in
     Repr.like
       ~json:
@@ -95,18 +86,25 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
         entry_size = Bytes (K.encoded_size + V.encoded_size);
         files = { data; log; log_async; merge; lock };
       }
-      |> T.pp_json ~minify:false t Fmt.stdout
+      |> Repr.pp_json ~minify:false t Fmt.stdout
   end
 
   module Integrity_check = struct
     let encoded_sizeL = Int64.of_int Entry.encoded_size
 
-    let get_window_around offset io context =
-      List.init
-        ((2 * context) + 1)
-        Int64.(fun i -> add offset (mul (of_int (i - context)) encoded_sizeL))
+    let print_window_around central_offset io context =
+      let window_size = (2 * context) + 1 in
+      List.init window_size (fun i ->
+          let index = i - context in
+          Int64.(add central_offset (mul (of_int index) encoded_sizeL)))
       |> List.filter (fun off -> Int64.compare off 0L >= 0)
-      |> List.map (IO.read_entry io)
+      |> List.map (fun off ->
+             let entry = IO.read_entry io off in
+             let highlight =
+               if off = central_offset then Fmt.(styled (`Fg `Red)) else Fun.id
+             in
+             highlight (fun ppf () -> (Repr.pp Entry.t) ppf entry))
+      |> Fmt.(concat ~sep:cut)
 
     let v ~root =
       let context = 2 in
@@ -121,16 +119,21 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       else
         let first_entry = IO.read_entry io 0L in
         let previous = ref first_entry in
+        Format.eprintf "\n%!";
+        Progress_unix.(
+          counter ~total:io_offset ~mode:`UTF8
+            ~message:"Scanning store for faults" ~pp:Progress.Units.bytes
+            ~sampling_interval:100_000 ()
+          |> with_reporters)
+        @@ fun report ->
         io
         |> IO.iter ~min:encoded_sizeL (fun ~off e ->
-               if !previous.key_hash > e.key_hash then (
-                 Log.err (fun f -> f "Found non-monotonic region:@,");
-                 let entries_to_print = get_window_around off io context in
+               report encoded_sizeL;
+               if !previous.key_hash > e.key_hash then
                  Log.err (fun f ->
-                     f "%a@,"
-                       Fmt.(list ~sep:cut (T.pp Entry.t))
-                       entries_to_print));
-
+                     f "Found non-monotonic region:@,%a@,"
+                       (print_window_around off io context)
+                       ());
                previous := e)
   end
 

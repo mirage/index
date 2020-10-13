@@ -27,6 +27,7 @@ depends: [
   "logs"
   "mtime"   {>= "1.0.0"}
   "cmdliner"
+  "progress"
   "alcotest" {with-test}
   "crowbar" {with-test & >= "0.2"}
   "re" {with-test}
@@ -46,4 +47,5 @@ is safely managed using lock files."""
 pin-depends: [
   [ "repr.dev"       "git+https://github.com/CraigFe/repr#b705653a96614787966b9dd63d071576ad18a2c9" ]
   [ "ppx_repr.dev"   "git+https://github.com/CraigFe/repr#b705653a96614787966b9dd63d071576ad18a2c9" ]
+  [ "progress.dev"   "git+https://github.com/CraigFe/progress.git#abed69070bc5c10003af1fbbc50ea2ca83877de6" ]
 ]
