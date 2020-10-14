@@ -15,7 +15,7 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
-type t = { fans : int64 array; mask : int; shift : int }
+type 'a t = { fans : int64 array; mask : int; shift : int }
 
 let equal t t' =
   let rec loop i =
@@ -59,7 +59,8 @@ let finalize t =
       if t.fans.(i) = 0L then t.fans.(i) <- curr;
       loop t.fans.(i) (i + 1))
   in
-  loop 0L 0
+  loop 0L 0;
+  (t :> [ `Read ] t)
 
 external set_64 : Bytes.t -> int -> int64 -> unit = "%caml_string_set64u"
 
