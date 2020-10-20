@@ -11,12 +11,12 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       v ~fresh:false ~readonly:true ?flush_callback:None ~generation:0L
         ~fan_size:0L
 
+    let page_size = Int64.(mul (of_int Entry.encoded_size) 1000L)
+
     let iter ?min ?max f =
-      iter ?min ?max
-        ~page_size:Int64.(mul (of_int Entry.encoded_size) 1000L)
-        (fun ~off ~buf ~buf_off ->
+      iter ?min ?max ~page_size (fun ~off ~buf ~buf_off ->
           let entry = Entry.decode buf buf_off in
-          f ~off entry;
+          f off entry;
           Entry.encoded_size)
 
     let read_entry io off =
@@ -127,7 +127,7 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
           |> with_reporters)
         @@ fun report ->
         io
-        |> IO.iter ~min:encoded_sizeL (fun ~off e ->
+        |> IO.iter ~min:encoded_sizeL (fun off e ->
                report encoded_sizeL;
                if !previous.key_hash > e.key_hash then
                  Log.err (fun f ->
