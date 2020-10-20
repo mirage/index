@@ -11,7 +11,6 @@
 (rule
  (alias generate-cli-test-data)
  (targets data)
- (package index)
  (action
   (run %{exe:generate.exe})))
 
@@ -23,7 +22,6 @@
 
 (rule
  (alias runtest)
- (package index)
  (action
   (progn
    (with-stdout-to
