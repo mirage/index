@@ -88,6 +88,8 @@ struct
           Entry.encoded_size)
   end
 
+  let iter_io ?min ?max f = IO.iter ?min ?max (fun _ -> f)
+
   type throttle = [ `Overcommit_memory | `Block_writes ]
 
   type config = {
@@ -216,14 +218,14 @@ struct
         IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
       in
       let mem = Tbl.create 0 in
-      IO.iter (fun _ e -> Tbl.replace mem e.key e.value) io;
+      iter_io (fun e -> Tbl.replace mem e.key e.value) io;
       Some { io; mem })
     else None
 
   let sync_log_entries ?min log =
     let add_log_entry (e : Entry.t) = Tbl.replace log.mem e.key e.value in
     if min = None then Tbl.clear log.mem;
-    IO.iter ?min (fun _ -> add_log_entry) log.io
+    iter_io ?min add_log_entry log.io
 
   let sync_log_async t =
     match t.log_async with
@@ -319,7 +321,7 @@ struct
             l "[%s] log file detected. Loading %Ld entries"
               (Filename.basename root) entries);
         let mem = Tbl.create (Int64.to_int entries) in
-        IO.iter (fun _ e -> Tbl.replace mem e.key e.value) io;
+        iter_io (fun e -> Tbl.replace mem e.key e.value) io;
         Some { io; mem }
     in
     let generation =
@@ -343,8 +345,8 @@ struct
         may
           (fun log ->
             let append_io = IO.append log.io in
-            IO.iter
-              (fun _ e ->
+            iter_io
+              (fun e ->
                 Tbl.replace log.mem e.key e.value;
                 Entry.encode e append_io)
               io;
@@ -761,15 +763,13 @@ struct
     | None -> ()
     | Some log ->
         Tbl.iter f log.mem;
-        may
-          (fun (i : index) -> IO.iter (fun _ e -> f e.key e.value) i.io)
-          t.index;
+        may (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io) t.index;
         Mutex.with_lock t.rename_lock (fun () ->
             (match t.log_async with
             | None -> ()
             | Some log -> Tbl.iter f log.mem);
             may
-              (fun (i : index) -> IO.iter (fun _ e -> f e.key e.value) i.io)
+              (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io)
               t.index)
 
   let close' ~hook ?immediately it =
