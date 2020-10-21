@@ -43,9 +43,3 @@ run-time can share a common singleton instance.
 
 Index supports multiple-reader/single-writer access. Concurrent access
 is safely managed using lock files."""
-
-pin-depends: [
-  [ "repr.dev"       "git+https://github.com/CraigFe/repr#b705653a96614787966b9dd63d071576ad18a2c9" ]
-  [ "ppx_repr.dev"   "git+https://github.com/CraigFe/repr#b705653a96614787966b9dd63d071576ad18a2c9" ]
-  [ "progress.dev"   "git+https://github.com/CraigFe/progress.git#abed69070bc5c10003af1fbbc50ea2ca83877de6" ]
-]

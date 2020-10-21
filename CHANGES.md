@@ -1,15 +1,19 @@
-# Unreleased
+# 1.3.0 (2020-10-21)
 
 ## Added
 
 - Added `flush_callback` parameter to the creation of a store, to register
   a callback before a flush. This callback can be temporarily disabled by
   `~no_callback:()` to `flush`. (#189, #216)
+
 - Added `Stats.merge_durations` to list the duration of the last 10 merges.
   (#193)
+
 - Added `is_merging` to detect if a merge is running. (#192)
+
 - New `IO.Header.{get,set}` functions to read and write the file headers
   atomically (#175, #204, @icristescu, @CraigFe, @samoht)
+
 - Added a `throttle` configuration option to select the strategy to use
   when the cache are full and an async merge is already in progress. The
   current behavior is the (default) [`Block_writes] strategy. The new
@@ -30,6 +34,7 @@
 
 - `sync` has to be called by the read-only instance to synchronise with the
   files on disk. (#175)
+
 - Caching of `Index` instances is now explicit: `Index.Make` requires a cache
   implementation, and `Index.v` may be passed a cache to be used for instance
   sharing. The default behaviour is _not_ to share instances. (#188)
