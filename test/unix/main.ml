@@ -575,10 +575,15 @@ module Close = struct
     in
     let hook = function
       | `Before ->
-          Log.app (fun f -> f "Child: issuing request to close the index");
+          Log.app (fun f ->
+              f "Child (pid = %d): issuing request to close the index"
+                Thread.(id (self ())));
           Mutex.unlock close_request
-      | `After_clear | `After | `After_first_entry ->
-          Alcotest.fail "Merge completed despite concurrent close"
+      | `After_first_entry -> Mutex.lock abort_signalled
+      | `After_clear | `After ->
+          Alcotest.failf
+            "Child (pid = %d): merge completed despite concurrent close"
+            Thread.(id (self ()))
     in
     let merge_promise : _ Index.async =
       Index.force_merge ~hook:(I.Private.Hook.v hook) rw
