@@ -41,7 +41,7 @@ let replace_sampling_interval = ref 0
 
 module Context = struct
   module Key = struct
-    type t = string
+    type t = string [@@deriving repr]
 
     let v () = random_string key_size
 
@@ -56,12 +56,10 @@ module Context = struct
     let encoded_size = key_size
 
     let equal = String.equal
-
-    let pp s = Fmt.fmt "%s" s
   end
 
   module Value = struct
-    type t = string
+    type t = string [@@deriving repr]
 
     let v () = random_string value_size
 
@@ -70,8 +68,6 @@ module Context = struct
     let decode s off = String.sub s off value_size
 
     let encoded_size = value_size
-
-    let pp s = Fmt.fmt "%s" s
   end
 end
 

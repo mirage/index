@@ -1,5 +1,7 @@
 (library
  (public_name index)
  (name index)
- (modules_without_implementation io)
- (libraries logs fmt stdlib-shims mtime mtime.clock.os))
+ (libraries logs fmt stdlib-shims mtime mtime.clock.os cmdliner logs.fmt
+   logs.cli fmt.cli fmt.tty jsonm progress progress.unix repr ppx_repr)
+ (preprocess
+  (pps ppx_repr)))

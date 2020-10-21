@@ -24,8 +24,6 @@ let decode_int64 buf =
 
 type t = { fd : Unix.file_descr } [@@unboxed]
 
-type raw = t
-
 let v fd = { fd }
 
 let really_write fd fd_offset buffer =
@@ -54,6 +52,8 @@ let really_read fd fd_offset length buffer =
 let fsync t = Unix.fsync t.fd
 
 let close t = Unix.close t.fd
+
+let fstat t = Unix.fstat t.fd
 
 let unsafe_write t ~off buf =
   let buf = Bytes.unsafe_of_string buf in

@@ -16,48 +16,13 @@ The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
 module type Key = sig
-  type t
-  (** The type for keys. *)
-
-  val equal : t -> t -> bool
-  (** The equality function for keys. *)
-
-  val hash : t -> int
-  (** Note: Unevenly distributed hash functions may result in performance drops. *)
-
-  val hash_size : int
-  (** The number of bits necessary to encode the maximum output value of
-      {!hash}. `Hashtbl.hash` uses 30 bits.
-
-      Overestimating the [hash_size] will result in performance drops;
-      underestimation will result in undefined behavior. *)
-
-  val encode : t -> string
-  (** [encode] is an encoding function. The resultant encoded values must have
-      size {!encoded_size}. *)
-
-  val encoded_size : int
-  (** [encoded_size] is the size of the result of {!encode}, expressed in number
-      of bytes. *)
-
-  val decode : string -> int -> t
-  (** [decode s off] is the decoded form of the encoded value at the offset
-      [off] of string [s]. Must satisfy [decode (encode t) 0 = t]. *)
-
-  val pp : t Fmt.t
-  (** Formatter for keys *)
+  include Data.Key
+  (** @inline *)
 end
 
 module type Value = sig
-  type t
-
-  val encode : t -> string
-
-  val encoded_size : int
-
-  val decode : string -> int -> t
-
-  val pp : t Fmt.t
+  include Data.Value
+  (** @inline *)
 end
 
 module type IO = Io.S
@@ -160,12 +125,6 @@ module type S = sig
   val mem : t -> key -> bool
   (** [mem t k] is [true] iff [k] is bound in [t]. *)
 
-  exception Invalid_key_size of key
-
-  exception Invalid_value_size of value
-  (** The exceptions raised when trying to add a key or a value of different
-      size than encoded_size *)
-
   val replace : t -> key -> value -> unit
   (** [replace t k v] binds [k] to [v] in [t], replacing any existing binding of
       [k]. *)
@@ -206,6 +165,13 @@ module type S = sig
   val is_merging : t -> bool
   (** [is_merging t] returns true if [t] is running a merge. Raises
       {!RO_not_allowed} if called by a read-only index. *)
+
+  (** Offline [fsck]-like utility for checking the integrity of Index stores
+      built using this module. *)
+  module Checks : sig
+    include Checks.S
+    (** @inline *)
+  end
 end
 
 module Private_types = struct
@@ -271,21 +237,35 @@ module type Private = sig
 end
 
 module type Index = sig
-  (** The input of {!Make} for keys. *)
-  module type Key = sig
-    (* N.B. We use [sig ... end] redirections to avoid linking to the [_intf]
-       file in the generated docs. Once Odoc 2 is released, this can be
-       removed. *)
+  (* N.B. We use [sig ... end] redirections to avoid linking to the [_intf]
+     file in the generated docs. Once Odoc 2 is released, this can be
+     removed. *)
 
-    include Key
-    (** @inline *)
+  module Key : sig
+    (** The input of {!Make} for keys. *)
+    module type S = sig
+      include Key
+      (** @inline *)
+    end
+
+    (** String keys of a given fixed size in bytes. *)
+    module String_fixed (L : sig
+      val length : int
+    end) : S with type t = string
   end
 
-  (** The input of {!Make} for values. The same requirements as for {!Key}
-      apply. *)
-  module type Value = sig
-    include Value
-    (** @inline *)
+  module Value : sig
+    (** The input of {!Make} for values. The same requirements as for {!Key}
+        apply. *)
+    module type S = sig
+      include Value
+      (** @inline *)
+    end
+
+    (** String values of a given fixed size in bytes. *)
+    module String_fixed (L : sig
+      val length : int
+    end) : S with type t = string
   end
 
   module type IO = sig
@@ -329,8 +309,8 @@ module type Index = sig
       except for [close], which is idempotent. *)
 
   module Make
-      (K : Key)
-      (V : Value)
+      (K : Key.S)
+      (V : Value.S)
       (IO : IO)
       (M : MUTEX)
       (T : THREAD)
@@ -342,6 +322,8 @@ module type Index = sig
     (** @inline *)
   end
 
+  module Checks = Checks
+
   (** These modules should not be used. They are exposed purely for testing
       purposes. *)
   module Private : sig
@@ -351,11 +333,11 @@ module type Index = sig
       val v : ('a -> unit) -> 'a t
     end
 
-    module Search : module type of Search
-
-    module Io_array : module type of Io_array
-
-    module Fan : module type of Fan
+    module Search = Search
+    module Io = Io
+    module Io_array = Io_array
+    module Fan = Fan
+    module Data = Data
 
     module type S = Private with type 'a hook := 'a Hook.t
 

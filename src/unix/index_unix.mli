@@ -15,7 +15,7 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
-module Make (K : Index.Key) (V : Index.Value) (C : Index.Cache.S) :
+module Make (K : Index.Key.S) (V : Index.Value.S) (C : Index.Cache.S) :
   Index.S with type key = K.t and type value = V.t
 
 module Syscalls = Syscalls
@@ -28,6 +28,6 @@ module Private : sig
 
   module Raw = Raw
 
-  module Make (K : Index.Key) (V : Index.Value) (C : Index.Cache.S) :
+  module Make (K : Index.Key.S) (V : Index.Value.S) (C : Index.Cache.S) :
     Index.Private.S with type key = K.t and type value = V.t
 end

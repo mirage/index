@@ -1,0 +1,30 @@
+(executable
+ (name index_fsck)
+ (modules index_fsck)
+ (libraries index index.unix))
+
+(executable
+ (name generate)
+ (modules generate)
+ (libraries index index.unix))
+
+(rule
+ (alias generate-cli-test-data)
+ (targets data)
+ (action
+  (run %{exe:generate.exe})))
+
+(cram
+ (deps
+  (file index_fsck.exe)
+  (file data)
+  (alias generate-cli-test-data)))
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (with-stdout-to
+    index-fsck-help.txt.gen
+    (run %{exe:index_fsck.exe} --help=plain))
+   (diff? index-fsck-help.txt index-fsck-help.txt.gen))))
