@@ -1,4 +1,4 @@
-.PHONY: all clean test doc examples
+.PHONY: all clean test doc examples bench
 
 all:
 	dune build
@@ -14,3 +14,6 @@ clean:
 
 doc:
 	dune build @doc
+
+bench:
+	@dune exec -- ./bench/bench.exe --json --minimal
