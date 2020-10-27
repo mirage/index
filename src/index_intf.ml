@@ -27,28 +27,29 @@ end
 
 module type IO = Io.S
 
-module type MUTEX = sig
-  (** Locks for mutual exclusion *)
+module type SEMAPHORE = sig
+  (** Binary semaphores for mutual exclusion *)
 
   type t
-  (** The type of mutual-exclusion locks. *)
+  (** The type of binary semaphore. *)
 
-  val create : unit -> t
-  (** Return a fresh mutex. *)
+  val make : bool -> t
+  (** Return a fresh semaphore with the given initial state. *)
 
-  val lock : t -> unit
-  (** Lock the given mutex. Locks are not assumed to be re-entrant. *)
+  val acquire : t -> unit
+  (** Acquire the given semaphore. Acquisition is not re-entrant. *)
 
-  val unlock : t -> unit
-  (** Unlock the mutex. If any threads are attempting to lock the mutex, exactly
-      one of them will gain access to the lock. *)
+  val release : t -> unit
+  (** Release the given semaphore. If any threads are attempting to acquire the
+      semaphore, exactly one of them will gain access to the semaphore. *)
 
-  val with_lock : t -> (unit -> 'a) -> 'a
-  (** [with_lock t f] first obtains [t], then computes [f ()], and finally
-      unlocks [t]. *)
+  val with_acquire : t -> (unit -> 'a) -> 'a
+  (** [with_acquire t f] first obtains [t], then computes [f ()], and finally
+      release [t]. *)
 
-  val is_locked : t -> bool
-  (** [is_locked t] returns [true] if the mutex is locked, without locking [t]. *)
+  val is_held : t -> bool
+  (** [is_held t] returns [true] if the semaphore is held, without acquiring
+      [t]. *)
 end
 
 module type THREAD = sig
@@ -273,8 +274,8 @@ module type Index = sig
     (** @inline *)
   end
 
-  module type MUTEX = sig
-    include MUTEX
+  module type SEMAPHORE = sig
+    include SEMAPHORE
     (** @inline *)
   end
 
@@ -312,7 +313,7 @@ module type Index = sig
       (K : Key.S)
       (V : Value.S)
       (IO : IO)
-      (M : MUTEX)
+      (_ : SEMAPHORE)
       (T : THREAD)
       (C : Cache.S) : S with type key = K.t and type value = V.t
 
@@ -345,7 +346,7 @@ module type Index = sig
         (K : Key)
         (V : Value)
         (IO : IO)
-        (M : MUTEX)
+        (_ : SEMAPHORE)
         (T : THREAD)
         (C : Cache.S) : S with type key = K.t and type value = V.t
   end

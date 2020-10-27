@@ -266,23 +266,19 @@ module IO : Index.IO = struct
   end
 end
 
-module Mutex = struct
-  include Mutex
+module Semaphore = struct
+  module S = Semaphore_compat.Semaphore.Binary
 
-  let with_lock t f =
-    Mutex.lock t;
-    try
-      let ans = f () in
-      Mutex.unlock t;
-      ans
-    with e ->
-      Mutex.unlock t;
-      raise e
+  let with_acquire t f =
+    S.acquire t;
+    Fun.protect ~finally:(fun () -> S.release t) f
 
-  let is_locked t =
-    let locked = Mutex.try_lock t in
-    if locked then Mutex.unlock t;
-    not locked
+  let is_held t =
+    let acquired = S.try_acquire t in
+    if acquired then S.release t;
+    not acquired
+
+  include S
 end
 
 module Thread = struct
@@ -317,12 +313,12 @@ module Thread = struct
 end
 
 module Make (K : Index.Key.S) (V : Index.Value.S) =
-  Index.Make (K) (V) (IO) (Mutex) (Thread)
+  Index.Make (K) (V) (IO) (Semaphore) (Thread)
 module Syscalls = Syscalls
 
 module Private = struct
   module IO = IO
   module Raw = Raw
   module Make (K : Index.Key.S) (V : Index.Value.S) =
-    Index.Private.Make (K) (V) (IO) (Mutex) (Thread)
+    Index.Private.Make (K) (V) (IO) (Semaphore) (Thread)
 end
