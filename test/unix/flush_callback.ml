@@ -1,5 +1,6 @@
 module I = Index
 open Common
+module Semaphore = Semaphore_compat.Semaphore.Binary
 
 module Context = Common.Make_context (struct
   let root = Filename.concat "_tests" "unix.flush_callback"
@@ -128,7 +129,7 @@ let test_replace () =
   binding_list |> List.iter replace_no_merge;
 
   (* The next replace overflows the log, causing the bindings to be persisted *)
-  let do_merge = locked_mutex () in
+  let do_merge = Semaphore.make false in
   let overflow_binding, merge_promise =
     require_callback
       ~callback:(fun () ->
@@ -142,7 +143,7 @@ let test_replace () =
         Index.replace_random
           ~hook:
             (I.Private.Hook.v (function
-              | `Merge `Before -> Mutex.lock do_merge
+              | `Merge `Before -> Semaphore.acquire do_merge
               | _ -> ()))
           rw)
   in
@@ -173,7 +174,7 @@ let test_replace () =
   (* The merge triggers the callback when flushing [log_async] entries into
      [log]. (Not necessary here, since [log_async] values were already flushed.) *)
   require_callback (fun () ->
-      Mutex.unlock do_merge;
+      Semaphore.release do_merge;
       merge_promise |> Option.get |> Index.await |> check_completed);
 
   Log.app (fun m ->

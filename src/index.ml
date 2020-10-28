@@ -46,7 +46,7 @@ module Make_private
     (K : Key)
     (V : Value)
     (IO : Io.S)
-    (Mutex : MUTEX)
+    (Semaphore : SEMAPHORE)
     (Thread : THREAD)
     (Cache : Cache.S) =
 struct
@@ -113,8 +113,8 @@ struct
     mutable log_async : log option;
     mutable open_instances : int;
     writer_lock : IO.Lock.t option;
-    mutable merge_lock : Mutex.t;
-    mutable rename_lock : Mutex.t;
+    mutable merge_lock : Semaphore.t;
+    mutable rename_lock : Semaphore.t;
     mutable pending_cancel : bool;
         (** Signal the merge thread to terminate prematurely *)
   }
@@ -135,7 +135,7 @@ struct
     if t.config.readonly then raise RO_not_allowed;
     t.pending_cancel <- true;
     hook `Abort_signalled;
-    Mutex.with_lock t.merge_lock (fun () ->
+    Semaphore.with_acquire t.merge_lock (fun () ->
         t.pending_cancel <- false;
         t.generation <- Int64.succ t.generation;
         let log = assert_and_get t.log in
@@ -176,7 +176,7 @@ struct
   let flush ?no_callback ?(with_fsync = false) t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
-    Mutex.with_lock t.rename_lock (fun () ->
+    Semaphore.with_acquire t.rename_lock (fun () ->
         flush_instance ?no_callback ~with_fsync t)
 
   module IOArray = Io_array.Make (IO) (Entry)
@@ -385,8 +385,8 @@ struct
       root;
       index;
       open_instances = 1;
-      merge_lock = Mutex.create ();
-      rename_lock = Mutex.create ();
+      merge_lock = Semaphore.make true;
+      rename_lock = Semaphore.make true;
       writer_lock;
       pending_cancel = false;
     }
@@ -458,7 +458,7 @@ struct
       find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
       @~ find_if_exists ~name:"index" ~find:interpolation_search t.index
     in
-    Mutex.with_lock t.rename_lock (fun () ->
+    Semaphore.with_acquire t.rename_lock (fun () ->
         find_if_exists ~name:"log_async"
           ~find:(fun log -> Tbl.find log.mem)
           t.log_async
@@ -542,7 +542,7 @@ struct
   let merge ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
       ~witness t =
     let yield () = check_pending_cancel t in
-    Mutex.lock t.merge_lock;
+    Semaphore.acquire t.merge_lock;
     Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
     Stats.incr_nb_merge ();
     let log_async =
@@ -623,7 +623,7 @@ struct
           let fan_out = Fan.finalize fan_out in
           let index = { io; fan_out } in
           IO.set_fanout merge (Fan.export index.fan_out);
-          Mutex.with_lock t.rename_lock (fun () ->
+          Semaphore.with_acquire t.rename_lock (fun () ->
               IO.rename ~src:merge ~dst:index.io;
               t.index <- Some index;
               t.generation <- generation;
@@ -647,7 +647,7 @@ struct
                  maintain their durability. *)
               (try IO.flush ~with_fsync:true log.io
                with exn ->
-                 Mutex.unlock t.merge_lock;
+                 Semaphore.release t.merge_lock;
                  raise exn);
               IO.clear ~generation:(Int64.succ generation) log_async.io;
               (* log_async.mem does not need to be cleared as we are discarding
@@ -655,10 +655,10 @@ struct
               t.log_async <- None);
           IO.close log_async.io;
           hook `After;
-          Mutex.unlock t.merge_lock;
+          Semaphore.release t.merge_lock;
           `Completed
       | `Aborted ->
-          Mutex.unlock t.merge_lock;
+          Semaphore.release t.merge_lock;
           `Aborted
     in
     let go_with_timer () = Stats.merge_with_timer go in
@@ -686,7 +686,9 @@ struct
   let force_merge ?hook t =
     let t = check_open t in
     Log.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
-    let witness = Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
+    let witness =
+      Semaphore.with_acquire t.rename_lock (fun () -> get_witness t)
+    in
     match witness with
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
@@ -696,7 +698,7 @@ struct
   (** [t.merge_lock] is used to detect an ongoing merge. Other operations can
       take this lock, but as they are not async, we consider this to be a good
       enough approximations. *)
-  let instance_is_merging t = Mutex.is_locked t.merge_lock
+  let instance_is_merging t = Semaphore.is_held t.merge_lock
 
   let is_merging t =
     let t = check_open t in
@@ -711,7 +713,7 @@ struct
           value);
     if t.config.readonly then raise RO_not_allowed;
     let log_limit_reached =
-      Mutex.with_lock t.rename_lock (fun () ->
+      Semaphore.with_acquire t.rename_lock (fun () ->
           let log =
             match t.log_async with
             | Some log -> log
@@ -746,7 +748,9 @@ struct
     let t = check_open t in
     Log.info (fun l -> l "[%s] filter" (Filename.basename t.root));
     if t.config.readonly then raise RO_not_allowed;
-    let witness = Mutex.with_lock t.rename_lock (fun () -> get_witness t) in
+    let witness =
+      Semaphore.with_acquire t.rename_lock (fun () -> get_witness t)
+    in
     match witness with
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
@@ -765,7 +769,7 @@ struct
     | Some log ->
         Tbl.iter f log.mem;
         may (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io) t.index;
-        Mutex.with_lock t.rename_lock (fun () ->
+        Semaphore.with_acquire t.rename_lock (fun () ->
             (match t.log_async with
             | None -> ()
             | Some log -> Tbl.iter f log.mem);
@@ -784,7 +788,7 @@ struct
         if abort_merge then (
           t.pending_cancel <- true;
           hook `Abort_signalled);
-        Mutex.with_lock t.merge_lock (fun () ->
+        Semaphore.with_acquire t.merge_lock (fun () ->
             it := None;
             t.open_instances <- t.open_instances - 1;
             if t.open_instances = 0 then (

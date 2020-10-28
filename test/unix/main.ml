@@ -1,4 +1,5 @@
 module Hook = Index.Private.Hook
+module Semaphore = Semaphore_compat.Semaphore.Binary
 module I = Index
 open Common
 
@@ -248,15 +249,15 @@ module Readonly = struct
 
   let before l m =
     I.Private.Hook.v @@ function
-    | `Before -> Mutex.lock l
-    | `After -> Mutex.unlock m
+    | `Before -> Semaphore.acquire l
+    | `After -> Semaphore.release m
     | _ -> ()
 
   let after l m =
     I.Private.Hook.v @@ function
     | `After_offset_read ->
-        Mutex.unlock l;
-        Mutex.lock m
+        Semaphore.release l;
+        Semaphore.acquire m
     | _ -> ()
 
   (* check that the ro instance is "snapshot isolated", e.g. it can read old
@@ -271,12 +272,7 @@ module Readonly = struct
       Hashtbl.iter (fun k _ -> Hashtbl.add h k (Value.v ())) tbl;
       h
     in
-    let lock () =
-      let m = Mutex.create () in
-      Mutex.lock m;
-      m
-    in
-    let merge = lock () and sync = lock () in
+    let merge = Semaphore.make false and sync = Semaphore.make false in
     let k, v = hashtbl_pick tbl2 in
 
     Index.clear rw;
@@ -288,7 +284,7 @@ module Readonly = struct
     check_equivalence ro tbl;
     Index.sync' ~hook:(after merge sync) ro;
     check_equivalence ro tbl2;
-    Mutex.unlock merge;
+    Semaphore.release merge;
     Index.await thread |> check_completed
 
   let fail_readonly_add () =
@@ -411,22 +407,22 @@ module Readonly = struct
   let readonly_sync_and_merge () =
     let* Context.{ clone; rw; _ } = Context.with_empty_index () in
     let ro = clone ~readonly:true () in
-    let replace = locked_mutex ()
-    and merge = locked_mutex ()
-    and sync = locked_mutex () in
+    let replace = Semaphore.make false
+    and merge = Semaphore.make false
+    and sync = Semaphore.make false in
     let merge_hook =
       I.Private.Hook.v @@ function
       | `Before ->
-          Mutex.unlock replace;
-          Mutex.lock merge
-      | `After -> Mutex.unlock sync
+          Semaphore.release replace;
+          Semaphore.acquire merge
+      | `After -> Semaphore.release sync
       | _ -> ()
     in
     let sync_hook =
       I.Private.Hook.v @@ function
       | `After_offset_read ->
-          Mutex.unlock merge;
-          Mutex.lock sync
+          Semaphore.release merge;
+          Semaphore.acquire sync
       | _ -> ()
     in
     let gen i = (String.make Key.encoded_size i, Value.v ()) in
@@ -436,14 +432,14 @@ module Readonly = struct
 
     Index.replace rw k1 v1;
     let thread = Index.force_merge ~hook:merge_hook rw in
-    Mutex.lock replace;
+    Semaphore.acquire replace;
     Index.replace rw k2 v2;
     Index.replace rw k3 v3;
-    Mutex.unlock replace;
+    Semaphore.release replace;
     Index.flush rw;
     Index.sync' ~hook:sync_hook ro;
     Index.await thread |> check_completed;
-    Mutex.unlock sync;
+    Semaphore.release sync;
     Index.check_binding ro k2 v2;
     Index.check_binding ro k3 v3
 
@@ -564,22 +560,22 @@ module Close = struct
       Context.with_full_index ~throttle:`Block_writes ~size:100 ()
     in
     let close_request, abort_signalled =
-      (* Both locks are initially held.
+      (* Both semaphores are initially held.
          - [close_request] is dropped by the merge thread in the [`Before] hook
            as a signal to the parent thread to issue the [close] operation.
 
          - [abort_signalled] is dropped by the parent thread to signal to the
            child to continue the merge operation (which must then abort prematurely).
       *)
-      (locked_mutex (), locked_mutex ())
+      (Semaphore.make false, Semaphore.make false)
     in
     let hook = function
       | `Before ->
           Log.app (fun f ->
               f "Child (pid = %d): issuing request to close the index"
                 Thread.(id (self ())));
-          Mutex.unlock close_request
-      | `After_first_entry -> Mutex.lock abort_signalled
+          Semaphore.release close_request
+      | `After_first_entry -> Semaphore.acquire abort_signalled
       | `After_clear | `After ->
           Alcotest.failf
             "Child (pid = %d): merge completed despite concurrent close"
@@ -589,11 +585,12 @@ module Close = struct
       Index.force_merge ~hook:(I.Private.Hook.v hook) rw
     in
     Log.app (fun f -> f "Parent: waiting for request to close the index");
-    Mutex.lock close_request;
+    Semaphore.acquire close_request;
     Log.app (fun f -> f "Parent: closing the index");
     Index.close'
       ~hook:
-        (I.Private.Hook.v (fun `Abort_signalled -> Mutex.unlock abort_signalled))
+        (I.Private.Hook.v (fun `Abort_signalled ->
+             Semaphore.release abort_signalled))
       ~immediately:() rw;
     Log.app (fun f -> f "Parent: awaiting merge result");
     Index.await merge_promise |> function
@@ -705,12 +702,12 @@ module Throttle = struct
     let* Context.{ rw; tbl; _ } =
       Context.with_full_index ~throttle:`Overcommit_memory ()
     in
-    let m = locked_mutex () in
-    let hook = Hook.v @@ function `Before -> Mutex.lock m | _ -> () in
+    let m = Semaphore.make false in
+    let hook = Hook.v @@ function `Before -> Semaphore.acquire m | _ -> () in
     let (_ : binding) = add_binding rw in
     let merge_result = Index.force_merge ~hook rw in
     Hashtbl.iter (fun k v -> Index.replace rw k v) tbl;
-    Mutex.unlock m;
+    Semaphore.release m;
     Index.await merge_result |> check_completed
 
   let implicit_merge () =
@@ -718,8 +715,10 @@ module Throttle = struct
     let* Context.{ rw; _ } =
       Context.with_empty_index ~log_size ~throttle:`Overcommit_memory ()
     in
-    let m = locked_mutex () in
-    let hook = Hook.v @@ function `Merge `Before -> Mutex.lock m | _ -> () in
+    let m = Semaphore.make false in
+    let hook =
+      Hook.v @@ function `Merge `Before -> Semaphore.acquire m | _ -> ()
+    in
     for _ = 1 to log_size do
       ignore (add_binding rw : binding)
     done;
@@ -729,7 +728,7 @@ module Throttle = struct
     for _ = 1 to log_size + 1 do
       ignore (add_binding rw : binding)
     done;
-    Mutex.unlock m;
+    Semaphore.release m;
     Index.await merge_result |> check_completed;
     Log.app (fun m ->
         m "Triggering a second implicit merge (with an overcommitted log)");
