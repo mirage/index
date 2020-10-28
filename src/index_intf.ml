@@ -34,7 +34,9 @@ module type SEMAPHORE = sig
   (** The type of binary semaphore. *)
 
   val make : bool -> t
-  (** Return a fresh semaphore with the given initial state. *)
+  (** [make b] returns a new semaphore with the given initial state. If [b] is
+      [true], the semaphore is initially available for acquisition; otherwise,
+      the semaphore is initially unavailable. *)
 
   val acquire : t -> unit
   (** Acquire the given semaphore. Acquisition is not re-entrant. *)
