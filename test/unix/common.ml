@@ -211,8 +211,3 @@ let check_disjoint index htbl =
           Alcotest.failf "Found value %a when checking for the absence of %a"
             (Repr.pp Value.t) v' pp_binding (k, v))
     htbl
-
-let locked_mutex () =
-  let m = Mutex.create () in
-  Mutex.lock m;
-  m

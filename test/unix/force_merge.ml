@@ -1,4 +1,5 @@
 module Hook = Index.Private.Hook
+module Semaphore = Semaphore_compat.Semaphore.Binary
 open Common
 
 let root = Filename.concat "_tests" "unix.force_merge"
@@ -356,26 +357,21 @@ let add_bindings index =
 (** Test that a clear aborts the merge. *)
 let test_non_blocking_clear () =
   let* Context.{ rw; _ } = Context.with_empty_index () in
-  let lock () =
-    let m = Mutex.create () in
-    Mutex.lock m;
-    m
-  in
-  let merge_started = lock () and merge = lock () in
+  let merge_started = Semaphore.make false and merge = Semaphore.make false in
   let merge_hook =
     Hook.v @@ function
     | `Before ->
-        Mutex.unlock merge_started;
-        Mutex.lock merge
+        Semaphore.release merge_started;
+        Semaphore.acquire merge
     | `After -> Alcotest.fail "Merge should have been aborted by clear"
     | _ -> ()
   in
   let clear_hook =
-    Hook.v @@ function `Abort_signalled -> Mutex.unlock merge
+    Hook.v @@ function `Abort_signalled -> Semaphore.release merge
   in
   add_bindings rw;
   let thread = Index.force_merge ~hook:merge_hook rw in
-  Mutex.lock merge_started;
+  Semaphore.acquire merge_started;
   add_bindings rw;
   Index.clear' ~hook:clear_hook rw;
   match Index.await thread with
@@ -387,26 +383,21 @@ let test_non_blocking_clear () =
     PR 211 in which the second merge was triggering an assert failure. *)
 let test_abort_merge ~abort_merge () =
   let* { Context.rw; clone; _ } = Context.with_full_index () in
-  let lock () =
-    let m = Mutex.create () in
-    Mutex.lock m;
-    m
-  in
-  let merge_started = lock () and merge = lock () in
+  let merge_started = Semaphore.make false and merge = Semaphore.make false in
   let merge_hook =
     Hook.v @@ function
     | `After_first_entry ->
-        Mutex.unlock merge_started;
-        Mutex.lock merge
+        Semaphore.release merge_started;
+        Semaphore.acquire merge
     | `After | `After_clear ->
         Alcotest.fail "Merge should have been aborted by clear"
     | `Before -> ()
   in
   let abort_hook =
-    Hook.v @@ function `Abort_signalled -> Mutex.unlock merge
+    Hook.v @@ function `Abort_signalled -> Semaphore.release merge
   in
   let t = Index.force_merge ~hook:merge_hook rw in
-  Mutex.lock merge_started;
+  Semaphore.acquire merge_started;
   abort_merge ~hook:abort_hook rw;
   (match Index.await t with
   | Ok `Aborted -> ()
