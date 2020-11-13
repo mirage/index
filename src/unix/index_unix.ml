@@ -38,18 +38,19 @@ module IO : Index.IO = struct
     mutable flushed : int64;
     mutable fan_size : int64;
     readonly : bool;
-    buf : Buffer.t;
+    mutable buf : string list;
     flush_callback : unit -> unit;
   }
 
   let flush ?no_callback ?(with_fsync = false) t =
     if t.readonly then raise RO_not_allowed;
-    let buf = Buffer.contents t.buf in
+    let buf = t.buf in
     let offset = t.offset in
-    Buffer.clear t.buf;
-    if buf = "" then ()
+    t.buf <- [];
+    if buf = [] then ()
     else (
       (match no_callback with Some () -> () | None -> t.flush_callback ());
+      let buf = String.concat "" (List.rev buf) in
       Log.debug (fun l -> l "[%s] flushing %d bytes" t.file (String.length buf));
       Raw.unsafe_write t.raw ~off:t.flushed buf;
       Raw.Offset.set t.raw offset;
@@ -61,7 +62,7 @@ module IO : Index.IO = struct
     flush ~with_fsync:true src;
     Raw.close dst.raw;
     Unix.rename src.file dst.file;
-    Buffer.clear dst.buf;
+    dst.buf <- [];
     src.file <- dst.file;
     dst.header <- src.header;
     dst.fan_size <- src.fan_size;
@@ -70,14 +71,14 @@ module IO : Index.IO = struct
     dst.raw <- src.raw
 
   let close t =
-    if not t.readonly then Buffer.clear t.buf;
+    if not t.readonly then t.buf <- [];
     Raw.close t.raw
 
   let auto_flush_limit = 1_000_000L
 
   let append t buf =
     if t.readonly then raise RO_not_allowed;
-    Buffer.add_string t.buf buf;
+    t.buf <- buf :: t.buf;
     let len = Int64.of_int (String.length buf) in
     t.offset <- t.offset ++ len;
     if t.offset -- t.flushed > auto_flush_limit then flush t
@@ -147,7 +148,7 @@ module IO : Index.IO = struct
     t.flushed <- t.header;
     Header.set t { offset = t.offset; generation };
     Raw.Fan.set t.raw "";
-    Buffer.clear t.buf;
+    t.buf <- [];
     Raw.fsync t.raw
 
   let () = assert (String.length current_version = 8)
@@ -163,7 +164,7 @@ module IO : Index.IO = struct
         raw;
         readonly;
         fan_size;
-        buf = Buffer.create (4 * 1024);
+        buf = [];
         flushed = header ++ offset;
         flush_callback;
       }
