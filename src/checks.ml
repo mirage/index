@@ -38,8 +38,13 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
           fun _ -> assert false )
       size_t
 
-  (** Read basic metrics from an existing store. *)
-  module Quick_stats = struct
+  let path =
+    let open Cmdliner.Arg in
+    required
+    @@ pos 0 (some string) None
+    @@ info ~doc:"Path to the Index store on disk" ~docv:"PATH" []
+
+  module Stat = struct
     type io = { size : size; offset : int64; generation : int64 }
     [@@deriving repr]
 
@@ -70,7 +75,7 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       let size = Bytes (IO.size io) in
       { size; offset; generation }
 
-    let v ~root =
+    let run ~root =
       Logs.app (fun f -> f "Getting statistics for store: `%s'@," root);
       let data = io (Layout.data ~root) in
       let log = io (Layout.log ~root) in
@@ -87,6 +92,8 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
         files = { data; log; log_async; merge; lock };
       }
       |> Repr.pp_json ~minify:false t Fmt.stdout
+
+    let term = Cmdliner.Term.(const (fun root () -> run ~root) $ path)
   end
 
   module Integrity_check = struct
@@ -106,7 +113,7 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
              highlight (fun ppf () -> (Repr.pp Entry.t) ppf entry))
       |> Fmt.(concat ~sep:cut)
 
-    let v ~root =
+    let run ~root =
       let context = 2 in
       let io = IO.v (Layout.data ~root) in
       let io_offset = IO.offset io in
@@ -135,21 +142,12 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
                        (print_window_around off io context)
                        ());
                previous := e)
+
+    let term = Cmdliner.Term.(const (fun root () -> run ~root) $ path)
   end
 
   module Cli = struct
     open Cmdliner
-
-    let path =
-      let open Arg in
-      required
-      @@ pos 0 (some string) None
-      @@ info ~doc:"Path to the Index store on disk" ~docv:"PATH" []
-
-    let quick_stats = Term.(const (fun root () -> Quick_stats.v ~root) $ path)
-
-    let integrity_check =
-      Term.(const (fun root () -> Integrity_check.v ~root) $ path)
 
     let setup_log =
       let init style_renderer level =
@@ -187,13 +185,13 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       Term.(
         eval_choice default
           [
-            ( quick_stats $ setup_log,
+            ( Stat.term $ setup_log,
               Term.info ~doc:"Print high-level statistics about the store."
                 "stat" );
-            ( integrity_check $ setup_log,
+            ( Integrity_check.term $ setup_log,
               Term.info
                 ~doc:"Search the store for integrity faults and corruption."
-                "check" );
+                "integrity-check" );
           ]
         |> (exit : unit result -> _));
       assert false

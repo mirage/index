@@ -5,7 +5,7 @@ SYNOPSIS
        index-fsck COMMAND ...
 
 COMMANDS
-       check
+       integrity-check
            Search the store for integrity faults and corruption.
 
        stat
