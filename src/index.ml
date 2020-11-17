@@ -525,7 +525,8 @@ struct
               not K.(equal key e.key))
               && filter (e.key, e.value)
             then
-              append_buf_fanout fan_out e.key_hash (Bytes.to_string buf_str)
+              append_buf_fanout fan_out e.key_hash
+                (Bytes.unsafe_to_string buf_str)
                 dst_io;
             if first_entry then hook `After_first_entry;
             let buf_offset =
