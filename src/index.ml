@@ -441,28 +441,31 @@ struct
     Search.interpolation_search (IOArray.v index.io) key ~low ~high
 
   let find_instance t key =
-    let find_if_exists ~name ~find db () =
+    let find_if_exists ~name ~find db =
       match db with
-      | None ->
-          Log.debug (fun l ->
-              l "[%s] %s is not present" (Filename.basename t.root) name);
-          raise Not_found
+      | None -> raise Not_found
       | Some e ->
           let ans = find e key in
           Log.debug (fun l ->
               l "[%s] found in %s" (Filename.basename t.root) name);
           ans
     in
-    let ( @~ ) a b = try a () with Not_found -> b () in
-    let find_log_index () =
-      find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
-      @~ find_if_exists ~name:"index" ~find:interpolation_search t.index
+    let find_log_async () =
+      find_if_exists ~name:"log_async"
+        ~find:(fun log -> Tbl.find log.mem)
+        t.log_async
     in
-    Semaphore.with_acquire t.rename_lock (fun () ->
-        find_if_exists ~name:"log_async"
-          ~find:(fun log -> Tbl.find log.mem)
-          t.log_async
-        @~ find_log_index)
+    let find_log () =
+      find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
+    in
+    let find_index () =
+      find_if_exists ~name:"index" ~find:interpolation_search t.index
+    in
+    Semaphore.with_acquire t.rename_lock @@ fun () ->
+    match find_log_async () with
+    | e -> e
+    | exception Not_found -> (
+        match find_log () with e -> e | exception Not_found -> find_index ())
 
   let find t key =
     let t = check_open t in
