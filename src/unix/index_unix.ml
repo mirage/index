@@ -26,9 +26,9 @@ let current_version = "00000001"
 module Stats = Index.Stats
 
 module IO : Index.IO = struct
-  let ( ++ ) = Int64.add
+  external ( ++ ) : int64 -> int64 -> int64 = "%int64_add"
 
-  let ( -- ) = Int64.sub
+  external ( -- ) : int64 -> int64 -> int64 = "%int64_sub"
 
   type t = {
     mutable file : string;
