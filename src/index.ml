@@ -513,23 +513,24 @@ struct
         append_remaining_log fan_out log log_i dst_io;
         `Completed)
       else
-        let buf_str = Bytes.sub buf buf_offset Entry.encoded_size in
         let index_offset = Int64.add index_offset entry_sizeL in
-        let e = Entry.decode (Bytes.unsafe_to_string buf_str) 0 in
+        let e = Entry.decode (Bytes.unsafe_to_string buf) buf_offset in
         let log_i = merge_from_log fan_out log log_i e.key_hash dst_io in
         match yield () with
         | `Abort -> `Aborted
         | `Continue ->
             Thread.yield ();
-            if
-              (log_i >= Array.length log
-              ||
-              let key = log.(log_i).key in
-              not K.(equal key e.key))
-              && filter (e.key, e.value)
+            (if
+             (log_i >= Array.length log
+             ||
+             let key = log.(log_i).key in
+             not K.(equal key e.key))
+             && filter (e.key, e.value)
             then
-              append_buf_fanout fan_out e.key_hash (Bytes.to_string buf_str)
-                dst_io;
+             let buf_str = Bytes.sub buf buf_offset Entry.encoded_size in
+             append_buf_fanout fan_out e.key_hash
+               (Bytes.unsafe_to_string buf_str)
+               dst_io);
             if first_entry then hook `After_first_entry;
             let buf_offset =
               let n = buf_offset + Entry.encoded_size in
