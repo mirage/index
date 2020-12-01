@@ -469,12 +469,12 @@ struct
 
   let find t key =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] find %a" (Filename.basename t.root) pp_key key);
+    Log.debug (fun l -> l "[%s] find %a" (Filename.basename t.root) pp_key key);
     find_instance t key
 
   let mem t key =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] mem %a" (Filename.basename t.root) pp_key key);
+    Log.debug (fun l -> l "[%s] mem %a" (Filename.basename t.root) pp_key key);
     match find_instance t key with _ -> true | exception Not_found -> false
 
   let append_buf_fanout fan_out hash buf_str dst_io =
@@ -712,7 +712,7 @@ struct
   let replace' ?hook t key value =
     let t = check_open t in
     Stats.incr_nb_replace ();
-    Log.info (fun l ->
+    Log.debug (fun l ->
         l "[%s] replace %a %a" (Filename.basename t.root) pp_key key pp_value
           value);
     if t.config.readonly then raise RO_not_allowed;
@@ -750,7 +750,7 @@ struct
 
   let filter t f =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] filter" (Filename.basename t.root));
+    Log.debug (fun l -> l "[%s] filter" (Filename.basename t.root));
     if t.config.readonly then raise RO_not_allowed;
     let witness =
       Semaphore.with_acquire t.rename_lock (fun () -> get_witness t)
@@ -767,7 +767,7 @@ struct
 
   let iter f t =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] iter" (Filename.basename t.root));
+    Log.debug (fun l -> l "[%s] iter" (Filename.basename t.root));
     match t.log with
     | None -> ()
     | Some log ->
@@ -786,9 +786,9 @@ struct
       match immediately with Some () -> true | None -> false
     in
     match !it with
-    | None -> Log.info (fun l -> l "close: instance already closed")
+    | None -> Log.debug (fun l -> l "close: instance already closed")
     | Some t ->
-        Log.info (fun l -> l "[%s] close" (Filename.basename t.root));
+        Log.debug (fun l -> l "[%s] close" (Filename.basename t.root));
         if abort_merge then (
           t.pending_cancel <- true;
           hook `Abort_signalled);
