@@ -77,7 +77,12 @@ module Make (IO : Io.S) (Elt : ELT) :
 
   let length t = Int64.(div (IO.offset t.io) Elt.encoded_sizeL)
 
-  let max_buffer_size = 4096
+  let max_buffer_size =
+    (* The prefetched area should not exceed 4096 in most cases, thanks to the
+       fan out. However, if the hash function is not well distributed, some
+       exceptions might happen where the prefetched area actually exceeds 4096.
+       As long as this excess is reasonable (x2), we still want to prefetch. *)
+    2 * 4096
 
   let buf = Bytes.create max_buffer_size
 
