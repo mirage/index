@@ -128,7 +128,7 @@ module type S = sig
   val mem : t -> key -> bool
   (** [mem t k] is [true] iff [k] is bound in [t]. *)
 
-  val replace : t -> key -> value -> unit
+  val replace : ?overcommit:bool -> t -> key -> value -> unit
   (** [replace t k v] binds [k] to [v] in [t], replacing any existing binding of
       [k]. *)
 
@@ -205,6 +205,7 @@ module type Private = sig
 
   val replace' :
     ?hook:[ `Merge of merge_stages ] hook ->
+    ?overcommit:bool ->
     t ->
     key ->
     value ->
