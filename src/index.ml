@@ -631,58 +631,59 @@ struct
             | `Completed -> `Index_io index.io
             | `Aborted -> `Aborted)
       in
-      match merge_result with
-      | `Index_io io ->
-          let fan_out = Fan.finalize fan_out in
-          let index = { io; fan_out } in
-          IO.set_fanout merge (Fan.export index.fan_out);
-          Semaphore.with_acquire t.rename_lock (fun () ->
-              IO.rename ~src:merge ~dst:index.io;
-              t.index <- Some index;
-              t.generation <- generation;
-              IO.clear ~generation log.io;
-              Tbl.clear log.mem;
-              hook `After_clear;
-              let log_async = assert_and_get t.log_async in
-              let append_io = IO.append log.io in
-              Tbl.iter
-                (fun key value ->
-                  Tbl.replace log.mem key value;
-                  Entry.encode' key value append_io)
-                log_async.mem;
-              (* NOTE: It {i may} not be necessary to trigger the
-                 [flush_callback] here. If the instance has been recently
-                 flushed (or [log_async] just reached the [auto_flush_limit]),
-                 we're just moving already-persisted values around. However, we
-                 trigger the callback anyway for simplicity. *)
-              (* `fsync` is necessary, since bindings in `log_async` may have
-                 been explicitely `fsync`ed during the merge, so we need to
-                 maintain their durability. *)
-              (try IO.flush ~with_fsync:true log.io
-               with exn ->
-                 Semaphore.release t.merge_lock;
-                 raise exn);
-              IO.clear ~generation:(Int64.succ generation) log_async.io;
-              (* log_async.mem does not need to be cleared as we are discarding
-                 it. *)
-              t.log_async <- None);
-          IO.close log_async.io;
-          hook `After;
-          let merge_duration = Mtime_clock.count merge_start_time in
-          Semaphore.release t.merge_lock;
-          Stats.add_merge_duration merge_duration;
-          Log.info (fun l ->
-              l "[%s] merge completed { id = %d; duration = %a }"
-                (Filename.basename t.root) merge_id Mtime.Span.pp merge_duration);
-          `Completed
-      | `Aborted ->
-          let merge_duration = Mtime_clock.count merge_start_time in
-          Semaphore.release t.merge_lock;
-          Stats.add_merge_duration merge_duration;
-          Log.info (fun l ->
-              l "[%s] merge aborted { id = %d; duration = %a }"
-                (Filename.basename t.root) merge_id Mtime.Span.pp merge_duration);
-          `Aborted
+      let cleanup_result =
+        match merge_result with
+        | `Aborted -> `Aborted
+        | `Index_io io ->
+            let fan_out = Fan.finalize fan_out in
+            let index = { io; fan_out } in
+            IO.set_fanout merge (Fan.export index.fan_out);
+            Semaphore.with_acquire t.rename_lock (fun () ->
+                IO.rename ~src:merge ~dst:index.io;
+                t.index <- Some index;
+                t.generation <- generation;
+                IO.clear ~generation log.io;
+                Tbl.clear log.mem;
+                hook `After_clear;
+                let log_async = assert_and_get t.log_async in
+                let append_io = IO.append log.io in
+                Tbl.iter
+                  (fun key value ->
+                    Tbl.replace log.mem key value;
+                    Entry.encode' key value append_io)
+                  log_async.mem;
+                (* NOTE: It {i may} not be necessary to trigger the
+                   [flush_callback] here. If the instance has been recently
+                   flushed (or [log_async] just reached the [auto_flush_limit]),
+                   we're just moving already-persisted values around. However, we
+                   trigger the callback anyway for simplicity. *)
+                (* `fsync` is necessary, since bindings in `log_async` may have
+                   been explicitely `fsync`ed during the merge, so we need to
+                   maintain their durability. *)
+                (try IO.flush ~with_fsync:true log.io
+                 with exn ->
+                   Semaphore.release t.merge_lock;
+                   raise exn);
+                IO.clear ~generation:(Int64.succ generation) log_async.io;
+                (* log_async.mem does not need to be cleared as we are discarding
+                   it. *)
+                t.log_async <- None);
+            IO.close log_async.io;
+            hook `After;
+            `Completed
+      in
+      let merge_duration = Mtime_clock.count merge_start_time in
+      Semaphore.release t.merge_lock;
+      Stats.add_merge_duration merge_duration;
+      Log.info (fun l ->
+          let action =
+            match cleanup_result with
+            | `Aborted -> "aborted"
+            | `Completed -> "completed"
+          in
+          l "[%s] merge %s { id = %d; duration = %a }" action
+            (Filename.basename t.root) merge_id Mtime.Span.pp merge_duration);
+      cleanup_result
     in
     if blocking then go () |> Thread.return else Thread.async go
 
