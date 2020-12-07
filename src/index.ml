@@ -668,23 +668,23 @@ struct
               t.log_async <- None);
           IO.close log_async.io;
           hook `After;
+          let merge_duration = Mtime_clock.count merge_start_time in
           Semaphore.release t.merge_lock;
+          Stats.add_merge_duration merge_duration;
           Log.info (fun l ->
-              let merge_duration = Mtime_clock.count merge_start_time in
               l "[%s] merge completed { id = %d; duration = %a }"
                 (Filename.basename t.root) merge_id Mtime.Span.pp merge_duration);
           `Completed
       | `Aborted ->
+          let merge_duration = Mtime_clock.count merge_start_time in
           Semaphore.release t.merge_lock;
+          Stats.add_merge_duration merge_duration;
           Log.info (fun l ->
-              let merge_duration = Mtime_clock.count merge_start_time in
               l "[%s] merge aborted { id = %d; duration = %a }"
                 (Filename.basename t.root) merge_id Mtime.Span.pp merge_duration);
           `Aborted
     in
-    let go_with_timer () = Stats.merge_with_timer go in
-    if blocking then go_with_timer () |> Thread.return
-    else Thread.async go_with_timer
+    if blocking then go () |> Thread.return else Thread.async go
 
   let get_witness t =
     match t.log with

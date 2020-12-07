@@ -87,9 +87,6 @@ let sync_with_timer f =
 
 let drop_head l = if List.length l >= 10 then List.tl l else l
 
-let merge_with_timer f =
-  let timer = Mtime_clock.counter () in
-  let result = f () in
-  let span = Mtime.Span.to_us (Mtime_clock.count timer) in
-  stats.merge_durations <- drop_head stats.merge_durations @ [ span ];
-  result
+let add_merge_duration span =
+  let span = Mtime.Span.to_us span in
+  stats.merge_durations <- drop_head stats.merge_durations @ [ span ]
