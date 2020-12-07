@@ -45,4 +45,4 @@ val end_replace : sampling_interval:int -> unit
 
 val sync_with_timer : (unit -> unit) -> unit
 
-val merge_with_timer : (unit -> 'a) -> 'a
+val add_merge_duration : Mtime.Span.t -> unit

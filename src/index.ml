@@ -175,7 +175,7 @@ struct
 
   let flush ?no_callback ?(with_fsync = false) t =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
+    Log.debug (fun l -> l "[%s] flush" (Filename.basename t.root));
     Semaphore.with_acquire t.rename_lock (fun () ->
         flush_instance ?no_callback ~with_fsync t)
 
@@ -543,11 +543,20 @@ struct
     in
     (go [@tailcall]) true 0L 0 0
 
+  let merge_counter =
+    let n = ref 0 in
+    fun () ->
+      incr n;
+      !n
+
   let merge ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
       ~witness t =
     let yield () = check_pending_cancel t in
     Semaphore.acquire t.merge_lock;
-    Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
+    let merge_id = merge_counter () in
+    let merge_start_time = Mtime_clock.counter () in
+    Log.info (fun l ->
+        l "[%s] merge started { id = %d }" (Filename.basename t.root) merge_id);
     Stats.incr_nb_merge ();
     let log_async =
       let io =
@@ -622,52 +631,61 @@ struct
             | `Completed -> `Index_io index.io
             | `Aborted -> `Aborted)
       in
-      match merge_result with
-      | `Index_io io ->
-          let fan_out = Fan.finalize fan_out in
-          let index = { io; fan_out } in
-          IO.set_fanout merge (Fan.export index.fan_out);
-          Semaphore.with_acquire t.rename_lock (fun () ->
-              IO.rename ~src:merge ~dst:index.io;
-              t.index <- Some index;
-              t.generation <- generation;
-              IO.clear ~generation log.io;
-              Tbl.clear log.mem;
-              hook `After_clear;
-              let log_async = assert_and_get t.log_async in
-              let append_io = IO.append log.io in
-              Tbl.iter
-                (fun key value ->
-                  Tbl.replace log.mem key value;
-                  Entry.encode' key value append_io)
-                log_async.mem;
-              (* NOTE: It {i may} not be necessary to trigger the
-                 [flush_callback] here. If the instance has been recently
-                 flushed (or [log_async] just reached the [auto_flush_limit]),
-                 we're just moving already-persisted values around. However, we
-                 trigger the callback anyway for simplicity. *)
-              (* `fsync` is necessary, since bindings in `log_async` may have
-                 been explicitely `fsync`ed during the merge, so we need to
-                 maintain their durability. *)
-              (try IO.flush ~with_fsync:true log.io
-               with exn ->
-                 Semaphore.release t.merge_lock;
-                 raise exn);
-              IO.clear ~generation:(Int64.succ generation) log_async.io;
-              (* log_async.mem does not need to be cleared as we are discarding
-                 it. *)
-              t.log_async <- None);
-          IO.close log_async.io;
-          hook `After;
-          Semaphore.release t.merge_lock;
-          `Completed
-      | `Aborted ->
-          Semaphore.release t.merge_lock;
-          `Aborted
+      let cleanup_result =
+        match merge_result with
+        | `Aborted -> `Aborted
+        | `Index_io io ->
+            let fan_out = Fan.finalize fan_out in
+            let index = { io; fan_out } in
+            IO.set_fanout merge (Fan.export index.fan_out);
+            Semaphore.with_acquire t.rename_lock (fun () ->
+                IO.rename ~src:merge ~dst:index.io;
+                t.index <- Some index;
+                t.generation <- generation;
+                IO.clear ~generation log.io;
+                Tbl.clear log.mem;
+                hook `After_clear;
+                let log_async = assert_and_get t.log_async in
+                let append_io = IO.append log.io in
+                Tbl.iter
+                  (fun key value ->
+                    Tbl.replace log.mem key value;
+                    Entry.encode' key value append_io)
+                  log_async.mem;
+                (* NOTE: It {i may} not be necessary to trigger the
+                   [flush_callback] here. If the instance has been recently
+                   flushed (or [log_async] just reached the [auto_flush_limit]),
+                   we're just moving already-persisted values around. However, we
+                   trigger the callback anyway for simplicity. *)
+                (* `fsync` is necessary, since bindings in `log_async` may have
+                   been explicitely `fsync`ed during the merge, so we need to
+                   maintain their durability. *)
+                (try IO.flush ~with_fsync:true log.io
+                 with exn ->
+                   Semaphore.release t.merge_lock;
+                   raise exn);
+                IO.clear ~generation:(Int64.succ generation) log_async.io;
+                (* log_async.mem does not need to be cleared as we are discarding
+                   it. *)
+                t.log_async <- None);
+            IO.close log_async.io;
+            hook `After;
+            `Completed
+      in
+      let merge_duration = Mtime_clock.count merge_start_time in
+      Semaphore.release t.merge_lock;
+      Stats.add_merge_duration merge_duration;
+      Log.info (fun l ->
+          let action =
+            match cleanup_result with
+            | `Aborted -> "aborted"
+            | `Completed -> "completed"
+          in
+          l "[%s] merge %s { id = %d; duration = %a }" action
+            (Filename.basename t.root) merge_id Mtime.Span.pp merge_duration);
+      cleanup_result
     in
-    let go_with_timer () = Stats.merge_with_timer go in
-    if blocking then go_with_timer () |> Thread.return
-    else Thread.async go_with_timer
+    if blocking then go () |> Thread.return else Thread.async go
 
   let get_witness t =
     match t.log with
@@ -814,7 +832,7 @@ struct
     let f t =
       Stats.incr_nb_sync ();
       let t = check_open t in
-      Log.info (fun l -> l "[%s] sync" (Filename.basename t.root));
+      Log.debug (fun l -> l "[%s] sync" (Filename.basename t.root));
       if t.config.readonly then sync_log ?hook t else raise RW_not_allowed
     in
     Stats.sync_with_timer (fun () -> f t)
