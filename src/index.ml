@@ -554,6 +554,7 @@ struct
     let yield () = check_pending_cancel t in
     Semaphore.acquire t.merge_lock;
     let merge_id = merge_counter () in
+    let merge_start_time = Mtime_clock.counter () in
     Log.info (fun l ->
         l "[%s] merge started { id = %d }" (Filename.basename t.root) merge_id);
     Stats.incr_nb_merge ();
@@ -669,14 +670,16 @@ struct
           hook `After;
           Semaphore.release t.merge_lock;
           Log.info (fun l ->
-              l "[%s] merge completed { id = %d }" (Filename.basename t.root)
-                merge_id);
+              let merge_duration = Mtime_clock.count merge_start_time in
+              l "[%s] merge completed { id = %d; duration = %a }"
+                (Filename.basename t.root) merge_id Mtime.Span.pp merge_duration);
           `Completed
       | `Aborted ->
           Semaphore.release t.merge_lock;
           Log.info (fun l ->
-              l "[%s] merge aborted { id = %d }" (Filename.basename t.root)
-                merge_id);
+              let merge_duration = Mtime_clock.count merge_start_time in
+              l "[%s] merge aborted { id = %d; duration = %a }"
+                (Filename.basename t.root) merge_id Mtime.Span.pp merge_duration);
           `Aborted
     in
     let go_with_timer () = Stats.merge_with_timer go in
