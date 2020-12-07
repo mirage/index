@@ -543,11 +543,19 @@ struct
     in
     (go [@tailcall]) true 0L 0 0
 
+  let merge_counter =
+    let n = ref 0 in
+    fun () ->
+      incr n;
+      !n
+
   let merge ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
       ~witness t =
     let yield () = check_pending_cancel t in
     Semaphore.acquire t.merge_lock;
-    Log.info (fun l -> l "[%s] merge" (Filename.basename t.root));
+    let merge_id = merge_counter () in
+    Log.info (fun l ->
+        l "[%s] merge started { id = %d }" (Filename.basename t.root) merge_id);
     Stats.incr_nb_merge ();
     let log_async =
       let io =
@@ -660,9 +668,15 @@ struct
           IO.close log_async.io;
           hook `After;
           Semaphore.release t.merge_lock;
+          Log.info (fun l ->
+              l "[%s] merge completed { id = %d }" (Filename.basename t.root)
+                merge_id);
           `Completed
       | `Aborted ->
           Semaphore.release t.merge_lock;
+          Log.info (fun l ->
+              l "[%s] merge aborted { id = %d }" (Filename.basename t.root)
+                merge_id);
           `Aborted
     in
     let go_with_timer () = Stats.merge_with_timer go in
