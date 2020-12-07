@@ -175,7 +175,7 @@ struct
 
   let flush ?no_callback ?(with_fsync = false) t =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] flush" (Filename.basename t.root));
+    Log.debug (fun l -> l "[%s] flush" (Filename.basename t.root));
     Semaphore.with_acquire t.rename_lock (fun () ->
         flush_instance ?no_callback ~with_fsync t)
 
@@ -828,7 +828,7 @@ struct
     let f t =
       Stats.incr_nb_sync ();
       let t = check_open t in
-      Log.info (fun l -> l "[%s] sync" (Filename.basename t.root));
+      Log.debug (fun l -> l "[%s] sync" (Filename.basename t.root));
       if t.config.readonly then sync_log ?hook t else raise RW_not_allowed
     in
     Stats.sync_with_timer (fun () -> f t)
