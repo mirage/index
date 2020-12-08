@@ -549,7 +549,7 @@ struct
       incr n;
       !n
 
-  let merge ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
+  let merge' ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
       ~witness t =
     let yield () = check_pending_cancel t in
     Semaphore.acquire t.merge_lock;
@@ -715,7 +715,9 @@ struct
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
         Thread.return `Completed
-    | Some witness -> merge ?hook ~witness t
+    | Some witness -> merge' ?hook ~witness t
+
+  let merge t = ignore (force_merge ?hook:None t : _ async)
 
   (** [t.merge_lock] is used to detect an ongoing merge. Other operations can
       take this lock, but as they are not async, we consider this to be a good
@@ -754,7 +756,7 @@ struct
           None
       | `Overcommit_memory, false | `Block_writes, _ ->
           let hook = hook |> Option.map (fun f stage -> f (`Merge stage)) in
-          Some (merge ?hook ~witness:(Entry.v key value) t)
+          Some (merge' ?hook ~witness:(Entry.v key value) t)
     else None
 
   let replace ?overcommit t key value =
@@ -778,7 +780,7 @@ struct
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
     | Some witness -> (
-        match Thread.await (merge ~blocking:true ~filter:f ~witness t) with
+        match Thread.await (merge' ~blocking:true ~filter:f ~witness t) with
         | Ok (`Aborted | `Completed) -> ()
         | Error (`Async_exn exn) ->
             Fmt.failwith "filter: asynchronous exception during merge (%s)"

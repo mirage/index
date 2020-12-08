@@ -169,6 +169,9 @@ module type S = sig
   (** [is_merging t] returns true if [t] is running a merge. Raises
       {!RO_not_allowed} if called by a read-only index. *)
 
+  val merge : t -> unit
+  (** [merge] forces a merge for [t]. *)
+
   (** Offline [fsck]-like utility for checking the integrity of Index stores
       built using this module. *)
   module Checks : sig
