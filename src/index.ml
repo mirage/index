@@ -747,8 +747,7 @@ struct
           Tbl.replace log.mem key value;
           Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
     in
-    if overcommit then None
-    else if log_limit_reached then
+    if log_limit_reached && not overcommit then
       let is_merging = instance_is_merging t in
       match (t.config.throttle, is_merging) with
       | `Overcommit_memory, true ->
