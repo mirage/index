@@ -28,10 +28,12 @@ depends: [
   "mtime"   {>= "1.0.0"}
   "cmdliner"
   "progress"
-  "alcotest" {with-test}
-  "crowbar" {with-test & >= "0.2"}
-  "re" {with-test}
   "semaphore-compat"
+  "jsonm"
+  "stdlib-shims"
+  "alcotest" {with-test}
+  "crowbar"  {with-test & >= "0.2"}
+  "re"       {with-test}
 ]
 synopsis: "A platform-agnostic multi-level index for OCaml"
 description:"""
