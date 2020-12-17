@@ -128,9 +128,12 @@ module type S = sig
   val mem : t -> key -> bool
   (** [mem t k] is [true] iff [k] is bound in [t]. *)
 
-  val replace : t -> key -> value -> unit
+  val replace : ?overcommit:bool -> t -> key -> value -> unit
   (** [replace t k v] binds [k] to [v] in [t], replacing any existing binding of
-      [k]. *)
+      [k].
+
+      If [overcommit] is true, the operation does not triger a merge, even if
+      the caches are full. By default [overcommit] is false. *)
 
   val filter : t -> (key * value -> bool) -> unit
   (** [filter t p] removes all the bindings (k, v) that do not satisfy [p]. This
@@ -169,6 +172,16 @@ module type S = sig
   (** [is_merging t] returns true if [t] is running a merge. Raises
       {!RO_not_allowed} if called by a read-only index. *)
 
+  val merge : t -> unit
+  (** [merge t] forces a merge for [t].
+
+      If there is no merge running, this operation is non-blocking, i.e. it
+      returns immediately, with the merge running concurrently.
+
+      If a merge is running already, this operation blocks until the previous
+      merge is complete. It then launches a merge (which runs concurrently) and
+      returns. *)
+
   (** Offline [fsck]-like utility for checking the integrity of Index stores
       built using this module. *)
   module Checks : sig
@@ -205,6 +218,7 @@ module type Private = sig
 
   val replace' :
     ?hook:[ `Merge of merge_stages ] hook ->
+    ?overcommit:bool ->
     t ->
     key ->
     value ->

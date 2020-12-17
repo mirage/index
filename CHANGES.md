@@ -26,6 +26,10 @@
 - Added `Index.Checks.cli`, which provides offline integrity checking of Index
   stores. (#236)
 
+- `Index.replace` now takes a `~overcommit` argument to postpone a merge. (#253)
+
+- `Index.merge` is now part of the public API. (#253)
+
 ## Changed
 
 - `sync` has to be called by the read-only instance to synchronise with the
