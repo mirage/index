@@ -681,8 +681,9 @@ struct
             | `Aborted -> "aborted"
             | `Completed -> "completed"
           in
-          l "[%s] merge %s { id = %d; duration = %a }" action
-            (Filename.basename t.root) merge_id Mtime.Span.pp merge_duration);
+          l "[%s] merge %s { id = %d; duration = %a }"
+            (Filename.basename t.root) action merge_id Mtime.Span.pp
+            merge_duration);
       cleanup_result
     in
     if blocking then go () |> Thread.return else Thread.async go
