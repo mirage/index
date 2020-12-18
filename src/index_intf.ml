@@ -182,6 +182,10 @@ module type S = sig
       merge is complete. It then launches a merge (which runs concurrently) and
       returns. *)
 
+  val try_merge : t -> unit
+  (** [try_merge] is like {!merge} but is a no-op if the number of entries in
+      the write-ahead log is smaller than [log_size]. *)
+
   (** Offline [fsck]-like utility for checking the integrity of Index stores
       built using this module. *)
   module Checks : sig
@@ -233,8 +237,12 @@ module type Private = sig
 
   val clear' : hook:[ `Abort_signalled ] hook -> t -> unit
 
-  val force_merge : ?hook:merge_stages hook -> t -> merge_result async
-  (** [force_merge t] forces a merge for [t]. *)
+  val try_merge_aux :
+    ?hook:merge_stages hook -> ?force:bool -> t -> merge_result async
+  (** [try_merge_aux t] tries to merge [t]. If [force] is false (the default), a
+      merge is performed only if there is more entries in the write-ahead log
+      than the configured limits. If [force] is set, the merge is performed no
+      matter what. *)
 
   val await : 'a async -> ('a, [ `Async_exn of exn ]) result
   (** Wait for an asynchronous computation to finish. *)

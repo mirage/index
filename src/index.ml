@@ -550,7 +550,7 @@ struct
       !n
 
   let merge' ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
-      ~witness ?(forced = false) t =
+      ~witness ?(force = false) t =
     let yield () = check_pending_cancel t in
     let counter = Mtime_clock.counter () in
     Semaphore.acquire "merge" t.merge_lock;
@@ -558,7 +558,7 @@ struct
     let merge_id = merge_counter () in
     let merge_start_time = Mtime_clock.count counter in
     Log.info (fun l ->
-        let pp_forced ppf () = if forced then Fmt.string ppf "; forced=true" in
+        let pp_forced ppf () = if force then Fmt.string ppf "; force=true" in
         l "[%s] merge started { id = %d%a }" (Filename.basename t.root) merge_id
           pp_forced ());
     Stats.incr_nb_merge ();
@@ -722,7 +722,7 @@ struct
                 assert (n = Entry.encoded_size);
                 Some (Entry.decode (Bytes.unsafe_to_string buf) 0)))
 
-  let force_merge ?hook t =
+  let try_merge_aux ?hook ?(force = false) t =
     let t = check_open t in
     let witness =
       Semaphore.with_acquire "witness" t.rename_lock (fun () -> get_witness t)
@@ -731,9 +731,24 @@ struct
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
         Thread.return `Completed
-    | Some witness -> merge' ~forced:true ?hook ~witness t
+    | Some witness -> (
+        match t.log with
+        | None ->
+            Log.debug (fun l ->
+                l "[%s] log is empty" (Filename.basename t.root));
+            Thread.return `Completed
+        | Some log ->
+            if
+              force
+              || Int64.compare (IO.offset log.io)
+                   (Int64.of_int t.config.log_size)
+                 > 0
+            then merge' ~force ?hook ~witness t
+            else Thread.return `Completed)
 
-  let merge t = ignore (force_merge ?hook:None t : _ async)
+  let merge t = ignore (try_merge_aux ?hook:None ~force:true t : _ async)
+
+  let try_merge t = ignore (try_merge_aux ?hook:None ~force:false t : _ async)
 
   (** [t.merge_lock] is used to detect an ongoing merge. Other operations can
       take this lock, but as they are not async, we consider this to be a good

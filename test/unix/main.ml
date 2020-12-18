@@ -123,7 +123,7 @@ module Live = struct
     Index.replace rw k1 v1;
     Index.replace rw k1 v2;
     Index.replace rw k1 v3;
-    let thread = Index.force_merge rw in
+    let thread = Index.try_merge_aux ~force:true rw in
     Index.await thread |> check_completed;
     let once = ref true in
     Index.iter
@@ -308,7 +308,7 @@ module Readonly = struct
 
     Index.clear rw;
     Index.replace rw k v;
-    let thread = Index.force_merge ~hook:(before merge sync) rw in
+    let thread = Index.try_merge_aux ~force:true ~hook:(before merge sync) rw in
     Hashtbl.iter (Index.replace rw) tbl2;
     Index.flush rw;
     check_equivalence rw tbl2;
@@ -371,7 +371,7 @@ module Readonly = struct
     Index.clear rw;
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
-    let thread = Index.force_merge rw in
+    let thread = Index.try_merge_aux ~force:true rw in
     Index.await thread |> check_completed;
     Index.sync ro;
     Index.check_binding ro k1 v1;
@@ -412,13 +412,13 @@ module Readonly = struct
     Index.clear rw;
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
-    let t = Index.force_merge rw in
+    let t = Index.try_merge_aux ~force:true rw in
     Index.await t |> check_completed;
     Index.sync ro;
     Index.clear rw;
     let k2, v2 = (Key.v (), Value.v ()) in
     Index.replace rw k2 v2;
-    let t = Index.force_merge rw in
+    let t = Index.try_merge_aux ~force:true rw in
     Index.await t |> check_completed;
     Index.check_binding ro k1 v1;
     Alcotest.check_raises (Printf.sprintf "Found %s key after clearing." k1)
@@ -462,7 +462,7 @@ module Readonly = struct
     let k3, v3 = gen '3' in
 
     Index.replace rw k1 v1;
-    let thread = Index.force_merge ~hook:merge_hook rw in
+    let thread = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
     Semaphore.acquire replace;
     Index.replace rw k2 v2;
     Index.replace rw k3 v3;
@@ -540,14 +540,15 @@ module Close = struct
         ("mem", fun () -> ignore_bool (Index.mem t k : bool));
         ("replace", fun () -> Index.replace t k v);
         ("iter", fun () -> Index.iter (fun _ _ -> ()) t);
-        ( "force_merge",
+        ( "try_merge ~force:true",
           fun () ->
-            let thread = Index.force_merge t in
+            let thread = Index.try_merge_aux ~force:true t in
             Index.await thread |> function
             | Ok `Completed -> ()
             | Ok `Aborted | Error _ ->
                 Alcotest.fail
-                  "Unexpected return status from [force_merge] after close" );
+                  "Unexpected return status from [try_merge ~force:true] after \
+                   close" );
         ("flush", fun () -> Index.flush t);
       ]
     in
@@ -613,7 +614,7 @@ module Close = struct
             Thread.(id (self ()))
     in
     let merge_promise : _ Index.async =
-      Index.force_merge ~hook:(I.Private.Hook.v hook) rw
+      Index.try_merge_aux ~force:true ~hook:(I.Private.Hook.v hook) rw
     in
     Log.app (fun f -> f "Parent: waiting for request to close the index");
     Semaphore.acquire close_request;
@@ -626,9 +627,11 @@ module Close = struct
     Log.app (fun f -> f "Parent: awaiting merge result");
     Index.await merge_promise |> function
     | Ok `Completed ->
-        Alcotest.fail "Force_merge returned `Completed despite concurrent close"
+        Alcotest.fail
+          "try_merge ~force:true returned `Completed despite concurrent close"
     | Error (`Async_exn exn) ->
-        Alcotest.failf "Asynchronous exception occurred during force_merge: %s"
+        Alcotest.failf
+          "Asynchronous exception occurred during try_merge ~force:true: %s"
           (Printexc.to_string exn)
     | Ok `Aborted -> ()
 
@@ -729,14 +732,14 @@ module Throttle = struct
         Alcotest.failf "Expected new binding %a to trigger a merge operation"
           pp_binding binding
 
-  let force_merge () =
+  let merge () =
     let* Context.{ rw; tbl; _ } =
       Context.with_full_index ~throttle:`Overcommit_memory ()
     in
     let m = Semaphore.make false in
     let hook = Hook.v @@ function `Before -> Semaphore.acquire m | _ -> () in
     let (_ : binding) = add_binding rw in
-    let merge_result = Index.force_merge ~hook rw in
+    let merge_result = Index.try_merge_aux ~force:true ~hook rw in
     Hashtbl.iter (fun k v -> Index.replace rw k v) tbl;
     Semaphore.release m;
     Index.await merge_result |> check_completed
@@ -769,8 +772,7 @@ module Throttle = struct
 
   let tests =
     [
-      ("force merge", `Quick, force_merge);
-      ("implicit merge", `Quick, implicit_merge);
+      ("force merge", `Quick, merge); ("implicit merge", `Quick, implicit_merge);
     ]
 end
 

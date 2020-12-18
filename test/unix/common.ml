@@ -163,7 +163,7 @@ struct
       Hashtbl.replace tbl k v
     done;
     Index.flush rw;
-    Index.force_merge rw |> Index.await |> check_completed;
+    Index.try_merge_aux ~force:true rw |> Index.await |> check_completed;
     f := flush_callback (* Enable [flush_callback] *);
     let clone ?(fresh = false) ~readonly () =
       let t =
