@@ -21,7 +21,7 @@ build: [
 depends: [
   "ocaml"   {>= "4.08.0"}
   "dune"    {>= "2.7.0"}
-  "repr"
+  "repr"    {>= "0.2.0"}
   "ppx_repr"
   "fmt"
   "logs"
