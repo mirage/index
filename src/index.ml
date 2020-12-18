@@ -113,8 +113,8 @@ struct
     mutable log_async : log option;
     mutable open_instances : int;
     writer_lock : IO.Lock.t option;
-    mutable merge_lock : Semaphore.t;
-    mutable rename_lock : Semaphore.t;
+    merge_lock : Semaphore.t;
+    rename_lock : Semaphore.t;
     mutable pending_cancel : bool;
         (** Signal the merge thread to terminate prematurely *)
   }
@@ -135,7 +135,7 @@ struct
     if t.config.readonly then raise RO_not_allowed;
     t.pending_cancel <- true;
     hook `Abort_signalled;
-    Semaphore.with_acquire t.merge_lock (fun () ->
+    Semaphore.with_acquire "clear" t.merge_lock (fun () ->
         t.pending_cancel <- false;
         t.generation <- Int64.succ t.generation;
         let log = assert_and_get t.log in
@@ -176,7 +176,7 @@ struct
   let flush ?no_callback ?(with_fsync = false) t =
     let t = check_open t in
     Log.debug (fun l -> l "[%s] flush" (Filename.basename t.root));
-    Semaphore.with_acquire t.rename_lock (fun () ->
+    Semaphore.with_acquire "flush" t.rename_lock (fun () ->
         flush_instance ?no_callback ~with_fsync t)
 
   module IOArray = Io_array.Make (IO) (Entry)
@@ -461,7 +461,7 @@ struct
     let find_index () =
       find_if_exists ~name:"index" ~find:interpolation_search t.index
     in
-    Semaphore.with_acquire t.rename_lock @@ fun () ->
+    Semaphore.with_acquire "find_instance" t.rename_lock @@ fun () ->
     match find_log_async () with
     | e -> e
     | exception Not_found -> (
@@ -552,9 +552,11 @@ struct
   let merge' ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
       ~witness ?(forced = false) t =
     let yield () = check_pending_cancel t in
-    Semaphore.acquire t.merge_lock;
+    let counter = Mtime_clock.counter () in
+    Semaphore.acquire "merge" t.merge_lock;
+    let merge_lock_wait = Mtime_clock.count counter in
     let merge_id = merge_counter () in
-    let merge_start_time = Mtime_clock.counter () in
+    let merge_start_time = Mtime_clock.count counter in
     Log.info (fun l ->
         let pp_forced ppf () = if forced then Fmt.string ppf "; forced=true" in
         l "[%s] merge started { id = %d%a }" (Filename.basename t.root) merge_id
@@ -633,48 +635,56 @@ struct
             | `Completed -> `Index_io index.io
             | `Aborted -> `Aborted)
       in
-      let cleanup_result =
+      let cleanup_result, rename_lock_wait =
         match merge_result with
-        | `Aborted -> `Aborted
+        | `Aborted -> (`Aborted, Mtime.Span.zero)
         | `Index_io io ->
             let fan_out = Fan.finalize fan_out in
             let index = { io; fan_out } in
             IO.set_fanout merge (Fan.export index.fan_out);
-            Semaphore.with_acquire t.rename_lock (fun () ->
-                IO.rename ~src:merge ~dst:index.io;
-                t.index <- Some index;
-                t.generation <- generation;
-                IO.clear ~generation log.io;
-                Tbl.clear log.mem;
-                hook `After_clear;
-                let log_async = assert_and_get t.log_async in
-                let append_io = IO.append log.io in
-                Tbl.iter
-                  (fun key value ->
-                    Tbl.replace log.mem key value;
-                    Entry.encode' key value append_io)
-                  log_async.mem;
-                (* NOTE: It {i may} not be necessary to trigger the
-                   [flush_callback] here. If the instance has been recently
-                   flushed (or [log_async] just reached the [auto_flush_limit]),
-                   we're just moving already-persisted values around. However, we
-                   trigger the callback anyway for simplicity. *)
-                (* `fsync` is necessary, since bindings in `log_async` may have
-                   been explicitely `fsync`ed during the merge, so we need to
-                   maintain their durability. *)
-                (try IO.flush ~with_fsync:true log.io
-                 with exn ->
-                   Semaphore.release t.merge_lock;
-                   raise exn);
-                IO.clear ~generation:(Int64.succ generation) log_async.io;
-                (* log_async.mem does not need to be cleared as we are discarding
-                   it. *)
-                t.log_async <- None);
+            let rename_lock_wait =
+              let before_rename_lock = Mtime_clock.count counter in
+              Semaphore.with_acquire "merge-rename" t.rename_lock (fun () ->
+                  let after_rename_lock = Mtime_clock.count counter in
+                  IO.rename ~src:merge ~dst:index.io;
+                  t.index <- Some index;
+                  t.generation <- generation;
+                  IO.clear ~generation log.io;
+                  Tbl.clear log.mem;
+                  hook `After_clear;
+                  let log_async = assert_and_get t.log_async in
+                  let append_io = IO.append log.io in
+                  Tbl.iter
+                    (fun key value ->
+                      Tbl.replace log.mem key value;
+                      Entry.encode' key value append_io)
+                    log_async.mem;
+                  (* NOTE: It {i may} not be necessary to trigger the
+                     [flush_callback] here. If the instance has been recently
+                     flushed (or [log_async] just reached the [auto_flush_limit]),
+                     we're just moving already-persisted values around. However, we
+                     trigger the callback anyway for simplicity. *)
+                  (* `fsync` is necessary, since bindings in `log_async` may have
+                     been explicitely `fsync`ed during the merge, so we need to
+                     maintain their durability. *)
+                  (try IO.flush ~with_fsync:true log.io
+                   with exn ->
+                     Semaphore.release t.merge_lock;
+                     raise exn);
+                  IO.clear ~generation:(Int64.succ generation) log_async.io;
+                  (* log_async.mem does not need to be cleared as we are discarding
+                     it. *)
+                  t.log_async <- None;
+                  Mtime.Span.abs_diff after_rename_lock before_rename_lock)
+            in
             IO.close log_async.io;
             hook `After;
-            `Completed
+            (`Completed, rename_lock_wait)
       in
-      let merge_duration = Mtime_clock.count merge_start_time in
+      let total_duration = Mtime_clock.count counter in
+      let merge_duration =
+        Mtime.Span.abs_diff total_duration merge_start_time
+      in
       Semaphore.release t.merge_lock;
       Stats.add_merge_duration merge_duration;
       Log.info (fun l ->
@@ -683,18 +693,22 @@ struct
             | `Aborted -> "aborted"
             | `Completed -> "completed"
           in
-          l "[%s] merge %s { id = %d; duration = %a }"
+          l
+            "[%s] merge %s { id=%d; total-duration=%a; merge-duration=%a; \
+             merge-lock=%a; rename-lock=%a }"
             (Filename.basename t.root) action merge_id Mtime.Span.pp
-            merge_duration);
+            total_duration Mtime.Span.pp merge_duration Mtime.Span.pp
+            merge_lock_wait Mtime.Span.pp rename_lock_wait);
       cleanup_result
     in
     if blocking then go () |> Thread.return else Thread.async go
+
+  exception Found of Entry.t
 
   let get_witness t =
     match t.log with
     | None -> None
     | Some log -> (
-        let exception Found of Entry.t in
         match
           Tbl.iter (fun key value -> raise (Found (Entry.v key value))) log.mem
         with
@@ -711,7 +725,7 @@ struct
   let force_merge ?hook t =
     let t = check_open t in
     let witness =
-      Semaphore.with_acquire t.rename_lock (fun () -> get_witness t)
+      Semaphore.with_acquire "witness" t.rename_lock (fun () -> get_witness t)
     in
     match witness with
     | None ->
@@ -739,7 +753,7 @@ struct
           value);
     if t.config.readonly then raise RO_not_allowed;
     let log_limit_reached =
-      Semaphore.with_acquire t.rename_lock (fun () ->
+      Semaphore.with_acquire "replace" t.rename_lock (fun () ->
           let log =
             match t.log_async with
             | Some log -> log
@@ -775,7 +789,7 @@ struct
     Log.debug (fun l -> l "[%s] filter" (Filename.basename t.root));
     if t.config.readonly then raise RO_not_allowed;
     let witness =
-      Semaphore.with_acquire t.rename_lock (fun () -> get_witness t)
+      Semaphore.with_acquire "witness" t.rename_lock (fun () -> get_witness t)
     in
     match witness with
     | None ->
@@ -795,7 +809,7 @@ struct
     | Some log ->
         Tbl.iter f log.mem;
         may (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io) t.index;
-        Semaphore.with_acquire t.rename_lock (fun () ->
+        Semaphore.with_acquire "iter" t.rename_lock (fun () ->
             match t.log_async with None -> () | Some log -> Tbl.iter f log.mem)
 
   let close' ~hook ?immediately it =
@@ -809,7 +823,7 @@ struct
         if abort_merge then (
           t.pending_cancel <- true;
           hook `Abort_signalled);
-        Semaphore.with_acquire t.merge_lock (fun () ->
+        Semaphore.with_acquire "close" t.merge_lock (fun () ->
             it := None;
             t.open_instances <- t.open_instances - 1;
             if t.open_instances = 0 then (

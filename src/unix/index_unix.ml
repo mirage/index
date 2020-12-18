@@ -269,16 +269,23 @@ end
 module Semaphore = struct
   module S = Semaphore_compat.Semaphore.Binary
 
-  let with_acquire t f =
-    S.acquire t;
-    Fun.protect ~finally:(fun () -> S.release t) f
-
   let is_held t =
     let acquired = S.try_acquire t in
     if acquired then S.release t;
     not acquired
 
   include S
+
+  let acquire n t =
+    let x = Mtime_clock.counter () in
+    S.acquire t;
+    let y = Mtime_clock.count x in
+    if Mtime.Span.to_s y > 1. then
+      Log.warn (fun l -> l "Semaphore %s was blocked for %a" n Mtime.Span.pp y)
+
+  let with_acquire n t f =
+    acquire n t;
+    Fun.protect ~finally:(fun () -> S.release t) f
 end
 
 module Thread = struct

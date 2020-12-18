@@ -38,14 +38,14 @@ module type SEMAPHORE = sig
       [true], the semaphore is initially available for acquisition; otherwise,
       the semaphore is initially unavailable. *)
 
-  val acquire : t -> unit
+  val acquire : string -> t -> unit
   (** Acquire the given semaphore. Acquisition is not re-entrant. *)
 
   val release : t -> unit
   (** Release the given semaphore. If any threads are attempting to acquire the
       semaphore, exactly one of them will gain access to the semaphore. *)
 
-  val with_acquire : t -> (unit -> 'a) -> 'a
+  val with_acquire : string -> t -> (unit -> 'a) -> 'a
   (** [with_acquire t f] first obtains [t], then computes [f ()], and finally
       release [t]. *)
 
