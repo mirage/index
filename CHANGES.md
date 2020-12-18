@@ -43,6 +43,8 @@
 - Added values after a clear are found by read-only instances. (#168)
 - Fix a race between `merge` and `sync` (#203, @samoht, @CraigFe)
 - Fix a potential loss of data if a crash occurs at the end of a merge (#232)
+- Fix `Index.iter` to only iterate once over elements persisted on the disk
+  (#260, @samoht, @icristescu)
 
 # 1.2.1 (2020-06-24)
 

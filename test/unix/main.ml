@@ -117,6 +117,21 @@ module Live = struct
     Alcotest.check_raises "Finding absent should raise Not_found" Not_found
       (fun () -> Key.v () |> Index.find rw2 |> ignore_value)
 
+  let duplicate_entries () =
+    let* Context.{ rw; _ } = Context.with_empty_index () in
+    let k1, v1, v2, v3 = (Key.v (), Value.v (), Value.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    Index.replace rw k1 v2;
+    Index.replace rw k1 v3;
+    let thread = Index.force_merge rw in
+    Index.await thread |> check_completed;
+    let once = ref true in
+    Index.iter
+      (fun k v ->
+        if !once && k = k1 && v = v3 then once := false
+        else Alcotest.fail "Index should contain a single entry.")
+      rw
+
   let tests =
     [
       ("find (present)", `Quick, find_present_live);
@@ -128,6 +143,7 @@ module Live = struct
       ("clear and iter", `Quick, iter_after_clear);
       ("clear and find", `Quick, find_after_clear);
       ("open after clear", `Quick, open_after_clear);
+      ("duplicate entries", `Quick, duplicate_entries);
     ]
 end
 
@@ -175,6 +191,20 @@ module DuplicateInstance = struct
     Index.check_binding rw k2 v2;
     Index.check_binding rw2 k1 v1
 
+  let duplicate_entries () =
+    let* Context.{ rw; clone; _ } = Context.with_empty_index () in
+    let k1, v1, v2 = (Key.v (), Value.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    Index.replace rw k1 v2;
+    Index.close rw;
+    let rw2 = clone ~readonly:false () in
+    let once = ref true in
+    Index.iter
+      (fun k v ->
+        if !once && k = k1 && v = v2 then once := false
+        else Alcotest.fail "Index should contain a single entry.")
+      rw2
+
   let tests =
     [
       ("find (present)", `Quick, find_present);
@@ -183,6 +213,7 @@ module DuplicateInstance = struct
       ("membership", `Quick, membership);
       ("fail restart readonly fresh", `Quick, fail_restart_fresh);
       ("in sync", `Quick, sync);
+      ("duplicate entries in log", `Quick, duplicate_entries);
     ]
 end
 

@@ -795,12 +795,7 @@ struct
         Tbl.iter f log.mem;
         may (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io) t.index;
         Semaphore.with_acquire t.rename_lock (fun () ->
-            (match t.log_async with
-            | None -> ()
-            | Some log -> Tbl.iter f log.mem);
-            may
-              (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io)
-              t.index)
+            match t.log_async with None -> () | Some log -> Tbl.iter f log.mem)
 
   let close' ~hook ?immediately it =
     let abort_merge =
