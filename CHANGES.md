@@ -30,6 +30,10 @@
 
 - `Index.merge` is now part of the public API. (#253)
 
+- `Index.try_merge` is now part of the public API. `try_merge' is a no-op if
+  the number of entries in the write-ahead log is smaller than [log_size],
+  otherwise it's `merge'. (#253 @samoht)
+
 ## Changed
 
 - `sync` has to be called by the read-only instance to synchronise with the

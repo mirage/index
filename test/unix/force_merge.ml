@@ -128,7 +128,7 @@ let readonly_and_merge () =
     let v1 = Value.v () in
     Index.replace w k1 v1;
     Index.flush w;
-    let t1 = Index.force_merge w in
+    let t1 = Index.try_merge_aux ~force:true w in
     Index.sync r1;
     Index.sync r2;
     Index.sync r3;
@@ -144,7 +144,7 @@ let readonly_and_merge () =
     Index.sync r2;
     Index.sync r3;
     test_one_entry r1 k1 v1;
-    let t2 = Index.force_merge w in
+    let t2 = Index.try_merge_aux ~force:true w in
     test_one_entry r2 k2 v2;
     test_one_entry r3 k1 v1;
 
@@ -156,12 +156,12 @@ let readonly_and_merge () =
     Index.replace w k2 v2;
     Index.flush w;
     Index.sync r1;
-    let t3 = Index.force_merge w in
+    let t3 = Index.try_merge_aux ~force:true w in
     test_one_entry r1 k1 v1;
     Index.replace w k3 v3;
     Index.flush w;
     Index.sync r3;
-    let t4 = Index.force_merge w in
+    let t4 = Index.try_merge_aux ~force:true w in
     test_one_entry r3 k3 v3;
 
     let k2 = Key.v () in
@@ -171,7 +171,7 @@ let readonly_and_merge () =
     Index.sync r2;
     Index.sync r3;
     test_one_entry w k2 v2;
-    let t5 = Index.force_merge w in
+    let t5 = Index.try_merge_aux ~force:true w in
     test_one_entry w k2 v2;
     test_one_entry r2 k2 v2;
     test_one_entry r3 k1 v1;
@@ -183,7 +183,7 @@ let readonly_and_merge () =
     Index.sync r2;
     Index.sync r3;
     test_one_entry r2 k1 v1;
-    let t6 = Index.force_merge w in
+    let t6 = Index.try_merge_aux ~force:true w in
     test_one_entry w k2 v2;
     test_one_entry r2 k2 v2;
     test_one_entry r3 k2 v2;
@@ -211,7 +211,7 @@ let write_after_merge () =
   let v2 = Value.v () in
   Index.replace w k1 v1;
   let hook = after (fun () -> Index.replace w k2 v2) in
-  let t = Index.force_merge ~hook w in
+  let t = Index.try_merge_aux ~force:true ~hook w in
   Index.await t |> check_completed;
   Index.sync r1;
   test_one_entry r1 k1 v1;
@@ -232,7 +232,7 @@ let replace_while_merge () =
         Index.replace w k2 v2;
         test_one_entry w k2 v2)
   in
-  let t = Index.force_merge ~hook w in
+  let t = Index.try_merge_aux ~force:true ~hook w in
   Index.sync r1;
   test_one_entry r1 k1 v1;
   Index.await t |> check_completed
@@ -250,12 +250,12 @@ let find_while_merge () =
   let v1 = Value.v () in
   Index.replace w k1 v1;
   let f () = test_one_entry w k1 v1 in
-  let t1 = Index.force_merge ~hook:(after f) w in
-  let t2 = Index.force_merge ~hook:(after f) w in
+  let t1 = Index.try_merge_aux ~force:true ~hook:(after f) w in
+  let t2 = Index.try_merge_aux ~force:true ~hook:(after f) w in
   let r1 = clone ~readonly:true () in
   let f () = test_one_entry r1 k1 v1 in
-  let t3 = Index.force_merge ~hook:(before f) w in
-  let t4 = Index.force_merge ~hook:(before f) w in
+  let t3 = Index.try_merge_aux ~force:true ~hook:(before f) w in
+  let t4 = Index.try_merge_aux ~force:true ~hook:(before f) w in
   Index.await t1 |> check_completed;
   Index.await t2 |> check_completed;
   Index.await t3 |> check_completed;
@@ -273,7 +273,7 @@ let find_in_async_generation_change () =
     Index.sync r1;
     test_one_entry r1 k1 v1
   in
-  let t1 = Index.force_merge ~hook:(before f) w in
+  let t1 = Index.try_merge_aux ~force:true ~hook:(before f) w in
   Index.await t1 |> check_completed
 
 let find_in_async_same_generation () =
@@ -294,7 +294,7 @@ let find_in_async_same_generation () =
     Index.sync r1;
     test_one_entry r1 k2 v2
   in
-  let t1 = Index.force_merge ~hook:(before f) w in
+  let t1 = Index.try_merge_aux ~force:true ~hook:(before f) w in
   Index.await t1 |> check_completed
 
 (** RW adds a value in log and flushes it, so every subsequent RO sync should
@@ -308,7 +308,7 @@ let sync_after_clear_log () =
   Index.replace rw k1 v1;
   Index.flush rw;
   let hook = after_clear (fun () -> Index.sync ro) in
-  let t = Index.force_merge ~hook rw in
+  let t = Index.try_merge_aux ~force:true ~hook rw in
   Index.await t |> check_completed;
   test_one_entry ro k1 v1;
   let k2, v2 = (Key.v (), Value.v ()) in
@@ -316,7 +316,7 @@ let sync_after_clear_log () =
   Index.flush rw;
   Index.sync ro;
   let hook = after_clear (fun () -> test_one_entry ro k1 v1) in
-  let t = Index.force_merge ~hook rw in
+  let t = Index.try_merge_aux ~force:true ~hook rw in
   Index.await t |> check_completed
 
 (** during a merge RO sync can miss a value if it reads the generation before
@@ -329,7 +329,7 @@ let merge_during_sync () =
   Index.flush rw;
   let hook =
     before_offset_read (fun () ->
-        let t = Index.force_merge rw in
+        let t = Index.try_merge_aux ~force:true rw in
         Index.await t |> check_completed)
   in
   Index.sync' ~hook ro;
@@ -340,7 +340,7 @@ let test_is_merging () =
   let add_binding_and_merge ~hook =
     let k1, v1 = (Key.v (), Value.v ()) in
     Index.replace rw k1 v1;
-    let t = Index.force_merge ~hook rw in
+    let t = Index.try_merge_aux ~force:true ~hook rw in
     Index.await t |> check_completed
   in
   let f msg b () = Alcotest.(check bool) msg (Index.is_merging rw) b in
@@ -370,7 +370,7 @@ let test_non_blocking_clear () =
     Hook.v @@ function `Abort_signalled -> Semaphore.release merge
   in
   add_bindings rw;
-  let thread = Index.force_merge ~hook:merge_hook rw in
+  let thread = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
   Semaphore.acquire merge_started;
   add_bindings rw;
   Index.clear' ~hook:clear_hook rw;
@@ -396,7 +396,7 @@ let test_abort_merge ~abort_merge () =
   let abort_hook =
     Hook.v @@ function `Abort_signalled -> Semaphore.release merge
   in
-  let t = Index.force_merge ~hook:merge_hook rw in
+  let t = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
   Semaphore.acquire merge_started;
   abort_merge ~hook:abort_hook rw;
   (match Index.await t with
@@ -404,7 +404,7 @@ let test_abort_merge ~abort_merge () =
   | _ -> Alcotest.fail "Merge should have aborted");
   let rw = clone ~readonly:false ~fresh:false () in
   add_bindings rw;
-  let t = Index.force_merge rw in
+  let t = Index.try_merge_aux ~force:true rw in
   Index.await t |> check_completed
 
 let test_clear_aborts_merge = test_abort_merge ~abort_merge:Index.clear'
