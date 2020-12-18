@@ -550,13 +550,15 @@ struct
       !n
 
   let merge' ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
-      ~witness t =
+      ~witness ?(forced = false) t =
     let yield () = check_pending_cancel t in
     Semaphore.acquire t.merge_lock;
     let merge_id = merge_counter () in
     let merge_start_time = Mtime_clock.counter () in
     Log.info (fun l ->
-        l "[%s] merge started { id = %d }" (Filename.basename t.root) merge_id);
+        let pp_forced ppf () = if forced then Fmt.string ppf "; forced=true" in
+        l "[%s] merge started { id = %d%a }" (Filename.basename t.root) merge_id
+          pp_forced ());
     Stats.incr_nb_merge ();
     let log_async =
       let io =
@@ -707,7 +709,6 @@ struct
 
   let force_merge ?hook t =
     let t = check_open t in
-    Log.info (fun l -> l "[%s] forced merge" (Filename.basename t.root));
     let witness =
       Semaphore.with_acquire t.rename_lock (fun () -> get_witness t)
     in
@@ -715,7 +716,7 @@ struct
     | None ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
         Thread.return `Completed
-    | Some witness -> merge' ?hook ~witness t
+    | Some witness -> merge' ~forced:true ?hook ~witness t
 
   let merge t = ignore (force_merge ?hook:None t : _ async)
 
