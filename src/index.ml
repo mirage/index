@@ -553,13 +553,13 @@ struct
       ~witness ?(force = false) t =
     let yield () = check_pending_cancel t in
     let counter = Mtime_clock.counter () in
-    Semaphore.acquire "merge" t.merge_lock;
-    let merge_lock_wait = Mtime_clock.count counter in
     let merge_id = merge_counter () in
-    let merge_start_time = Mtime_clock.count counter in
+    let msg = Fmt.strf "merge { id=%d }" merge_id in
+    Semaphore.acquire msg t.merge_lock;
+    let merge_lock_wait = Mtime_clock.count counter in
     Log.info (fun l ->
         let pp_forced ppf () = if force then Fmt.string ppf "; force=true" in
-        l "[%s] merge started { id = %d%a }" (Filename.basename t.root) merge_id
+        l "[%s] merge started { id=%d%a }" (Filename.basename t.root) merge_id
           pp_forced ());
     Stats.incr_nb_merge ();
     let log_async =
@@ -682,9 +682,7 @@ struct
             (`Completed, rename_lock_wait)
       in
       let total_duration = Mtime_clock.count counter in
-      let merge_duration =
-        Mtime.Span.abs_diff total_duration merge_start_time
-      in
+      let merge_duration = Mtime.Span.abs_diff total_duration merge_lock_wait in
       Semaphore.release t.merge_lock;
       Stats.add_merge_duration merge_duration;
       Log.info (fun l ->
