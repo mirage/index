@@ -23,7 +23,7 @@ Running `stat` on an index after 10 merges:
         "generation": 9
       },
       "log": {
-        "size": "3.9 KiB",
+        "size": "35.1 KiB",
         "offset": 3680,
         "generation": 9
       },
