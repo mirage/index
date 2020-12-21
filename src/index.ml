@@ -217,7 +217,7 @@ struct
       let io =
         IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
       in
-      let mem = Tbl.create 0 in
+      let mem = Tbl.create t.config.log_size in
       iter_io (fun e -> Tbl.replace mem e.key e.value) io;
       Some { io; mem })
     else None
@@ -320,7 +320,7 @@ struct
         Log.debug (fun l ->
             l "[%s] log file detected. Loading %Ld entries"
               (Filename.basename root) entries);
-        let mem = Tbl.create (Int64.to_int entries) in
+        let mem = Tbl.create config.log_size in
         iter_io (fun e -> Tbl.replace mem e.key e.value) io;
         Some { io; mem }
     in
@@ -568,7 +568,9 @@ struct
         IO.v ~flush_callback:t.config.flush_callback ~fresh:true ~readonly:false
           ~generation:(Int64.succ t.generation) ~fan_size:0L log_async_path
       in
-      let mem = Tbl.create 0 in
+      let mem = Tbl.create 1023 in
+      (* we are not using [t.config.log_size] here as log_async is
+         expected to stay relatively small. *)
       { io; mem }
     in
     t.log_async <- Some log_async;
