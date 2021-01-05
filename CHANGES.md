@@ -1,19 +1,23 @@
-# Unreleased
+# 1.3.0 (2021-01-05)
 
 ## Added
 
 - Added `flush_callback` parameter to the creation of a store, to register
   a callback before a flush. This callback can be temporarily disabled by
   `~no_callback:()` to `flush`. (#189, #216)
+
 - Added `Stats.merge_durations` to list the duration of the last 10 merges.
   (#193)
+
 - Added `is_merging` to detect if a merge is running. (#192)
+
 - New `IO.Header.{get,set}` functions to read and write the file headers
   atomically (#175, #204, @icristescu, @CraigFe, @samoht)
+
 - Added a `throttle` configuration option to select the strategy to use
   when the cache are full and an async merge is already in progress. The
-  current behavior is the (default) [`Block_writes] strategy. The new
-  [`Overcommit_memory] does not block but continue to fill the cache instead.
+  current behavior is the (default) `` `Block_writes`` strategy. The new
+  `` `Overcommit_memory`` does not block but continue to fill the cache instead.
   (#209, @samoht)
 
 - Add `IO.exists` obligation for IO implementations, to be used for lazy
@@ -31,7 +35,7 @@
 - `Index.merge` is now part of the public API. (#253)
 
 - `Index.try_merge` is now part of the public API. `try_merge' is a no-op if
-  the number of entries in the write-ahead log is smaller than [log_size],
+  the number of entries in the write-ahead log is smaller than `log_size`,
   otherwise it's `merge'. (#253 @samoht)
 
 ## Changed
