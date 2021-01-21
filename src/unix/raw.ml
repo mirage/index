@@ -65,23 +65,34 @@ let unsafe_read t ~off ~len buf =
   Stats.add_read n;
   n
 
+let assert_read ~len n =
+  assert (
+    if Int.equal n len then true
+    else (
+      Printf.eprintf "Attempted to read %d bytes, but got %d bytes instead!\n%!"
+        len n;
+      false))
+  [@@inline always]
+
 module Offset = struct
   let set t n =
     let buf = encode_int64 n in
     unsafe_write t ~off:0L buf
 
   let get t =
-    let buf = Bytes.create 8 in
-    let n = unsafe_read t ~off:0L ~len:8 buf in
-    assert (n = 8);
+    let len = 8 in
+    let buf = Bytes.create len in
+    let n = unsafe_read t ~off:0L ~len buf in
+    assert_read ~len n;
     decode_int64 (Bytes.unsafe_to_string buf)
 end
 
 module Version = struct
   let get t =
-    let buf = Bytes.create 8 in
-    let n = unsafe_read t ~off:8L ~len:8 buf in
-    assert (n = 8);
+    let len = 8 in
+    let buf = Bytes.create len in
+    let n = unsafe_read t ~off:8L ~len buf in
+    assert_read ~len n;
     Bytes.unsafe_to_string buf
 
   let set t v = unsafe_write t ~off:8L v
@@ -89,9 +100,10 @@ end
 
 module Generation = struct
   let get t =
-    let buf = Bytes.create 8 in
-    let n = unsafe_read t ~off:16L ~len:8 buf in
-    assert (n = 8);
+    let len = 8 in
+    let buf = Bytes.create len in
+    let n = unsafe_read t ~off:16L ~len buf in
+    assert_read ~len n;
     decode_int64 (Bytes.unsafe_to_string buf)
 
   let set t gen =
@@ -106,9 +118,10 @@ module Fan = struct
     if buf <> "" then unsafe_write t ~off:(24L ++ 8L) buf
 
   let get_size t =
-    let size_buf = Bytes.create 8 in
-    let n = unsafe_read t ~off:24L ~len:8 size_buf in
-    assert (n = 8);
+    let len = 8 in
+    let size_buf = Bytes.create len in
+    let n = unsafe_read t ~off:24L ~len size_buf in
+    assert_read ~len n;
     decode_int64 (Bytes.unsafe_to_string size_buf)
 
   let set_size t size =
@@ -119,7 +132,7 @@ module Fan = struct
     let size = Int64.to_int (get_size t) in
     let buf = Bytes.create size in
     let n = unsafe_read t ~off:(24L ++ 8L) ~len:size buf in
-    assert (n = size);
+    assert_read ~len:size n;
     Bytes.unsafe_to_string buf
 end
 
@@ -139,7 +152,7 @@ module Header = struct
   let get t =
     let header = Bytes.create total_header_length in
     let n = unsafe_read t ~off:0L ~len:total_header_length header in
-    assert (n = total_header_length);
+    assert_read ~len:total_header_length n;
     let offset = read_word header 0 |> decode_int64 in
     let version = read_word header 8 in
     let generation = read_word header 16 |> decode_int64 in
