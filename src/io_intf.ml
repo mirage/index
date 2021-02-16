@@ -26,6 +26,8 @@ module type S = sig
 
   val get_fanout : t -> string
 
+  val get_fanout_size : t -> int63
+
   val rename : src:t -> dst:t -> unit
 
   val append : t -> string -> unit

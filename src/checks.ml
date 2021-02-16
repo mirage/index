@@ -46,7 +46,12 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
     @@ info ~doc:"Path to the Index store on disk" ~docv:"PATH" []
 
   module Stat = struct
-    type io = { size : size; offset : int64; generation : int64 }
+    type io = {
+      size : size;
+      offset : int64;
+      generation : int64;
+      fanout_size : size;
+    }
     [@@deriving repr]
 
     type files = {
@@ -73,10 +78,14 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
     let io path =
       with_io path @@ fun io ->
       let IO.Header.{ offset; generation } = IO.Header.get io in
+      let fanout_size =
+        let size = IO.get_fanout_size io |> Int63.to_int in
+        Bytes size
+      in
       let size = Bytes (IO.size io) in
       let offset = Int63.to_int64 offset in
       let generation = Int63.to_int64 generation in
-      { size; offset; generation }
+      { size; offset; generation; fanout_size }
 
     let run ~root =
       Logs.app (fun f -> f "Getting statistics for store: `%s'@," root);

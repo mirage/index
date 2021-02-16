@@ -20,17 +20,20 @@ Running `stat` on an index after 10 merges:
       "data": {
         "size": "35.6 KiB",
         "offset": 36360,
-        "generation": 9
+        "generation": 9,
+        "fanout_size": "128.0 B"
       },
       "log": {
         "size": "3.9 KiB",
         "offset": 3680,
-        "generation": 9
+        "generation": 9,
+        "fanout_size": "0.0 B"
       },
       "log_async": {
         "size": "32.0 B",
         "offset": 0,
-        "generation": 10
+        "generation": 10,
+        "fanout_size": "0.0 B"
       },
       "lock": "<PID>"
     }
