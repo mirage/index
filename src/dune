@@ -2,6 +2,6 @@
  (public_name index)
  (name index)
  (libraries logs fmt stdlib-shims mtime mtime.clock.os cmdliner logs.fmt
-   logs.cli fmt.cli fmt.tty jsonm progress progress.unix repr ppx_repr)
+   logs.cli fmt.cli fmt.tty jsonm progress progress.unix repr ppx_repr optint)
  (preprocess
   (pps ppx_repr)))

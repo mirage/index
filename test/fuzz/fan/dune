@@ -1,6 +1,6 @@
 (executable
  (name main)
- (libraries crowbar index))
+ (libraries crowbar index optint))
 
 (alias
  (name runtest)

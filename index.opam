@@ -34,6 +34,7 @@ depends: [
   "alcotest" {with-test}
   "crowbar"  {with-test & >= "0.2"}
   "re"       {with-test}
+  "optint"
 ]
 synopsis: "A platform-agnostic multi-level index for OCaml"
 description:"""
@@ -46,3 +47,7 @@ run-time can share a common singleton instance.
 
 Index supports multiple-reader/single-writer access. Concurrent access
 is safely managed using lock files."""
+
+pin-depends: [
+  [ "optint.dev" "git+https://github.com/CraigFe/optint#9426474b65180c4086074f3c36ef628882a4c689" ]
+]
