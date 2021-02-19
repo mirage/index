@@ -506,6 +506,7 @@ struct
     let len = entries * Entry.encoded_size in
     let buf = Bytes.create len in
     let refill off = ignore (IO.read index_io ~off ~len buf) in
+    let buf_str = Bytes.create Entry.encoded_size in
     let index_end = IO.offset index_io in
     refill 0L;
     let rec go first_entry index_offset buf_offset log_i =
@@ -520,17 +521,17 @@ struct
         | `Abort -> `Aborted
         | `Continue ->
             Thread.yield ();
-            (if
-             (log_i >= Array.length log
-             ||
-             let key = log.(log_i).key in
-             not K.(equal key e.key))
-             && filter (e.key, e.value)
-            then
-             let buf_str = Bytes.sub buf buf_offset Entry.encoded_size in
-             append_buf_fanout fan_out e.key_hash
-               (Bytes.unsafe_to_string buf_str)
-               dst_io);
+            if
+              (log_i >= Array.length log
+              ||
+              let key = log.(log_i).key in
+              not K.(equal key e.key))
+              && filter (e.key, e.value)
+            then (
+              Bytes.blit buf buf_offset buf_str 0 Entry.encoded_size;
+              append_buf_fanout fan_out e.key_hash
+                (Bytes.unsafe_to_string buf_str)
+                dst_io);
             if first_entry then hook `After_first_entry;
             let buf_offset =
               let n = buf_offset + Entry.encoded_size in
