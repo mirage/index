@@ -509,14 +509,27 @@ struct
     let buf_str = Bytes.create Entry.encoded_size in
     let index_end = IO.offset index_io in
     refill 0L;
+    let filter =
+      Option.fold
+        ~none:(fun _ _ -> true)
+        ~some:(fun f key entry_off ->
+          (* When the filter is not provided, we don't need to decode the value. *)
+          let value =
+            Entry.decode_value (Bytes.unsafe_to_string buf) entry_off
+          in
+          f (key, value))
+        filter
+    in
     let rec go first_entry index_offset buf_offset log_i =
       if index_offset >= index_end then (
         append_remaining_log fan_out log log_i dst_io;
         `Completed)
       else
         let index_offset = Int64.add index_offset entry_sizeL in
-        let e = Entry.decode (Bytes.unsafe_to_string buf) buf_offset in
-        let log_i = merge_from_log fan_out log log_i e.key_hash dst_io in
+        let index_key, index_key_hash =
+          Entry.decode_key (Bytes.unsafe_to_string buf) buf_offset
+        in
+        let log_i = merge_from_log fan_out log log_i index_key_hash dst_io in
         match yield () with
         | `Abort -> `Aborted
         | `Continue ->
@@ -524,12 +537,12 @@ struct
             if
               (log_i >= Array.length log
               ||
-              let key = log.(log_i).key in
-              not K.(equal key e.key))
-              && filter (e.key, e.value)
+              let log_key = log.(log_i).key in
+              not K.(equal log_key index_key))
+              && filter index_key buf_offset
             then (
               Bytes.blit buf buf_offset buf_str 0 Entry.encoded_size;
-              append_buf_fanout fan_out e.key_hash
+              append_buf_fanout fan_out index_key_hash
                 (Bytes.unsafe_to_string buf_str)
                 dst_io);
             if first_entry then hook `After_first_entry;
@@ -550,8 +563,8 @@ struct
       incr n;
       !n
 
-  let merge' ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
-      ~witness ?(force = false) t =
+  let merge' ?(blocking = false) ?filter ?(hook = fun _ -> ()) ~witness
+      ?(force = false) t =
     let yield () = check_pending_cancel t in
     let counter = Mtime_clock.counter () in
     let merge_id = merge_counter () in
@@ -588,9 +601,12 @@ struct
         let compare_entry (e : Entry.t) (e' : Entry.t) =
           compare e.key_hash e'.key_hash
         in
-        Tbl.filter_map_inplace
-          (fun key value -> if filter (key, value) then Some value else None)
-          log.mem;
+        Option.iter
+          (fun f ->
+            Tbl.filter_map_inplace
+              (fun key value -> if f (key, value) then Some value else None)
+              log.mem)
+          filter;
         let b = Array.make (Tbl.length log.mem) witness in
         Tbl.fold
           (fun key value i ->
