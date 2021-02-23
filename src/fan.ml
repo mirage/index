@@ -15,12 +15,12 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
-type 'a t = { fans : int64 array; mask : int; shift : int }
+type 'a t = { fans : Int63.t array; mask : int; shift : int }
 
 let equal t t' =
   let rec loop i =
     if i >= Array.length t.fans then true
-    else if Int64.equal t.fans.(i) t'.fans.(i) then loop (i + 1)
+    else if Int63.equal t.fans.(i) t'.fans.(i) then loop (i + 1)
     else false
   in
   t.mask = t'.mask
@@ -37,7 +37,11 @@ let v ~hash_size ~entry_size n =
   let size = max 0 (int_of_float (ceil (log2 raw_nb_fans))) in
   let nb_fans = 1 lsl size in
   let shift = hash_size - size in
-  { fans = Array.make nb_fans 0L; mask = (nb_fans - 1) lsl shift; shift }
+  {
+    fans = Array.make nb_fans Int63.zero;
+    mask = (nb_fans - 1) lsl shift;
+    shift;
+  }
 
 let nb_fans t = Array.length t.fans
 
@@ -45,7 +49,7 @@ let fan t h = (h land t.mask) lsr t.shift
 
 let search t h =
   let fan = fan t h in
-  let low = if fan = 0 then 0L else t.fans.(fan - 1) in
+  let low = if fan = 0 then Int63.zero else t.fans.(fan - 1) in
   (low, t.fans.(fan))
 
 let update t hash off =
@@ -56,52 +60,30 @@ let finalize t =
   let rec loop curr i =
     if i = Array.length t.fans then ()
     else (
-      if t.fans.(i) = 0L then t.fans.(i) <- curr;
+      if t.fans.(i) = Int63.zero then t.fans.(i) <- curr;
       loop t.fans.(i) (i + 1))
   in
-  loop 0L 0;
+  loop Int63.zero 0;
   (t :> [ `Read ] t)
 
-external set_64 : Bytes.t -> int -> int64 -> unit = "%caml_string_set64u"
-
-external get_64 : string -> int -> int64 = "%caml_string_get64"
-
-external swap64 : int64 -> int64 = "%bswap_int64"
-
-let encode_int64 i =
-  let set_uint64 s off v =
-    if not Sys.big_endian then set_64 s off (swap64 v) else set_64 s off v
-  in
-  let b = Bytes.create 8 in
-  set_uint64 b 0 i;
-  Bytes.to_string b
-
-let decode_int64 buf =
-  let get_uint64 s off =
-    if not Sys.big_endian then swap64 (get_64 s off) else get_64 s off
-  in
-  get_uint64 buf 0
-
-let exported_size t = Array.length t.fans * 8
+let exported_size t = Array.length t.fans * Int63.encoded_size
 
 let export t =
   let encoded_size = exported_size t in
-  let buf = Buffer.create encoded_size in
+  let buf = Bytes.create encoded_size in
   let rec loop i =
     if i >= Array.length t.fans then ()
     else (
-      Buffer.add_string buf (encode_int64 t.fans.(i));
+      Int63.encode buf t.fans.(i) ~off:(i * Int63.encoded_size);
       loop (i + 1))
   in
   loop 0;
-  Buffer.contents buf
+  Bytes.unsafe_to_string buf
 
 let import ~hash_size buf =
   let nb_fans = String.length buf / 8 in
   let fans =
-    Array.init nb_fans (fun i ->
-        let sub = String.sub buf (i * 8) 8 in
-        decode_int64 sub)
+    Array.init nb_fans (fun i -> Int63.decode buf ~off:(i * Int63.encoded_size))
   in
   let size = int_of_float (log2 (float_of_int nb_fans)) in
   let shift = hash_size - size in

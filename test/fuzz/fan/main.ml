@@ -5,7 +5,7 @@ let hash_size = 30
 
 let entry_size = 56
 
-let entry_sizeL = Int64.of_int entry_size
+let entry_sizeL = Int63.of_int entry_size
 
 let int_bound = 100_000_000
 
@@ -23,9 +23,9 @@ let empty_fan = map [ empty_fan_with_size ] fst
 let update_list =
   let rec loop off acc = function
     | [] -> List.rev acc
-    | hash :: t -> loop (Int64.add off entry_sizeL) ((hash, off) :: acc) t
+    | hash :: t -> loop (Int63.add off entry_sizeL) ((hash, off) :: acc) t
   in
-  map [ hash_list ] (loop 0L [])
+  map [ hash_list ] (loop Int63.zero [])
 
 let fan_with_updates =
   map [ empty_fan; update_list ] (fun fan l ->
@@ -50,8 +50,8 @@ let check_updates (fan, updates) =
     (fun (hash, off) ->
       let low, high = Fan.search fan hash in
       if off < low || high < off then
-        failf "hash %d was added at off %Ld, but got low=%Ld, high=%Ld" hash off
-          low high)
+        failf "hash %d was added at off %a, but got low=%a, high=%a" hash
+          Int63.pp off Int63.pp low Int63.pp high)
     updates
 
 let check_fan_size (fan, size) =

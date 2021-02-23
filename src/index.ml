@@ -436,7 +436,9 @@ struct
     let hashed_key = K.hash key in
     let low_bytes, high_bytes = Fan.search index.fan_out hashed_key in
     let low, high =
-      Int64.(div low_bytes entry_sizeL, div high_bytes entry_sizeL)
+      Int64.
+        ( div (Int63.to_int64 low_bytes) entry_sizeL,
+          div (Int63.to_int64 high_bytes) entry_sizeL )
     in
     Search.interpolation_search (IOArray.v index.io) key ~low ~high
 
@@ -478,11 +480,11 @@ struct
     match find_instance t key with _ -> true | exception Not_found -> false
 
   let append_buf_fanout fan_out hash buf_str dst_io =
-    Fan.update fan_out hash (IO.offset dst_io);
+    Fan.update fan_out hash (Int63.of_int64 (IO.offset dst_io));
     IO.append dst_io buf_str
 
   let append_entry_fanout fan_out entry dst_io =
-    Fan.update fan_out entry.Entry.key_hash (IO.offset dst_io);
+    Fan.update fan_out entry.Entry.key_hash (Int63.of_int64 (IO.offset dst_io));
     Entry.encode entry (IO.append dst_io)
 
   let rec merge_from_log fan_out log log_i hash_e dst_io =
