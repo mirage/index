@@ -156,7 +156,7 @@ struct
 
   let clear = clear' ~hook:(fun _ -> ())
 
-  let flush_instance ?no_async ?no_callback ?(with_fsync = false) instance =
+  let flush_instance ?no_async ?(with_fsync = false) instance =
     Log.debug (fun l ->
         l "[%s] flushing instance" (Filename.basename instance.root));
     if instance.config.readonly then raise RO_not_allowed;
@@ -164,20 +164,20 @@ struct
     |> may (fun log ->
            Log.debug (fun l ->
                l "[%s] flushing log" (Filename.basename instance.root));
-           IO.flush ?no_callback ~with_fsync log.io);
+           IO.flush ~with_fsync log.io);
 
     match (no_async, instance.log_async) with
     | Some (), _ | None, None -> ()
     | None, Some log ->
         Log.debug (fun l ->
             l "[%s] flushing log_async" (Filename.basename instance.root));
-        IO.flush ?no_callback ~with_fsync log.io
+        IO.flush ~with_fsync log.io
 
-  let flush ?no_callback ?(with_fsync = false) t =
+  let flush ?(with_fsync = false) t =
     let t = check_open t in
     Log.debug (fun l -> l "[%s] flush" (Filename.basename t.root));
     Semaphore.with_acquire "flush" t.rename_lock (fun () ->
-        flush_instance ?no_callback ~with_fsync t)
+        flush_instance ~with_fsync t)
 
   module IOArray = Io_array.Make (IO) (Entry)
 

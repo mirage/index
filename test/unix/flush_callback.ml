@@ -99,7 +99,7 @@ let test_flush () =
   uncurry (Index.check_binding ro) binding;
 
   let _ = Index.replace_random rw |> uncurry check_no_merge in
-  Index.flush ~no_callback:() rw (* No callback, by user request *);
+  Index.flush rw (* No callback, by user request *);
 
   ()
 

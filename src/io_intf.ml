@@ -16,7 +16,7 @@ module type S = sig
 
   val clear : generation:int64 -> t -> unit
 
-  val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
+  val flush : ?with_fsync:bool -> t -> unit
 
   val get_generation : t -> int64
 
