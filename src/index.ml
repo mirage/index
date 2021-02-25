@@ -237,17 +237,17 @@ struct
         else if offset < h.offset then sync_log_entries ~min:offset log
         else if offset > h.offset then assert false
 
-  let sync_index ~generation t =
-    may (fun (i : index) -> IO.close i.io) t.index;
+  let sync_index t =
+    Option.iter (fun (i : index) -> IO.close i.io) t.index;
     let index_path = Layout.data ~root:t.root in
-    if not (IO.exists index_path) then t.index <- None
-    else
+    if IO.exists index_path then
       let io =
-        IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L index_path
+        IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L index_path
       in
       let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
       if IO.offset io = 0L then t.index <- None
       else t.index <- Some { fan_out; io }
+    else t.index <- None
 
   let sync_log ?(hook = fun _ -> ()) t =
     Log.debug (fun l ->
@@ -281,7 +281,7 @@ struct
                 (Filename.basename t.root));
           t.generation <- h.generation;
           sync_log_entries log;
-          sync_index ~generation:h.generation t)
+          sync_index t)
         else if log_offset < h.offset then (
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
