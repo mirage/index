@@ -45,16 +45,15 @@ module IO : Index.IO = struct
 
   let flush ?no_callback ?(with_fsync = false) t =
     if t.readonly then raise RO_not_allowed;
-    let buf = Buffer.contents t.buf in
-    let offset = t.offset in
-    Buffer.clear t.buf;
-    if buf = "" then ()
-    else (
+    if not (Buffer.is_empty t.buf) then (
+      let buf_len = Buffer.length t.buf in
+      let offset = t.offset in
       (match no_callback with Some () -> () | None -> t.flush_callback ());
-      Log.debug (fun l -> l "[%s] flushing %d bytes" t.file (String.length buf));
-      Raw.unsafe_write t.raw ~off:t.flushed buf;
+      Log.debug (fun l -> l "[%s] flushing %d bytes" t.file buf_len);
+      Buffer.write_with (Raw.unsafe_write t.raw ~off:t.flushed) t.buf;
+      Buffer.clear t.buf;
       Raw.Offset.set t.raw offset;
-      assert (t.flushed ++ Int63.of_int (String.length buf) = t.header ++ offset);
+      assert (t.flushed ++ Int63.of_int buf_len = t.header ++ offset);
       t.flushed <- offset ++ t.header);
     if with_fsync then Raw.fsync t.raw
 
