@@ -8,10 +8,10 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
 
     (** This module never makes persistent changes *)
     let v =
-      v ~fresh:false ~readonly:true ?flush_callback:None ~generation:0L
-        ~fan_size:0L
+      v ~fresh:false ~readonly:true ?flush_callback:None ~generation:Int63.zero
+        ~fan_size:Int63.zero
 
-    let page_size = Int64.(mul (of_int Entry.encoded_size) 1000L)
+    let page_size = Int63.of_int (Entry.encoded_size * 1000)
 
     let iter ?min ?max f =
       iter ?min ?max ~page_size (fun ~off ~buf ~buf_off ->
@@ -73,6 +73,8 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       with_io path @@ fun io ->
       let IO.Header.{ offset; generation } = IO.Header.get io in
       let size = Bytes (IO.size io) in
+      let offset = Int63.to_int64 offset in
+      let generation = Int63.to_int64 generation in
       { size; offset; generation }
 
     let run ~root =
@@ -97,14 +99,16 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
   end
 
   module Integrity_check = struct
-    let encoded_sizeL = Int64.of_int Entry.encoded_size
+    let encoded_sizeL = Int63.of_int Entry.encoded_size
+
+    let encoded_sizeLd = Int64.of_int Entry.encoded_size
 
     let print_window_around central_offset io context =
       let window_size = (2 * context) + 1 in
       List.init window_size (fun i ->
           let index = i - context in
-          Int64.(add central_offset (mul (of_int index) encoded_sizeL)))
-      |> List.filter (fun off -> Int64.compare off 0L >= 0)
+          Int63.(add central_offset (mul (of_int index) encoded_sizeL)))
+      |> List.filter (fun off -> Int63.compare off Int63.zero >= 0)
       |> List.map (fun off ->
              let entry = IO.read_entry io off in
              let highlight =
@@ -117,25 +121,25 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       let context = 2 in
       let io = IO.v (Layout.data ~root) in
       let io_offset = IO.offset io in
-      if Int64.compare io_offset encoded_sizeL < 0 then (
-        if not (Int64.equal io_offset 0L) then
+      if Int63.compare io_offset encoded_sizeL < 0 then (
+        if not (Int63.equal io_offset Int63.zero) then
           Fmt.failwith
-            "Non-integer number of entries in file: { offset = %Ld; entry_size \
+            "Non-integer number of entries in file: { offset = %a; entry_size \
              = %d }"
-            io_offset Entry.encoded_size)
+            Int63.pp io_offset Entry.encoded_size)
       else
-        let first_entry = IO.read_entry io 0L in
+        let first_entry = IO.read_entry io Int63.zero in
         let previous = ref first_entry in
         Format.eprintf "\n%!";
         Progress_unix.(
-          counter ~total:io_offset ~mode:`UTF8
+          counter ~total:(Int63.to_int64 io_offset) ~mode:`UTF8
             ~message:"Scanning store for faults" ~pp:Progress.Units.bytes
             ~sampling_interval:100_000 ()
           |> with_reporters)
         @@ fun report ->
         io
         |> IO.iter ~min:encoded_sizeL (fun off e ->
-               report encoded_sizeL;
+               report encoded_sizeLd;
                if !previous.key_hash > e.key_hash then
                  Log.err (fun f ->
                      f "Found non-monotonic region:@,%a@,"

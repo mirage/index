@@ -5,20 +5,20 @@ module type S = sig
     ?flush_callback:(unit -> unit) ->
     readonly:bool ->
     fresh:bool ->
-    generation:int64 ->
-    fan_size:int64 ->
+    generation:Int63.t ->
+    fan_size:Int63.t ->
     string ->
     t
 
-  val offset : t -> int64
+  val offset : t -> Int63.t
 
-  val read : t -> off:int64 -> len:int -> bytes -> int
+  val read : t -> off:Int63.t -> len:int -> bytes -> int
 
-  val clear : generation:int64 -> t -> unit
+  val clear : generation:Int63.t -> t -> unit
 
   val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
 
-  val get_generation : t -> int64
+  val get_generation : t -> Int63.t
 
   val set_fanout : t -> string -> unit
 
@@ -42,7 +42,7 @@ module type S = sig
   end
 
   module Header : sig
-    type header = { offset : int64; generation : int64 }
+    type header = { offset : Int63.t; generation : Int63.t }
 
     val set : t -> header -> unit
 
@@ -68,10 +68,10 @@ module type Io = sig
     include S with type t = S.t
 
     val iter :
-      page_size:int64 ->
-      ?min:int64 ->
-      ?max:int64 ->
-      (off:int64 -> buf:string -> buf_off:int -> int) ->
+      page_size:Int63.t ->
+      ?min:Int63.t ->
+      ?max:Int63.t ->
+      (off:Int63.t -> buf:string -> buf_off:int -> int) ->
       t ->
       unit
   end

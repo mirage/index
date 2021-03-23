@@ -71,7 +71,7 @@ struct
     let to_value { value; _ } = value
   end
 
-  let entry_sizeL = Int64.of_int Entry.encoded_size
+  let entry_sizeL = Int63.of_int Entry.encoded_size
 
   module Tbl = Hashtbl.Make (K)
 
@@ -79,7 +79,7 @@ struct
     include Io.Extend (IO)
 
     let iter ?min ?max f =
-      let page_size = Int64.mul entry_sizeL 1_000L in
+      let page_size = Int63.(mul entry_sizeL (of_int 1_000)) in
       iter ~page_size ?min ?max (fun ~off ~buf ~buf_off ->
           let entry = Entry.decode buf buf_off in
           f off entry;
@@ -118,7 +118,7 @@ struct
   type instance = {
     config : config;
     root : string;  (** The root location of the index *)
-    mutable generation : int64;
+    mutable generation : Int63.t;
         (** The generation is a counter of rewriting operations (e.g. [clear]
             and [merge]). It is used to sync RO instances. *)
     mutable index : index option;
@@ -167,7 +167,7 @@ struct
     hook `Abort_signalled;
     Semaphore.with_acquire "clear" t.merge_lock (fun () ->
         t.pending_cancel <- false;
-        t.generation <- Int64.succ t.generation;
+        t.generation <- Int63.succ t.generation;
         let log = Option.get t.log in
         IO.clear ~generation:t.generation log.io;
         Tbl.clear log.mem;
@@ -222,7 +222,8 @@ struct
           (Filename.basename path));
     if IO.exists path then (
       let io =
-        IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
+        IO.v ~fresh:false ~readonly:true ~generation:Int63.zero
+          ~fan_size:Int63.zero path
       in
       let mem = Tbl.create 0 in
       iter_io (fun e -> Tbl.replace mem e.key e.value) io;
@@ -258,13 +259,14 @@ struct
     let index_path = Layout.data ~root:t.root in
     if IO.exists index_path then
       let io =
-        IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L index_path
+        IO.v ~fresh:false ~readonly:true ~generation:Int63.zero
+          ~fan_size:Int63.zero index_path
         (* Only [readonly] and [fresh] are actually used in this
            configuration. *)
       in
       let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
       (* We maintain that [index] is [None] if the file is empty. *)
-      if IO.offset io = 0L then t.index <- None
+      if IO.offset io = Int63.zero then t.index <- None
       else t.index <- Some { fan_out; io }
     else t.index <- None
 
@@ -340,23 +342,21 @@ struct
           let low_in = float_of_int low_metric in
           let high_in = float_of_int high_metric in
           let target_in = float_of_int key_metric in
-          let low_out = Int64.to_float low_index in
-          let high_out = Int64.to_float high_index in
+          let low_out = Int63.to_float low_index in
+          let high_out = Int63.to_float high_index in
           (* Fractional position of [target_in] along the line from [low_in] to [high_in] *)
           let proportion = (target_in -. low_in) /. (high_in -. low_in) in
           (* Convert fractional position to position in output space *)
           let position = low_out +. (proportion *. (high_out -. low_out)) in
           let rounded = ceil (position -. 0.5) +. 0.5 in
-          Int64.of_float rounded
+          Int63.of_float rounded
       end)
 
   let interpolation_search index key =
     let hashed_key = K.hash key in
     let low_bytes, high_bytes = Fan.search index.fan_out hashed_key in
     let low, high =
-      Int64.
-        ( div (Int63.to_int64 low_bytes) entry_sizeL,
-          div (Int63.to_int64 high_bytes) entry_sizeL )
+      Int63.(div low_bytes entry_sizeL, div high_bytes entry_sizeL)
     in
     Search.interpolation_search (IOArray.v index.io) key ~low ~high
 
@@ -434,32 +434,32 @@ struct
       if readonly then if fresh then raise RO_not_allowed else None
       else
         let io =
-          IO.v ~flush_callback ~fresh ~readonly ~generation:0L ~fan_size:0L
-            log_path
+          IO.v ~flush_callback ~fresh ~readonly ~generation:Int63.zero
+            ~fan_size:Int63.zero log_path
         in
-        let entries = Int64.div (IO.offset io) entry_sizeL in
+        let entries = Int63.div (IO.offset io) entry_sizeL in
         Log.debug (fun l ->
-            l "[%s] log file detected. Loading %Ld entries"
-              (Filename.basename root) entries);
-        let mem = Tbl.create (Int64.to_int entries) in
+            l "[%s] log file detected. Loading %a entries"
+              (Filename.basename root) Int63.pp entries);
+        let mem = Tbl.create (Int63.to_int entries) in
         iter_io (fun e -> Tbl.replace mem e.key e.value) io;
         Some { io; mem }
     in
     let generation =
-      match log with None -> 0L | Some log -> IO.get_generation log.io
+      match log with None -> Int63.zero | Some log -> IO.get_generation log.io
     in
     let log_async_path = Layout.log_async ~root in
     (* If we are in readonly mode, the log_async will be read during sync_log so
        there is no need to do it here. *)
     if (not readonly) && IO.exists log_async_path then (
       let io =
-        IO.v ~flush_callback ~fresh ~readonly:false ~generation:0L ~fan_size:0L
-          log_async_path
+        IO.v ~flush_callback ~fresh ~readonly:false ~generation:Int63.zero
+          ~fan_size:Int63.zero log_async_path
       in
-      let entries = Int64.div (IO.offset io) entry_sizeL in
+      let entries = Int63.div (IO.offset io) entry_sizeL in
       Log.debug (fun l ->
-          l "[%s] log_async file detected. Loading %Ld entries"
-            (Filename.basename root) entries);
+          l "[%s] log_async file detected. Loading %a entries"
+            (Filename.basename root) Int63.pp entries);
       (* If we are not in fresh mode, we move the contents of log_async to
          log. *)
       if not fresh then
@@ -482,15 +482,15 @@ struct
           (* NOTE: No [flush_callback] on the Index IO as we maintain the
              invariant that any bindings it contains were previously persisted
              in either [log] or [log_async]. *)
-          IO.v ?flush_callback:None ~fresh ~readonly ~generation ~fan_size:0L
-            index_path
+          IO.v ?flush_callback:None ~fresh ~readonly ~generation
+            ~fan_size:Int63.zero index_path
         in
-        let entries = Int64.div (IO.offset io) entry_sizeL in
-        if entries = 0L then None
+        let entries = Int63.div (IO.offset io) entry_sizeL in
+        if entries = Int63.zero then None
         else (
           Log.debug (fun l ->
-              l "[%s] index file detected. Loading %Ld entries"
-                (Filename.basename root) entries);
+              l "[%s] index file detected. Loading %a entries"
+                (Filename.basename root) Int63.pp entries);
           let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
           Some { fan_out; io })
       else (
@@ -558,12 +558,12 @@ struct
   (** Appends the entry encoded in [buf] into [dst_io] and registers it in
       [fan_out] with hash [hash]. *)
   let append_buf_fanout fan_out hash buf_str dst_io =
-    Fan.update fan_out hash (Int63.of_int64 (IO.offset dst_io));
+    Fan.update fan_out hash (IO.offset dst_io);
     IO.append dst_io buf_str
 
   (** Appends [entry] into [dst_io] and registers it in [fan_out]. *)
   let append_entry_fanout fan_out entry dst_io =
-    Fan.update fan_out entry.Entry.key_hash (Int63.of_int64 (IO.offset dst_io));
+    Fan.update fan_out entry.Entry.key_hash (IO.offset dst_io);
     Entry.encode entry (IO.append dst_io)
 
   (** Appends the [log] values into [dst_io], from [log_i] to the first value
@@ -596,7 +596,7 @@ struct
     let refill off = ignore (IO.read index_io ~off ~len buf) in
     let buf_str = Bytes.create Entry.encoded_size in
     let index_end = IO.offset index_io in
-    refill 0L;
+    refill Int63.zero;
     let filter =
       Option.fold
         ~none:(fun _ _ -> true)
@@ -617,7 +617,7 @@ struct
         append_remaining_log fan_out log log_i dst_io;
         `Completed)
       else
-        let index_offset = Int64.add index_offset entry_sizeL in
+        let index_offset = Int63.add index_offset entry_sizeL in
         let index_key, index_key_hash =
           Entry.decode_key (Bytes.unsafe_to_string buf) buf_offset
         in
@@ -652,7 +652,7 @@ struct
             in
             (go [@tailcall]) false index_offset buf_offset log_i
     in
-    (go [@tailcall]) true 0L 0 0
+    (go [@tailcall]) true Int63.zero 0 0
 
   (** Increases and returns the merge counter. *)
   let merge_counter =
@@ -678,7 +678,8 @@ struct
       let io =
         let log_async_path = Layout.log_async ~root:t.root in
         IO.v ~flush_callback:t.config.flush_callback ~fresh:true ~readonly:false
-          ~generation:(Int64.succ t.generation) ~fan_size:0L log_async_path
+          ~generation:(Int63.succ t.generation) ~fan_size:Int63.zero
+          log_async_path
       in
       let mem = Tbl.create 0 in
       { io; mem }
@@ -694,7 +695,7 @@ struct
     let go () =
       hook `Before;
       let log = Option.get t.log in
-      let generation = Int64.succ t.generation in
+      let generation = Int63.succ t.generation in
       let log_array =
         let compare_entry (e : Entry.t) (e' : Entry.t) =
           compare e.key_hash e'.key_hash
@@ -719,7 +720,7 @@ struct
         match t.index with
         | None -> Tbl.length log.mem
         | Some index ->
-            (Int64.to_int (IO.offset index.io) / Entry.encoded_size)
+            (Int63.to_int (IO.offset index.io) / Entry.encoded_size)
             + Array.length log_array
       in
       let fan_out =
@@ -728,7 +729,7 @@ struct
       let merge =
         let merge_path = Layout.merge ~root:t.root in
         IO.v ~fresh:true ~readonly:false ~generation
-          ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
+          ~fan_size:(Int63.of_int (Fan.exported_size fan_out))
           merge_path
       in
       let merge_result : [ `Index_io of IO.t | `Aborted ] =
@@ -738,8 +739,8 @@ struct
             | `Abort -> `Aborted
             | `Continue ->
                 let io =
-                  IO.v ~fresh:true ~readonly:false ~generation ~fan_size:0L
-                    (Layout.data ~root:t.root)
+                  IO.v ~fresh:true ~readonly:false ~generation
+                    ~fan_size:Int63.zero (Layout.data ~root:t.root)
                 in
                 append_remaining_log fan_out log_array 0 merge;
                 `Index_io io)
@@ -786,7 +787,7 @@ struct
                    with exn ->
                      Semaphore.release t.merge_lock;
                      raise exn);
-                  IO.clear ~generation:(Int64.succ generation) log_async.io;
+                  IO.clear ~generation:(Int63.succ generation) log_async.io;
                   (* log_async.mem does not need to be cleared as we are discarding
                      it. *)
                   t.log_async <- None;
@@ -832,7 +833,9 @@ struct
             | None -> None
             | Some index ->
                 let buf = Bytes.create Entry.encoded_size in
-                let n = IO.read index.io ~off:0L ~len:Entry.encoded_size buf in
+                let n =
+                  IO.read index.io ~off:Int63.zero ~len:Entry.encoded_size buf
+                in
                 assert (n = Entry.encoded_size);
                 Some (Entry.decode (Bytes.unsafe_to_string buf) 0)))
 
@@ -856,8 +859,8 @@ struct
         | Some log ->
             if
               force
-              || Int64.compare (IO.offset log.io)
-                   (Int64.of_int t.config.log_size)
+              || Int63.compare (IO.offset log.io)
+                   (Int63.of_int t.config.log_size)
                  > 0
             then merge' ~force ?hook ~witness t
             else Thread.return `Completed)
@@ -893,7 +896,7 @@ struct
           in
           Entry.encode' key value (IO.append log.io);
           Tbl.replace log.mem key value;
-          Int64.compare (IO.offset log.io) (Int64.of_int t.config.log_size) > 0)
+          Int63.compare (IO.offset log.io) (Int63.of_int t.config.log_size) > 0)
     in
     if log_limit_reached && not overcommit then
       let is_merging = instance_is_merging t in

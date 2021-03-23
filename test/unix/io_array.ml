@@ -29,7 +29,8 @@ module IOArray = Index.Private.Io_array.Make (IO) (Entry)
 let entry = Alcotest.(pair string string)
 
 let fresh_io name =
-  IO.v ~readonly:false ~fresh:true ~generation:0L ~fan_size:0L (root // name)
+  IO.v ~readonly:false ~fresh:true ~generation:Int63.zero ~fan_size:Int63.zero
+    (root // name)
 
 (* Append a random sequence of [size] keys to an IO instance and return
    a pair of an IOArray and an equivalent in-memory array. *)
@@ -53,7 +54,7 @@ let read_sequential () =
   let mem_arr, io_arr = populate_random ~size io in
   for i = 0 to size - 1 do
     let expected = mem_arr.(i) in
-    let actual = IOArray.get io_arr (Int64.of_int i) in
+    let actual = IOArray.get io_arr (Int63.of_int i) in
     Alcotest.(check entry)
       (Fmt.strf "Inserted key at index %i is accessible" i)
       expected actual
@@ -63,12 +64,12 @@ let read_sequential_prefetch () =
   let size = 1000 in
   let io = fresh_io "read_sequential_prefetch" in
   let mem_arr, io_arr = populate_random ~size io in
-  IOArray.pre_fetch io_arr ~low:0L ~high:999L;
+  IOArray.pre_fetch io_arr ~low:Int63.zero ~high:(Int63.of_int 999);
 
   (* Read the arrays backwards *)
   for i = size - 1 to 0 do
     let expected = mem_arr.(i) in
-    let actual = IOArray.get io_arr (Int64.of_int i) in
+    let actual = IOArray.get io_arr (Int63.of_int i) in
     Alcotest.(check entry)
       (Fmt.strf "Inserted key at index %i is accessible" i)
       expected actual

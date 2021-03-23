@@ -14,9 +14,9 @@ type t
 val v : Unix.file_descr -> t
 (** Construct a [raw] value from a file descriptor. *)
 
-val unsafe_write : t -> off:int64 -> string -> unit
+val unsafe_write : t -> off:Int63.t -> string -> unit
 
-val unsafe_read : t -> off:int64 -> len:int -> bytes -> int
+val unsafe_read : t -> off:Int63.t -> len:int -> bytes -> int
 
 val fsync : t -> unit
 
@@ -31,15 +31,15 @@ module Version : sig
 end
 
 module Offset : sig
-  val get : t -> int64
+  val get : t -> Int63.t
 
-  val set : t -> int64 -> unit
+  val set : t -> Int63.t -> unit
 end
 
 module Generation : sig
-  val get : t -> int64
+  val get : t -> Int63.t
 
-  val set : t -> int64 -> unit
+  val set : t -> Int63.t -> unit
 end
 
 module Fan : sig
@@ -47,18 +47,18 @@ module Fan : sig
 
   val set : t -> string -> unit
 
-  val get_size : t -> int64
+  val get_size : t -> Int63.t
 
-  val set_size : t -> int64 -> unit
+  val set_size : t -> Int63.t -> unit
 end
 
 module Header : sig
   type raw
 
   type t = {
-    offset : int64;  (** The length of the file containing valid data *)
+    offset : Int63.t;  (** The length of the file containing valid data *)
     version : string;  (** Format version *)
-    generation : int64;  (** Generation number *)
+    generation : Int63.t;  (** Generation number *)
   }
 
   val get : raw -> t

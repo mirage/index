@@ -26,17 +26,17 @@ let current_version = "00000001"
 module Stats = Index.Stats
 
 module IO : Index.IO = struct
-  external ( ++ ) : int64 -> int64 -> int64 = "%int64_add"
+  let ( ++ ) = Int63.add
 
-  external ( -- ) : int64 -> int64 -> int64 = "%int64_sub"
+  let ( -- ) = Int63.sub
 
   type t = {
     mutable file : string;
-    mutable header : int64;
+    mutable header : Int63.t;
     mutable raw : Raw.t;
-    mutable offset : int64;
-    mutable flushed : int64;
-    mutable fan_size : int64;
+    mutable offset : Int63.t;
+    mutable flushed : Int63.t;
+    mutable fan_size : Int63.t;
     readonly : bool;
     buf : Buffer.t;
     flush_callback : unit -> unit;
@@ -53,7 +53,7 @@ module IO : Index.IO = struct
       Log.debug (fun l -> l "[%s] flushing %d bytes" t.file (String.length buf));
       Raw.unsafe_write t.raw ~off:t.flushed buf;
       Raw.Offset.set t.raw offset;
-      assert (t.flushed ++ Int64.of_int (String.length buf) = t.header ++ offset);
+      assert (t.flushed ++ Int63.of_int (String.length buf) = t.header ++ offset);
       t.flushed <- offset ++ t.header);
     if with_fsync then Raw.fsync t.raw
 
@@ -73,12 +73,12 @@ module IO : Index.IO = struct
     if not t.readonly then Buffer.clear t.buf;
     Raw.close t.raw
 
-  let auto_flush_limit = 1_000_000L
+  let auto_flush_limit = Int63.of_int 1_000_000
 
   let append t buf =
     if t.readonly then raise RO_not_allowed;
     Buffer.add_string t.buf buf;
-    let len = Int64.of_int (String.length buf) in
+    let len = Int63.of_int (String.length buf) in
     t.offset <- t.offset ++ len;
     if t.offset -- t.flushed > auto_flush_limit then flush t
 
@@ -90,20 +90,21 @@ module IO : Index.IO = struct
 
   let get_generation t =
     let i = Raw.Generation.get t.raw in
-    Log.debug (fun m -> m "get_generation: %Ld" i);
+    Log.debug (fun m -> m "get_generation: %a" Int63.pp i);
     i
 
   let get_fanout t = Raw.Fan.get t.raw
 
   let set_fanout t buf =
-    assert (Int64.equal (Int64.of_int (String.length buf)) t.fan_size);
+    assert (Int63.(equal (of_int (String.length buf)) t.fan_size));
     Raw.Fan.set t.raw buf
 
   module Header = struct
-    type header = { offset : int64; generation : int64 }
+    type header = { offset : Int63.t; generation : Int63.t }
 
     let pp ppf { offset; generation } =
-      Format.fprintf ppf "{ offset = %Ld; generation = %Ld }" offset generation
+      Format.fprintf ppf "{ offset = %a; generation = %a }" Int63.pp offset
+        Int63.pp generation
 
     let get t =
       let Raw.Header.{ offset; generation; _ } = Raw.Header.get t.raw in
@@ -143,7 +144,7 @@ module IO : Index.IO = struct
     (aux [@tailcall]) dirname (fun () -> ())
 
   let clear ~generation t =
-    t.offset <- 0L;
+    t.offset <- Int63.zero;
     t.flushed <- t.header;
     Header.set t { offset = t.offset; generation };
     Raw.Fan.set t.raw "";
@@ -155,7 +156,8 @@ module IO : Index.IO = struct
   let v ?(flush_callback = fun () -> ()) ~readonly ~fresh ~generation ~fan_size
       file =
     let v ~fan_size ~offset raw =
-      let header = 8L ++ 8L ++ 8L ++ 8L ++ fan_size in
+      let eight = Int63.of_int 8 in
+      let header = eight ++ eight ++ eight ++ eight ++ fan_size in
       {
         header;
         file;
@@ -174,22 +176,22 @@ module IO : Index.IO = struct
     | false ->
         let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; mode ] 0o644 in
         let raw = Raw.v x in
-        Raw.Offset.set raw 0L;
+        Raw.Offset.set raw Int63.zero;
         Raw.Fan.set_size raw fan_size;
         Raw.Version.set raw current_version;
         Raw.Generation.set raw generation;
-        v ~fan_size ~offset:0L raw
+        v ~fan_size ~offset:Int63.zero raw
     | true ->
         let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; mode ] 0o644 in
         let raw = Raw.v x in
         if readonly && fresh then
           Fmt.failwith "IO.v: cannot reset a readonly file"
         else if fresh then (
-          Raw.Offset.set raw 0L;
+          Raw.Offset.set raw Int63.zero;
           Raw.Fan.set_size raw fan_size;
           Raw.Version.set raw current_version;
           Raw.Generation.set raw generation;
-          v ~fan_size ~offset:0L raw)
+          v ~fan_size ~offset:Int63.zero raw)
         else
           let version = Raw.Version.get raw in
           if version <> current_version then

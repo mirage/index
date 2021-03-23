@@ -18,7 +18,7 @@ all copies or substantial portions of the Software. *)
 (* Metrics must be
     - totally ordered
     - computable from entries and (potentially redundantly) from keys
-    - linearly interpolate-able on the int64 type *)
+    - linearly interpolate-able on the int63 type *)
 
 include Search_intf
 
@@ -46,9 +46,9 @@ module Make
   end
 
   let look_around array key key_metric index =
-    let rec search (op : int64 -> int64) curr =
+    let rec search (op : Int63.t -> Int63.t) curr =
       let i = op curr in
-      if i < 0L || i >= Array.length array then raise Not_found
+      if i < Int63.zero || i >= Array.length array then raise Not_found
       else
         let e = array.(i) in
         let e_metric = Metric.of_entry e in
@@ -56,8 +56,8 @@ module Make
         else if Key.equal (Entry.to_key e) key then Entry.to_value e
         else (search [@tailcall]) op i
     in
-    try search Int64.pred index
-    with Not_found -> (search [@tailcall]) Int64.succ index
+    try search Int63.pred index
+    with Not_found -> (search [@tailcall]) Int63.succ index
 
   (** Improves over binary search in cases where the values in some array are
       uniformly distributed according to some metric (such as a hash). *)
@@ -92,15 +92,15 @@ module Make
                 else look_around array key key_metric next_index
               else if Metric.(key_metric > e_metric) then
                 (search [@tailcall])
-                  Int64.(succ next_index)
+                  Int63.(succ next_index)
                   high
-                  (lazy array.(Int64.(succ next_index)))
+                  (lazy array.(Int63.(succ next_index)))
                   (Lazy.from_val highest_entry)
               else
-                (search [@tailcall]) low (Int64.pred next_index)
+                (search [@tailcall]) low (Int63.pred next_index)
                   (Lazy.from_val lowest_entry)
-                  (lazy array.(Int64.(pred next_index))))
+                  (lazy array.(Int63.(pred next_index))))
     in
-    if high < 0L then raise Not_found
+    if high < Int63.zero then raise Not_found
     else (search [@tailcall]) low high (lazy array.(low)) (lazy array.(high))
 end
