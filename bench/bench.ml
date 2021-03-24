@@ -49,7 +49,7 @@ module Context = struct
 
     let hash_size = 30
 
-    let encode s = s
+    let encode s f = f s
 
     let decode s off = String.sub s off key_size
 
@@ -63,7 +63,7 @@ module Context = struct
 
     let v () = random_string value_size
 
-    let encode s = s
+    let encode s f = f s
 
     let decode s off = String.sub s off value_size
 

@@ -19,10 +19,12 @@ module Entry = struct
     (key, value)
 
   let append_io io (key, value) =
-    let encoded_key = Key.encode key in
-    let encoded_value = Value.encode value in
-    IO.append io encoded_key;
-    IO.append io encoded_value
+    (* Even though the key is an unary value, if a crash occurs between the
+       [Key.encode] and [Value.encode] calls, the flushed value will be
+       incomplete. Hence the use of [append_batch] *)
+    IO.append_batch io (fun f ->
+        Key.encode key f;
+        Value.encode value f)
 end
 
 module IOArray = Index.Private.Io_array.Make (IO) (Entry)

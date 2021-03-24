@@ -776,6 +776,39 @@ module Throttle = struct
     ]
 end
 
+(* Tests of {Data.encode} and {Data.encode'} *)
+module Encode = struct
+  module E = I.Private.Data.Entry.Make (Key) (Value)
+  module EDS = I.Private.Data.Entry.Make (KeyDS) (Value)
+
+  let testable repr =
+    Alcotest.testable
+      (Repr.pp_json ~minify:false repr)
+      Repr.(unstage (equal repr))
+
+  let encode () =
+    let e = E.v "abcdefghijklmnopqrst" "AbcdefghijklmnopqrsT" in
+    let buf = Buffer.create 30 in
+    E.encode e (Buffer.add_string buf);
+    let ed = E.decode (Buffer.contents buf) 0 in
+    let msg = Fmt.str "%a" (Repr.pp E.t) e in
+    Alcotest.check (testable E.t) msg e ed
+
+  let encodeDS () =
+    let e =
+      EDS.v
+        ("abcdefghijklmnopqrst", "ABCDEFGHIJKLMNOPQRST")
+        "AbcdefghijklmnopqrsT"
+    in
+    let buf = Buffer.create 30 in
+    EDS.encode e (Buffer.add_string buf);
+    let ed = EDS.decode (Buffer.contents buf) 0 in
+    let msg = Fmt.str "%a" (Repr.pp EDS.t) e in
+    Alcotest.check (testable EDS.t) msg e ed
+
+  let tests = [ ("encode", `Quick, encode); ("encodeds", `Quick, encodeDS) ]
+end
+
 let () =
   Common.report ();
   Alcotest.run "index.unix"
@@ -789,4 +822,5 @@ let () =
       ("filter", Filter.tests);
       ("flush_callback", Flush_callback.tests);
       ("throttle", Throttle.tests);
+      ("encode", Encode.tests);
     ]

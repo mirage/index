@@ -31,7 +31,14 @@ module type S = sig
 
   val rename : src:t -> dst:t -> unit
 
-  val append : t -> string -> unit
+  val append_batch : t -> ((string -> unit) -> unit) -> unit
+  (** [append_batch io f] will automatically call [flush io] when a certain
+      limit of offset has been reached. Unlike [append], this allows more
+      control over the moment in which [flush] may be called since it allows to
+      provide all the consumer functions in one batch.
+
+      This function definitely replaces [append] since [append] could flush
+      incomplete data *)
 
   val close : t -> unit
 

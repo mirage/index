@@ -22,6 +22,7 @@ module Key = struct
   module type S = Key
 
   module String_fixed = Data.String_fixed
+  module Double_String_fixed = Data.Double_String_fixed
 end
 
 module Value = struct

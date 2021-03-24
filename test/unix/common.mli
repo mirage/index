@@ -12,6 +12,13 @@ module Key : sig
   val v : unit -> t
 end
 
+(** Simple key/value modules with String type and a random constructor *)
+module KeyDS : sig
+  include Index.Key.S with type t = string * string
+
+  val v : unit -> t
+end
+
 module Value : sig
   include Index.Value.S with type t = string
 
@@ -24,6 +31,12 @@ module Tbl : sig
 
   val check_binding : (Key.t, Value.t) Hashtbl.t -> Key.t -> Value.t -> unit
   (** Check that a binding exists in the table. *)
+end
+
+module IndexDS : sig
+  open Index.Private
+
+  include S with type key = KeyDS.t and type value = Value.t
 end
 
 module Index : sig

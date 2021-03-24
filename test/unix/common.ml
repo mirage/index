@@ -52,6 +52,12 @@ module Value = struct
   let equal = String.equal
 end
 
+module KeyDS = struct
+  include Index.Key.Double_String_fixed (String_size)
+
+  let v () = (random_string (), random_string ())
+end
+
 type binding = Key.t * Value.t
 
 let pp_binding ppf (key, value) =
@@ -76,6 +82,10 @@ module Tbl = struct
     h
 
   let check_binding tbl = check_entry (Hashtbl.find tbl) "table"
+end
+
+module IndexDS = struct
+  include Index_unix.Private.Make (KeyDS) (Value) (Index.Cache.Unbounded)
 end
 
 module Index = struct

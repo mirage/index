@@ -21,7 +21,7 @@ module type Key = sig
       Overestimating the [hash_size] will result in performance drops;
       underestimation will result in undefined behavior. *)
 
-  val encode : t -> string
+  val encode : t -> (string -> unit) -> unit
   (** [encode] is an encoding function. The resultant encoded values must have
       size {!encoded_size}. *)
 
@@ -37,7 +37,7 @@ end
 module type Value = sig
   type t [@@deriving repr]
 
-  val encode : t -> string
+  val encode : t -> (string -> unit) -> unit
 
   val encoded_size : int
 
@@ -88,14 +88,8 @@ module Entry = struct
     let decode_value string off = V.decode string (off + K.encoded_size)
 
     let encode' key value f =
-      let encoded_key = K.encode key in
-      let encoded_value = V.encode value in
-      if String.length encoded_key <> K.encoded_size then
-        raise (Invalid_size encoded_key);
-      if String.length encoded_value <> V.encoded_size then
-        raise (Invalid_size encoded_value);
-      f encoded_key;
-      f encoded_value
+      K.encode key f;
+      V.encode value f
 
     let encode { key; value; _ } f = encode' key value f
   end
@@ -116,11 +110,38 @@ end = struct
 
   let hash_size = 30
 
-  let encode s = s
+  let encode s f = f s
 
   let decode s off = String.sub s off L.length
 
   let encoded_size = L.length
 
   let equal = String.equal
+end
+
+module Double_String_fixed (L : sig
+  val length : int
+end) : sig
+  type t = string * string
+
+  include Key with type t := string * string
+
+  include Value with type t := string * string
+end = struct
+  type t = string * string [@@deriving repr]
+
+  let hash = Hashtbl.hash
+
+  let hash_size = 30
+
+  let encode (s1, s2) f =
+    f s1;
+    f s2
+
+  let decode s off =
+    (String.sub s off L.length, String.sub s (off + L.length) L.length)
+
+  let encoded_size = L.length lsl 1
+
+  let equal (sa1, sb1) (sa2, sb2) = String.equal sa1 sa2 && String.equal sb1 sb2
 end
