@@ -1,4 +1,5 @@
 module Hook = Index.Private.Hook
+module Layout = Index.Private.Layout
 module Semaphore = Semaphore_compat.Semaphore.Binary
 module I = Index
 open Common
@@ -117,6 +118,29 @@ module Live = struct
     Alcotest.check_raises "Finding absent should raise Not_found" Not_found
       (fun () -> Key.v () |> Index.find rw2 |> ignore_value)
 
+  let files_on_disk_after_clear () =
+    let root = Context.fresh_name "full_index" in
+    let rw = Index.v ~fresh:true ~log_size:Default.log_size root in
+    for _ = 1 to Default.size do
+      let k = Key.v () in
+      let v = Value.v () in
+      Index.replace rw k v
+    done;
+    Index.flush rw;
+    Index.clear rw;
+    Index.close rw;
+    let module I = Index_unix.Private.IO in
+    let test path msg =
+      match I.v_readonly path with
+      | Error `No_file_on_disk -> Alcotest.fail "expected data file"
+      | Ok data ->
+          Alcotest.(check int) msg (I.size data) (I.size_header data);
+          I.close data
+    in
+    test (Layout.log ~root) "size of log file";
+    test (Layout.log_async ~root) "size of log_async file";
+    test (Layout.data ~root) "size of data file"
+
   let duplicate_entries () =
     let* Context.{ rw; _ } = Context.with_empty_index () in
     let k1, v1, v2, v3 = (Key.v (), Value.v (), Value.v (), Value.v ()) in
@@ -143,6 +167,7 @@ module Live = struct
       ("clear and iter", `Quick, iter_after_clear);
       ("clear and find", `Quick, find_after_clear);
       ("open after clear", `Quick, open_after_clear);
+      ("files on disk after clear", `Quick, files_on_disk_after_clear);
       ("duplicate entries", `Quick, duplicate_entries);
     ]
 end
