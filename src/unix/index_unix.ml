@@ -142,13 +142,28 @@ module IO : Index.IO = struct
     in
     (aux [@tailcall]) dirname (fun () -> ())
 
+  let raw ~flags ~version ~offset ~generation file =
+    let x = Unix.openfile file flags 0o644 in
+    let raw = Raw.v x in
+    let header = { Raw.Header.offset; version; generation } in
+    Raw.Header.set raw header;
+    Raw.Fan.set raw "";
+    raw
+
   let clear ~generation t =
     t.offset <- 0L;
     t.flushed <- t.header;
-    Header.set t { offset = t.offset; generation };
-    Raw.Fan.set t.raw "";
     Buffer.clear t.buf;
-    Raw.fsync t.raw
+    (* the generation is updated before calling clear. *)
+    Header.set t { offset = t.offset; generation };
+    Raw.close t.raw;
+    (* delete the file. *)
+    Unix.unlink t.file;
+    (* and re-open a fresh instance *)
+    t.raw <-
+      raw ~version:current_version ~generation ~offset:0L
+        ~flags:Unix.[ O_CREAT; O_RDWR; O_CLOEXEC ]
+        t.file
 
   let () = assert (String.length current_version = 8)
 

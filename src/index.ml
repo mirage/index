@@ -231,7 +231,13 @@ struct
     | Some log ->
         let offset = IO.offset log.io in
         let h = IO.Header.get log.io in
-        if t.generation <> h.generation then sync_log_entries log
+        (* If the generation has changed *)
+        if t.generation <> h.generation then (
+          (* close the file .*)
+          IO.close log.io;
+          (* check that file is on disk, reopen and reload everything. *)
+          t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
+          (* else if the disk offset is greater, reload the newest data. *))
         else if offset < h.offset then sync_log_entries ~min:offset log
         else if offset > h.offset then assert false
 
@@ -277,7 +283,8 @@ struct
               l "[%s] generation has changed, reading log and index from disk"
                 (Filename.basename t.root));
           t.generation <- h.generation;
-          sync_log_entries log;
+          IO.close log.io;
+          t.log <- try_load_log t (Layout.log ~root:t.root);
           sync_index t)
         else if log_offset < h.offset then (
           Log.debug (fun l ->
