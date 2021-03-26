@@ -5,6 +5,12 @@ val report : unit -> unit
 
 module Log : Logs.LOG
 
+module Default : sig
+  val log_size : int
+
+  val size : int
+end
+
 (** Simple key/value modules with String type and a random constructor *)
 module Key : sig
   include Index.Key.S with type t = string

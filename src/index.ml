@@ -990,6 +990,7 @@ module Private = struct
   module Io_array = Io_array
   module Search = Search
   module Data = Data
+  module Layout = Layout
 
   module Hook = struct
     type 'a t = 'a -> unit

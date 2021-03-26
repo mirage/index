@@ -365,6 +365,7 @@ module type Index = sig
     module Io_array = Io_array
     module Fan = Fan
     module Data = Data
+    module Layout = Layout
 
     module type S = Private with type 'a hook := 'a Hook.t
 
