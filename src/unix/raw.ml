@@ -1,6 +1,7 @@
-let ( ++ ) = Int63.add
-
+module Int63 = Optint.Int63
 module Stats = Index.Stats
+
+let ( ++ ) = Int63.add
 
 type t = { fd : Unix.file_descr } [@@unboxed]
 

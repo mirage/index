@@ -1,3 +1,4 @@
+module Int63 = Optint.Int63
 include Checks_intf
 
 module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct

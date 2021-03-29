@@ -16,6 +16,7 @@ The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
 include Index_intf
+module Int63 = Optint.Int63
 module Stats = Stats
 module Cache = Cache
 module Checks = Checks

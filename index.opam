@@ -49,5 +49,5 @@ Index supports multiple-reader/single-writer access. Concurrent access
 is safely managed using lock files."""
 
 pin-depends: [
-  [ "optint.dev" "git+https://github.com/CraigFe/optint#2bd60df1cac71e51e6b0c58036fdd63a9b3c9516" ]
+  [ "optint.dev" "git+https://github.com/mirage/optint#b1ad9aa3f3412fb0ec93d05b1cf519a01ff475cd" ]
 ]

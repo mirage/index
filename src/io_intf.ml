@@ -1,3 +1,5 @@
+module Int63 = Optint.Int63
+
 module type S = sig
   type t
 

@@ -1,3 +1,5 @@
+module Int63 = Optint.Int63
+
 module Entry = struct
   module Key = struct
     type t = int

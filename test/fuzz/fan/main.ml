@@ -1,5 +1,6 @@
 open Crowbar
 module Fan = Index.Private.Fan
+module Int63 = Optint.Int63
 
 let hash_size = 30
 

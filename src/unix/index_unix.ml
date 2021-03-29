@@ -15,6 +15,8 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
+module Int63 = Optint.Int63
+
 let src = Logs.Src.create "index_unix" ~doc:"Index_unix"
 
 module Log = (val Logs.src_log src : Logs.LOG)

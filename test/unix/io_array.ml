@@ -1,3 +1,4 @@
+module Int63 = Optint.Int63
 module IO = Index_unix.Private.IO
 
 let ( // ) = Filename.concat

@@ -1,3 +1,5 @@
+module Int63 = Optint.Int63
+
 (** [Raw] wraps a file-descriptor with an file-format used internally by Index.
     The format contains the following header fields:
 
