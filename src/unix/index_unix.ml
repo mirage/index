@@ -80,7 +80,7 @@ module IO : Index.IO = struct
   let append_batch t f =
     if t.readonly then raise RO_not_allowed;
     f (fun s ->
-        t.offset <- t.offset ++ Int64.of_int (String.length s);
+        t.offset <- t.offset ++ Int63.of_int (String.length s);
         Buffer.add_string t.buf s);
     if t.offset -- t.flushed > auto_flush_limit then flush t
 

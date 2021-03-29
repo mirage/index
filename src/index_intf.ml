@@ -280,8 +280,8 @@ module type Index = sig
       val length : int
     end) : S with type t = string
 
-    (** String keys of a given fixed size in bytes. *)
-    module Double_String_fixed (L : sig
+    (** Pair of string keys of a given fixed size in bytes. *)
+    module Double_string_fixed (L : sig
       val length : int
     end) : S with type t = string * string
   end
@@ -298,6 +298,11 @@ module type Index = sig
     module String_fixed (L : sig
       val length : int
     end) : S with type t = string
+
+    (** Pair of string values of a given fixed size in bytes. *)
+    module Double_string_fixed (L : sig
+      val length : int
+    end) : S with type t = string * string
   end
 
   module type IO = sig

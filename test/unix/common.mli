@@ -20,7 +20,7 @@ module KeyDS : sig
 end
 
 module Value : sig
-  include Index.Value.S with type t = string
+  include Index.Value.S with type t = string * string
 
   val v : unit -> t
 end
@@ -61,9 +61,13 @@ end
 module Make_context (Config : sig
   val root : string
 end) : sig
+  type key = string
+
+  type value = string * string
+
   type t = private {
     rw : Index.t;
-    tbl : (string, string) Hashtbl.t;
+    tbl : (key, value) Hashtbl.t;
     clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
     close_all : unit -> unit;
   }

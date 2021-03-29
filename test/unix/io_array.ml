@@ -29,7 +29,11 @@ end
 
 module IOArray = Index.Private.Io_array.Make (IO) (Entry)
 
-let entry = Alcotest.(pair string string)
+let key = Alcotest.(string)
+
+let value = Alcotest.(pair string string)
+
+let entry = Alcotest.(pair key value)
 
 let fresh_io name =
   IO.v ~fresh:true ~generation:Int63.zero ~fan_size:Int63.zero (root // name)

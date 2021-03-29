@@ -45,15 +45,15 @@ module Key = struct
 end
 
 module Value = struct
-  include Index.Value.String_fixed (String_size)
+  include Index.Value.Double_string_fixed (String_size)
 
-  let v = random_string
+  let v () = (random_string (), random_string ())
 
-  let equal = String.equal
+  let equal (sa1, sb1) (sa2, sb2) = String.equal sa1 sa2 && String.equal sb1 sb2
 end
 
 module KeyDS = struct
-  include Index.Key.Double_String_fixed (String_size)
+  include Index.Key.Double_string_fixed (String_size)
 
   let v () = (random_string (), random_string ())
 end
@@ -66,9 +66,9 @@ let pp_binding ppf (key, value) =
 let check_entry findf typ k v =
   match findf k with
   | v' when Value.equal v v' -> ()
-  | v' (* v =/= v' *) ->
-      Alcotest.failf "Found %s when checking for binding %a in %s" v' pp_binding
-        (k, v) typ
+  | s1, s2 (* v =/= v' *) ->
+      Alcotest.failf "Found (%s, %s) when checking for binding %a in %s" s1 s2
+        pp_binding (k, v) typ
   | exception Not_found ->
       Alcotest.failf "Expected key %s is missing in %s" k typ
 
@@ -125,9 +125,13 @@ struct
           m "Constructing %s context object: %s" object_type name);
       name
 
+  type key = string
+
+  type value = string * string
+
   type t = {
     rw : Index.t;
-    tbl : (string, string) Hashtbl.t;
+    tbl : (key, value) Hashtbl.t;
     clone : ?fresh:bool -> readonly:bool -> unit -> Index.t;
     close_all : unit -> unit;
   }

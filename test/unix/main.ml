@@ -85,8 +85,11 @@ module Live = struct
   let different_size_for_value () =
     let* Context.{ rw; _ } = Context.with_empty_index () in
     let k = Key.v () in
-    let v = String.init 200 (fun _i -> random_char ()) in
-    let exn = I.Private.Data.Invalid_size v in
+    let v =
+      ( String.init 200 (fun _i -> random_char ()),
+        String.init 200 (fun _i -> random_char ()) )
+    in
+    let exn = I.Private.Data.Invalid_size (Fmt.str "%a" Repr.(pp Value.t) v) in
     Alcotest.check_raises
       "Cannot add a value of a different size than string_size." exn (fun () ->
         Index.replace rw k v)
@@ -536,7 +539,7 @@ module Close = struct
     let calls t =
       [
         ("clear", fun () -> Index.clear t);
-        ("find", fun () -> ignore_value (Index.find t k : string));
+        ("find", fun () -> ignore_value (Index.find t k : string * string));
         ("mem", fun () -> ignore_bool (Index.mem t k : bool));
         ("replace", fun () -> Index.replace t k v);
         ("iter", fun () -> Index.iter (fun _ _ -> ()) t);
@@ -781,32 +784,35 @@ module Encode = struct
   module E = I.Private.Data.Entry.Make (Key) (Value)
   module EDS = I.Private.Data.Entry.Make (KeyDS) (Value)
 
-  let testable repr =
-    Alcotest.testable
-      (Repr.pp_json ~minify:false repr)
-      Repr.(unstage (equal repr))
+  let key = Alcotest.(string)
+
+  let keyds = Alcotest.(pair string string)
+
+  let value = Alcotest.(pair string string)
 
   let encode () =
-    let e = E.v "abcdefghijklmnopqrst" "AbcdefghijklmnopqrsT" in
+    let e =
+      E.v "abcdefghijklmnopqrst" ("AbcdefghijklmnopqrsT", "aBCDEFGHIJKLMNOPQRSt")
+    in
     let buf = Buffer.create 30 in
     E.encode e (Buffer.add_string buf);
     let ed = E.decode (Buffer.contents buf) 0 in
-    let msg = Fmt.str "%a" (Repr.pp E.t) e in
-    Alcotest.check (testable E.t) msg e ed
+    Alcotest.(check key) "Testing simple string keys" e.key ed.key;
+    Alcotest.(check value) "Testing simple string values" e.value ed.value
 
   let encodeDS () =
     let e =
       EDS.v
         ("abcdefghijklmnopqrst", "ABCDEFGHIJKLMNOPQRST")
-        "AbcdefghijklmnopqrsT"
+        ("AbcdefghijklmnopqrsT", "aBCDEFGHIJKLMNOPQRSt")
     in
     let buf = Buffer.create 30 in
     EDS.encode e (Buffer.add_string buf);
     let ed = EDS.decode (Buffer.contents buf) 0 in
-    let msg = Fmt.str "%a" (Repr.pp EDS.t) e in
-    Alcotest.check (testable EDS.t) msg e ed
+    Alcotest.(check keyds) "Testing pair of strings keys" e.key ed.key;
+    Alcotest.(check value) "Testing simple string values" e.value ed.value
 
-  let tests = [ ("encode", `Quick, encode); ("encodeds", `Quick, encodeDS) ]
+  let tests = [ ("encode", `Quick, encode); ("encode_string_pair", `Quick, encodeDS) ]
 end
 
 let () =

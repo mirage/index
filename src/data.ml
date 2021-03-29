@@ -119,7 +119,7 @@ end = struct
   let equal = String.equal
 end
 
-module Double_String_fixed (L : sig
+module Double_string_fixed (L : sig
   val length : int
 end) : sig
   type t = string * string

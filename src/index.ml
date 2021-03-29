@@ -22,13 +22,14 @@ module Key = struct
   module type S = Key
 
   module String_fixed = Data.String_fixed
-  module Double_String_fixed = Data.Double_String_fixed
+  module Double_string_fixed = Data.Double_string_fixed
 end
 
 module Value = struct
   module type S = Value
 
   module String_fixed = Data.String_fixed
+  module Double_string_fixed = Data.Double_string_fixed
 end
 
 exception RO_not_allowed
@@ -456,11 +457,10 @@ struct
       if not fresh then
         Option.iter
           (fun log ->
-            let append_io = IO.append log.io in
             iter_io
               (fun e ->
                 Tbl.replace log.mem e.key e.value;
-                Entry.encode e append_io)
+                IO.append_batch log.io (Entry.encode e))
               io;
             IO.flush log.io;
             IO.clear ~generation io)
@@ -554,12 +554,12 @@ struct
       [fan_out] with hash [hash]. *)
   let append_buf_fanout fan_out hash buf_str dst_io =
     Fan.update fan_out hash (IO.offset dst_io);
-    IO.append dst_io buf_str
+    IO.append_batch dst_io (fun f -> f buf_str)
 
   (** Appends [entry] into [dst_io] and registers it in [fan_out]. *)
   let append_entry_fanout fan_out entry dst_io =
     Fan.update fan_out entry.Entry.key_hash (IO.offset dst_io);
-    Entry.encode entry (IO.append dst_io)
+    IO.append_batch dst_io (Entry.encode entry)
 
   (** Appends the [log] values into [dst_io], from [log_i] to the first value
       which hash is higher than or equal to [hash_e] (the current value in
@@ -764,11 +764,10 @@ struct
                   Tbl.clear log.mem;
                   hook `After_clear;
                   let log_async = Option.get t.log_async in
-                  let append_io = IO.append log.io in
                   Tbl.iter
                     (fun key value ->
                       Tbl.replace log.mem key value;
-                      Entry.encode' key value append_io)
+                      IO.append_batch log.io (Entry.encode' key value))
                     log_async.mem;
                   (* NOTE: It {i may} not be necessary to trigger the
                      [flush_callback] here. If the instance has been recently
@@ -889,7 +888,7 @@ struct
           let log =
             match t.log_async with Some log -> log | None -> Option.get t.log
           in
-          Entry.encode' key value (IO.append log.io);
+          IO.append_batch log.io (Entry.encode' key value);
           Tbl.replace log.mem key value;
           Int63.compare (IO.offset log.io) (Int63.of_int t.config.log_size) > 0)
     in

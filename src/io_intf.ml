@@ -38,7 +38,10 @@ module type S = sig
       provide all the consumer functions in one batch.
 
       This function definitely replaces [append] since [append] could flush
-      incomplete data *)
+      incomplete data.Str
+
+      Helper: [f] is a function containing a [string] in its closure and waiting
+      for a [string -> unit] function to handle this string. *)
 
   val close : t -> unit
 
