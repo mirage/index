@@ -138,8 +138,9 @@ struct
     Semaphore.with_acquire "clear" t.merge_lock (fun () ->
         t.pending_cancel <- false;
         t.generation <- Int64.succ t.generation;
-        let log = assert_and_get t.log in
-        IO.clear ~generation:t.generation log.io;
+        let log = Option.get t.log in
+        let hook () = hook `IO_clear in
+        IO.clear ~generation:t.generation ~hook log.io;
         Tbl.clear log.mem;
         may
           (fun l ->
