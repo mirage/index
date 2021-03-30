@@ -152,22 +152,23 @@ module IO : Index.IO = struct
 
   let () = assert (String.length current_version = 8)
 
-  let v ?(flush_callback = fun () -> ()) ~readonly ~fresh ~generation ~fan_size
-      file =
-    let v ~fan_size ~offset raw =
-      let header = 8L ++ 8L ++ 8L ++ 8L ++ fan_size in
-      {
-        header;
-        file;
-        offset;
-        raw;
-        readonly;
-        fan_size;
-        buf = Buffer.create (4 * 1024);
-        flushed = header ++ offset;
-        flush_callback;
-      }
-    in
+  let v_instance ?(flush_callback = fun () -> ()) ~readonly ~fan_size ~offset
+      file raw =
+    let header = 8L ++ 8L ++ 8L ++ 8L ++ fan_size in
+    {
+      header;
+      file;
+      offset;
+      raw;
+      readonly;
+      fan_size;
+      buf = Buffer.create (4 * 1024);
+      flushed = header ++ offset;
+      flush_callback;
+    }
+
+  let v ?flush_callback ~readonly ~fresh ~generation ~fan_size file =
+    let v = v_instance ?flush_callback ~readonly file in
     let mode = Unix.(if readonly then O_RDONLY else O_RDWR) in
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
@@ -199,6 +200,25 @@ module IO : Index.IO = struct
           let offset = Raw.Offset.get raw in
           let fan_size = Raw.Fan.get_size raw in
           v ~fan_size ~offset raw
+
+  let v_readonly file =
+    let v = v_instance ~readonly:true file in
+    mkdir (Filename.dirname file);
+    try
+      let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDONLY ] 0o644 in
+      let raw = Raw.v x in
+      let version = Raw.Version.get raw in
+      if version <> current_version then
+        Fmt.failwith "Io.v: unsupported version %s (current version is %s)"
+          version current_version;
+      let offset = Raw.Offset.get raw in
+      let fan_size = Raw.Fan.get_size raw in
+      Some (v ~fan_size ~offset raw)
+    with
+    | Unix.Unix_error (Unix.ENOENT, _, _) ->
+        (* The readonly instance cannot open a non existing file. *)
+        None
+    | e -> raise e
 
   let exists = Sys.file_exists
 
