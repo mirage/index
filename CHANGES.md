@@ -1,3 +1,13 @@
+# Unreleased
+
+## Fixed
+
+- Reduce allocations during merge (#274, #277)
+
+## Changed
+
+- Specialise `IO.v` to create read-only or read-write instances. (#291)
+
 # 1.3.0 (2021-01-05)
 
 ## Added

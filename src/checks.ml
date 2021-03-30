@@ -7,9 +7,7 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
     include Io.Extend (IO)
 
     (** This module never makes persistent changes *)
-    let v =
-      v ~fresh:false ~readonly:true ?flush_callback:None ~generation:0L
-        ~fan_size:0L
+    let v = v_readonly
 
     let page_size = Int64.(mul (of_int Entry.encoded_size) 1000L)
 
@@ -61,10 +59,9 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
 
     let with_io : type a. string -> (IO.t -> a) -> a option =
      fun path f ->
-      match IO.exists path with
-      | false -> None
-      | true ->
-          let io = IO.v path in
+      match IO.v path with
+      | None -> None
+      | Some io ->
           let a = f io in
           IO.close io;
           Some a
@@ -115,33 +112,35 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
 
     let run ~root =
       let context = 2 in
-      let io = IO.v (Layout.data ~root) in
-      let io_offset = IO.offset io in
-      if Int64.compare io_offset encoded_sizeL < 0 then (
-        if not (Int64.equal io_offset 0L) then
-          Fmt.failwith
-            "Non-integer number of entries in file: { offset = %Ld; entry_size \
-             = %d }"
-            io_offset Entry.encoded_size)
-      else
-        let first_entry = IO.read_entry io 0L in
-        let previous = ref first_entry in
-        Format.eprintf "\n%!";
-        Progress_unix.(
-          counter ~total:io_offset ~mode:`UTF8
-            ~message:"Scanning store for faults" ~pp:Progress.Units.bytes
-            ~sampling_interval:100_000 ()
-          |> with_reporters)
-        @@ fun report ->
-        io
-        |> IO.iter ~min:encoded_sizeL (fun off e ->
-               report encoded_sizeL;
-               if !previous.key_hash > e.key_hash then
-                 Log.err (fun f ->
-                     f "Found non-monotonic region:@,%a@,"
-                       (print_window_around off io context)
-                       ());
-               previous := e)
+      match IO.v (Layout.data ~root) with
+      | None -> Fmt.failwith "No data file in %s" root
+      | Some io ->
+          let io_offset = IO.offset io in
+          if Int64.compare io_offset encoded_sizeL < 0 then (
+            if not (Int64.equal io_offset 0L) then
+              Fmt.failwith
+                "Non-integer number of entries in file: { offset = %Ld; \
+                 entry_size = %d }"
+                io_offset Entry.encoded_size)
+          else
+            let first_entry = IO.read_entry io 0L in
+            let previous = ref first_entry in
+            Format.eprintf "\n%!";
+            Progress_unix.(
+              counter ~total:io_offset ~mode:`UTF8
+                ~message:"Scanning store for faults" ~pp:Progress.Units.bytes
+                ~sampling_interval:100_000 ()
+              |> with_reporters)
+            @@ fun report ->
+            io
+            |> IO.iter ~min:encoded_sizeL (fun off e ->
+                   report encoded_sizeL;
+                   if !previous.key_hash > e.key_hash then
+                     Log.err (fun f ->
+                         f "Found non-monotonic region:@,%a@,"
+                           (print_window_around off io context)
+                           ());
+                   previous := e)
 
     let term = Cmdliner.Term.(const (fun root () -> run ~root) $ path)
   end

@@ -3,7 +3,6 @@ module type S = sig
 
   val v :
     ?flush_callback:(unit -> unit) ->
-    readonly:bool ->
     fresh:bool ->
     generation:int64 ->
     fan_size:int64 ->
