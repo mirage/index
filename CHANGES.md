@@ -2,6 +2,8 @@
 
 ## Changed
 
+- Specialise `IO.v` to create read-only or read-write instances. (#291)
+
 - Optimised the in-memory representation of index handles, resulting in a
   significant reduction in memory use. (#273)
 

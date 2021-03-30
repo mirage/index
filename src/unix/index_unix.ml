@@ -171,13 +171,12 @@ module IO : Index.IO = struct
       flush_callback;
     }
 
-  let v ?flush_callback ~readonly ~fresh ~generation ~fan_size file =
-    let v = v_instance ?flush_callback ~readonly file in
-    let mode = Unix.(if readonly then O_RDONLY else O_RDWR) in
+  let v ?flush_callback ~fresh ~generation ~fan_size file =
+    let v = v_instance ?flush_callback ~readonly:false file in
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
     | false ->
-        let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; mode ] 0o644 in
+        let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; O_RDWR ] 0o644 in
         let raw = Raw.v x in
         Raw.Offset.set raw Int63.zero;
         Raw.Fan.set_size raw fan_size;
@@ -185,11 +184,9 @@ module IO : Index.IO = struct
         Raw.Generation.set raw generation;
         v ~fan_size ~offset:Int63.zero raw
     | true ->
-        let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; mode ] 0o644 in
+        let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDWR ] 0o644 in
         let raw = Raw.v x in
-        if readonly && fresh then
-          Fmt.failwith "IO.v: cannot reset a readonly file"
-        else if fresh then (
+        if fresh then (
           Raw.Offset.set raw Int63.zero;
           Raw.Fan.set_size raw fan_size;
           Raw.Version.set raw current_version;

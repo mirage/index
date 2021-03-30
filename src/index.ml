@@ -424,7 +424,7 @@ struct
       if readonly then if fresh then raise RO_not_allowed else None
       else
         let io =
-          IO.v ~flush_callback ~fresh ~readonly ~generation:Int63.zero
+          IO.v ~flush_callback ~fresh ~generation:Int63.zero
             ~fan_size:Int63.zero log_path
         in
         let entries = Int63.div (IO.offset io) entry_sizeL in
@@ -443,8 +443,8 @@ struct
        there is no need to do it here. *)
     if (not readonly) && IO.exists log_async_path then (
       let io =
-        IO.v ~flush_callback ~fresh ~readonly:false ~generation:Int63.zero
-          ~fan_size:Int63.zero log_async_path
+        IO.v ~flush_callback ~fresh ~generation:Int63.zero ~fan_size:Int63.zero
+          log_async_path
       in
       let entries = Int63.div (IO.offset io) entry_sizeL in
       Log.debug (fun l ->
@@ -474,8 +474,8 @@ struct
             (* NOTE: No [flush_callback] on the Index IO as we maintain the
                invariant that any bindings it contains were previously persisted
                in either [log] or [log_async]. *)
-            IO.v ?flush_callback:None ~fresh ~readonly ~generation
-              ~fan_size:Int63.zero index_path
+            IO.v ?flush_callback:None ~fresh ~generation ~fan_size:Int63.zero
+              index_path
           in
           let entries = Int63.div (IO.offset io) entry_sizeL in
           if entries = Int63.zero then None
@@ -671,7 +671,7 @@ struct
     let log_async =
       let io =
         let log_async_path = Layout.log_async ~root:t.root in
-        IO.v ~flush_callback:t.config.flush_callback ~fresh:true ~readonly:false
+        IO.v ~flush_callback:t.config.flush_callback ~fresh:true
           ~generation:(Int63.succ t.generation) ~fan_size:Int63.zero
           log_async_path
       in
@@ -722,7 +722,7 @@ struct
       in
       let merge =
         let merge_path = Layout.merge ~root:t.root in
-        IO.v ~fresh:true ~readonly:false ~generation
+        IO.v ~fresh:true ~generation
           ~fan_size:(Int63.of_int (Fan.exported_size fan_out))
           merge_path
       in
@@ -733,8 +733,8 @@ struct
             | `Abort -> `Aborted
             | `Continue ->
                 let io =
-                  IO.v ~fresh:true ~readonly:false ~generation
-                    ~fan_size:Int63.zero (Layout.data ~root:t.root)
+                  IO.v ~fresh:true ~generation ~fan_size:Int63.zero
+                    (Layout.data ~root:t.root)
                 in
                 append_remaining_log fan_out log_array 0 merge;
                 `Index_io io)

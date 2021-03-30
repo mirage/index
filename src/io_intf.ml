@@ -5,7 +5,6 @@ module type S = sig
 
   val v :
     ?flush_callback:(unit -> unit) ->
-    readonly:bool ->
     fresh:bool ->
     generation:int63 ->
     fan_size:int63 ->
