@@ -2,4 +2,4 @@
  (names main force_merge io_array)
  (package index)
  (libraries index index.unix alcotest fmt logs logs.fmt re stdlib-shims
-   threads.posix repr semaphore-compat))
+   threads.posix repr semaphore-compat optint))

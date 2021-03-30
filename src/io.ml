@@ -20,25 +20,25 @@ include Io_intf
 module Extend (S : S) = struct
   include S
 
-  let iter ~page_size ?min:(min_off = 0L) ?max:max_off f io =
+  let iter ~page_size ?min:(min_off = Int63.zero) ?max:max_off f io =
     let max_off = match max_off with None -> offset io | Some m -> m in
     let rec aux offset =
-      let remaining = Int64.sub max_off offset in
-      if remaining <= 0L then ()
+      let remaining = Int63.sub max_off offset in
+      if remaining <= Int63.zero then ()
       else
-        let len = Int64.to_int (min remaining page_size) in
+        let len = Int63.to_int (min remaining page_size) in
         let raw = Bytes.create len in
         let n = read io ~off:offset ~len raw in
         let rec read_page page off =
           if off = n then ()
           else
             let read =
-              f ~off:Int64.(add (of_int off) offset) ~buf:page ~buf_off:off
+              f ~off:Int63.(add (of_int off) offset) ~buf:page ~buf_off:off
             in
             (read_page [@tailcall]) page (off + read)
         in
         read_page (Bytes.unsafe_to_string raw) 0;
-        (aux [@tailcall]) Int64.(add offset page_size)
+        (aux [@tailcall]) Int63.(add offset page_size)
     in
     (aux [@tailcall]) min_off
 end

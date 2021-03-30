@@ -1,11 +1,35 @@
-external pread : Unix.file_descr -> int64 -> bytes -> int -> int -> int
-  = "caml_index_pread"
+module Int63 = Optint.Int63
 
-let pread ~fd ~fd_offset ~buffer ~buffer_offset ~length =
-  pread fd fd_offset buffer buffer_offset length
+external pread_int : Unix.file_descr -> int -> bytes -> int -> int -> int
+  = "caml_index_pread_int"
 
-external pwrite : Unix.file_descr -> int64 -> bytes -> int -> int -> int
-  = "caml_index_pwrite"
+external pread_int64 : Unix.file_descr -> int64 -> bytes -> int -> int -> int
+  = "caml_index_pread_int64"
 
-let pwrite ~fd ~fd_offset ~buffer ~buffer_offset ~length =
-  pwrite fd fd_offset buffer buffer_offset length
+let pread : fd:_ -> fd_offset:Int63.t -> _ =
+  match Int63.is_immediate with
+  | True ->
+      fun ~fd ~fd_offset ~buffer ~buffer_offset ~length ->
+        pread_int fd fd_offset buffer buffer_offset length
+  | False ->
+      fun ~fd ~fd_offset ~buffer ~buffer_offset ~length ->
+        pread_int64 fd
+          (Int63.Boxed.to_int64 fd_offset)
+          buffer buffer_offset length
+
+external pwrite_int : Unix.file_descr -> int -> bytes -> int -> int -> int
+  = "caml_index_pwrite_int"
+
+external pwrite_int64 : Unix.file_descr -> int64 -> bytes -> int -> int -> int
+  = "caml_index_pwrite_int64"
+
+let pwrite : fd:_ -> fd_offset:Int63.t -> _ =
+  match Int63.is_immediate with
+  | True ->
+      fun ~fd ~fd_offset ~buffer ~buffer_offset ~length ->
+        pwrite_int fd fd_offset buffer buffer_offset length
+  | False ->
+      fun ~fd ~fd_offset ~buffer ~buffer_offset ~length ->
+        pwrite_int64 fd
+          (Int63.Boxed.to_int64 fd_offset)
+          buffer buffer_offset length

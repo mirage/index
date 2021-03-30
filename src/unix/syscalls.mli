@@ -1,6 +1,8 @@
+module Int63 = Optint.Int63
+
 val pread :
   fd:Unix.file_descr ->
-  fd_offset:int64 ->
+  fd_offset:Int63.t ->
   buffer:bytes ->
   buffer_offset:int ->
   length:int ->
@@ -11,7 +13,7 @@ val pread :
 
 val pwrite :
   fd:Unix.file_descr ->
-  fd_offset:int64 ->
+  fd_offset:Int63.t ->
   buffer:bytes ->
   buffer_offset:int ->
   length:int ->

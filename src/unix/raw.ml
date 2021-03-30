@@ -1,26 +1,7 @@
-let ( ++ ) = Int64.add
-
+module Int63 = Optint.Int63
 module Stats = Index.Stats
 
-external set_64 : Bytes.t -> int -> int64 -> unit = "%caml_string_set64u"
-
-external get_64 : string -> int -> int64 = "%caml_string_get64"
-
-external swap64 : int64 -> int64 = "%bswap_int64"
-
-let encode_int64 i =
-  let set_uint64 s off v =
-    if not Sys.big_endian then set_64 s off (swap64 v) else set_64 s off v
-  in
-  let b = Bytes.create 8 in
-  set_uint64 b 0 i;
-  Bytes.unsafe_to_string b
-
-let decode_int64 buf =
-  let get_uint64 s off =
-    if not Sys.big_endian then swap64 (get_64 s off) else get_64 s off
-  in
-  get_uint64 buf 0
+let ( ++ ) = Int63.add
 
 type t = { fd : Unix.file_descr } [@@unboxed]
 
@@ -32,7 +13,7 @@ let really_write fd fd_offset buffer =
     if w = 0 || w = length then ()
     else
       (aux [@tailcall])
-        (fd_offset ++ Int64.of_int w)
+        (fd_offset ++ Int63.of_int w)
         (buffer_offset + w) (length - w)
   in
   aux fd_offset 0 (Bytes.length buffer)
@@ -44,7 +25,7 @@ let really_read fd fd_offset length buffer =
     else if r = length then buffer_offset + r
     else
       (aux [@tailcall])
-        (fd_offset ++ Int64.of_int r)
+        (fd_offset ++ Int63.of_int r)
         (buffer_offset + r) (length - r)
   in
   aux fd_offset 0 length
@@ -65,6 +46,13 @@ let unsafe_read t ~off ~len buf =
   Stats.add_read n;
   n
 
+let encode_int63 n =
+  let buf = Bytes.create Int63.encoded_size in
+  Int63.encode buf ~off:0 n;
+  Bytes.unsafe_to_string buf
+
+let decode_int63 buf = Int63.decode ~off:0 buf
+
 let assert_read ~len n =
   assert (
     if Int.equal n len then true
@@ -75,69 +63,73 @@ let assert_read ~len n =
   [@@inline always]
 
 module Offset = struct
-  let set t n =
-    let buf = encode_int64 n in
-    unsafe_write t ~off:0L buf
+  let off = Int63.zero
+
+  let set t n = unsafe_write t ~off (encode_int63 n)
 
   let get t =
     let len = 8 in
     let buf = Bytes.create len in
-    let n = unsafe_read t ~off:0L ~len buf in
+    let n = unsafe_read t ~off ~len buf in
     assert_read ~len n;
-    decode_int64 (Bytes.unsafe_to_string buf)
+    decode_int63 (Bytes.unsafe_to_string buf)
 end
 
 module Version = struct
+  let off = Int63.of_int 8
+
   let get t =
     let len = 8 in
     let buf = Bytes.create len in
-    let n = unsafe_read t ~off:8L ~len buf in
+    let n = unsafe_read t ~off ~len buf in
     assert_read ~len n;
     Bytes.unsafe_to_string buf
 
-  let set t v = unsafe_write t ~off:8L v
+  let set t v = unsafe_write t ~off v
 end
 
 module Generation = struct
+  let off = Int63.of_int 16
+
   let get t =
     let len = 8 in
     let buf = Bytes.create len in
-    let n = unsafe_read t ~off:16L ~len buf in
+    let n = unsafe_read t ~off ~len buf in
     assert_read ~len n;
-    decode_int64 (Bytes.unsafe_to_string buf)
+    decode_int63 (Bytes.unsafe_to_string buf)
 
-  let set t gen =
-    let buf = encode_int64 gen in
-    unsafe_write t ~off:16L buf
+  let set t gen = unsafe_write t ~off (encode_int63 gen)
 end
 
 module Fan = struct
+  let off = Int63.of_int 24
+
   let set t buf =
-    let size = encode_int64 (Int64.of_int (String.length buf)) in
-    unsafe_write t ~off:24L size;
-    if buf <> "" then unsafe_write t ~off:(24L ++ 8L) buf
+    let size = encode_int63 (Int63.of_int (String.length buf)) in
+    unsafe_write t ~off size;
+    if buf <> "" then unsafe_write t ~off:(off ++ Int63.of_int 8) buf
 
   let get_size t =
     let len = 8 in
     let size_buf = Bytes.create len in
-    let n = unsafe_read t ~off:24L ~len size_buf in
+    let n = unsafe_read t ~off ~len size_buf in
     assert_read ~len n;
-    decode_int64 (Bytes.unsafe_to_string size_buf)
+    decode_int63 (Bytes.unsafe_to_string size_buf)
 
   let set_size t size =
-    let buf = encode_int64 size in
-    unsafe_write t ~off:24L buf
+    let buf = encode_int63 size in
+    unsafe_write t ~off buf
 
   let get t =
-    let size = Int64.to_int (get_size t) in
+    let size = Int63.to_int (get_size t) in
     let buf = Bytes.create size in
-    let n = unsafe_read t ~off:(24L ++ 8L) ~len:size buf in
+    let n = unsafe_read t ~off:(off ++ Int63.of_int 8) ~len:size buf in
     assert_read ~len:size n;
     Bytes.unsafe_to_string buf
 end
 
 module Header = struct
-  type t = { offset : int64; version : string; generation : int64 }
+  type t = { offset : Int63.t; version : string; generation : Int63.t }
 
   (** NOTE: These functions must be equivalent to calling the above [set] /
       [get] functions individually. *)
@@ -151,18 +143,18 @@ module Header = struct
 
   let get t =
     let header = Bytes.create total_header_length in
-    let n = unsafe_read t ~off:0L ~len:total_header_length header in
+    let n = unsafe_read t ~off:Int63.zero ~len:total_header_length header in
     assert_read ~len:total_header_length n;
-    let offset = read_word header 0 |> decode_int64 in
+    let offset = read_word header 0 |> decode_int63 in
     let version = read_word header 8 in
-    let generation = read_word header 16 |> decode_int64 in
+    let generation = read_word header 16 |> decode_int63 in
     { offset; version; generation }
 
   let set t { offset; version; generation } =
     assert (String.length version = 8);
     let b = Bytes.create total_header_length in
-    Bytes.blit_string (encode_int64 offset) 0 b 0 8;
+    Bytes.blit_string (encode_int63 offset) 0 b 0 8;
     Bytes.blit_string version 0 b 8 8;
-    Bytes.blit_string (encode_int64 generation) 0 b 16 8;
-    unsafe_write t ~off:0L (Bytes.unsafe_to_string b)
+    Bytes.blit_string (encode_int63 generation) 0 b 16 8;
+    unsafe_write t ~off:Int63.zero (Bytes.unsafe_to_string b)
 end

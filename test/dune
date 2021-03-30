@@ -1,4 +1,4 @@
 (test
  (name main)
  (package index)
- (libraries index alcotest))
+ (libraries index alcotest optint))
