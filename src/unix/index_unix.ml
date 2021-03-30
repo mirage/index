@@ -152,13 +152,14 @@ module IO : Index.IO = struct
     Raw.Fan.set raw "";
     raw
 
-  let clear ~generation t =
+  let clear ~generation ?(hook = fun () -> ()) t =
     t.offset <- Int63.zero;
     t.flushed <- t.header;
     Buffer.clear t.buf;
     (* the generation is updated before calling clear. *)
     Header.set t { offset = t.offset; generation };
     Raw.close t.raw;
+    hook ();
     (* delete the file. *)
     Unix.unlink t.file;
     (* and re-open a fresh instance *)

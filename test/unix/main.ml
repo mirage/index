@@ -296,6 +296,23 @@ module Readonly = struct
     check_no_index_entry rw k;
     check_no_index_entry ro k
 
+  (* If sync is called right after the generation is set, and before the old
+     file is removed, the readonly instance reopens the old file. It does not
+     try to reopen the file until the next generation change occurs. *)
+  let readonly_io_clear () =
+    let* Context.{ rw; clone; _ } = Context.with_full_index () in
+    let ro = clone ~readonly:true () in
+    let hook =
+      Hook.v @@ function `IO_clear -> Index.sync ro | `Abort_signalled -> ()
+    in
+    Index.clear' ~hook rw;
+    let k, v = (Key.v (), Value.v ()) in
+    Index.replace rw k v;
+    Index.flush rw;
+    Index.sync ro;
+    Index.check_binding rw k v;
+    Index.check_binding ro k v
+
   let hashtbl_pick tbl =
     match Hashtbl.fold (fun k v acc -> (k, v) :: acc) tbl [] with
     | h :: _ -> h
@@ -518,6 +535,7 @@ module Readonly = struct
         readonly_add_index_after_clear );
       ("readonly open after clear", `Quick, readonly_open_after_clear);
       ("race between sync and merge", `Quick, readonly_sync_and_merge);
+      ("race between sync and clear", `Quick, readonly_io_clear);
     ]
 end
 

@@ -237,7 +237,7 @@ module type Private = sig
       concurrent merge operations, but {i before} blocking on those
       cancellations having completed. *)
 
-  val clear' : hook:[ `Abort_signalled ] hook -> t -> unit
+  val clear' : hook:[ `Abort_signalled | `IO_clear ] hook -> t -> unit
 
   val try_merge_aux :
     ?hook:merge_stages hook -> ?force:bool -> t -> merge_result async

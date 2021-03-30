@@ -164,7 +164,8 @@ struct
         t.pending_cancel <- false;
         t.generation <- Int63.succ t.generation;
         let log = Option.get t.log in
-        IO.clear ~generation:t.generation log.io;
+        let hook () = hook `IO_clear in
+        IO.clear ~generation:t.generation ~hook log.io;
         Tbl.clear log.mem;
         Option.iter
           (fun l ->
