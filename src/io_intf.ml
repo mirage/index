@@ -12,6 +12,8 @@ module type S = sig
     string ->
     t
 
+  val v_readonly : string -> t option
+
   val offset : t -> int63
 
   val read : t -> off:int63 -> len:int -> bytes -> int
