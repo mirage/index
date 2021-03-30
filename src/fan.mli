@@ -29,10 +29,10 @@ val v : hash_size:int -> entry_size:int -> int -> [ `Write ] t
 val nb_fans : 'a t -> int
 (** [nb_fans t] is the number of fans in [t]. *)
 
-val search : [ `Read ] t -> int -> Int63.t * Int63.t
+val search : [ `Read ] t -> int -> int63 * int63
 (** [search t hash] is the interval of offsets containing [hash], if present. *)
 
-val update : [ `Write ] t -> int -> Int63.t -> unit
+val update : [ `Write ] t -> int -> int63 -> unit
 (** [update t hash off] updates [t] so that [hash] is registered to be at offset
     [off]. *)
 

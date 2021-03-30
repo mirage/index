@@ -45,7 +45,7 @@ module Make (IO : Io.S) (Elt : ELT) :
 
   type elt = Elt.t
 
-  type buffer = { buf : bytes; low_off : Int63.t; high_off : Int63.t }
+  type buffer = { buf : bytes; low_off : int63; high_off : int63 }
 
   type t = { io : IO.t; mutable buffer : buffer option }
 

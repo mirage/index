@@ -47,7 +47,7 @@ module Make
   end
 
   let look_around array key key_metric index =
-    let rec search (op : Int63.t -> Int63.t) curr =
+    let rec search (op : int63 -> int63) curr =
       let i = op curr in
       if i < Int63.zero || i >= Array.length array then raise Not_found
       else

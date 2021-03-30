@@ -116,7 +116,7 @@ struct
   type instance = {
     config : config;
     root : string;  (** The root location of the index *)
-    mutable generation : Int63.t;
+    mutable generation : int63;
         (** The generation is a counter of rewriting operations (e.g. [clear]
             and [merge]). It is used to sync RO instances. *)
     mutable index : index option;

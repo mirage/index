@@ -22,11 +22,11 @@ module type ARRAY = sig
 
   type elt
 
-  val get : t -> Int63.t -> elt
+  val get : t -> int63 -> elt
 
-  val length : t -> Int63.t
+  val length : t -> int63
 
-  val pre_fetch : t -> low:Int63.t -> high:Int63.t -> unit
+  val pre_fetch : t -> low:int63 -> high:int63 -> unit
 end
 
 module type ENTRY = sig
@@ -58,7 +58,7 @@ module type METRIC = sig
 
   val of_key : Entry.Key.t -> t
 
-  val linear_interpolate : low:Int63.t * t -> high:Int63.t * t -> t -> Int63.t
+  val linear_interpolate : low:int63 * t -> high:int63 * t -> t -> int63
 end
 
 module type S = sig
@@ -67,7 +67,7 @@ module type S = sig
   module Array : ARRAY with type elt = Entry.t
 
   val interpolation_search :
-    Array.t -> Entry.Key.t -> low:Int63.t -> high:Int63.t -> Entry.Value.t
+    Array.t -> Entry.Key.t -> low:int63 -> high:int63 -> Entry.Value.t
 end
 
 module type Search = sig

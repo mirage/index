@@ -2,7 +2,7 @@ open! Import
 
 val pread :
   fd:Unix.file_descr ->
-  fd_offset:Int63.t ->
+  fd_offset:int63 ->
   buffer:bytes ->
   buffer_offset:int ->
   length:int ->
@@ -13,7 +13,7 @@ val pread :
 
 val pwrite :
   fd:Unix.file_descr ->
-  fd_offset:Int63.t ->
+  fd_offset:int63 ->
   buffer:bytes ->
   buffer_offset:int ->
   length:int ->

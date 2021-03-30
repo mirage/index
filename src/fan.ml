@@ -17,7 +17,7 @@ all copies or substantial portions of the Software. *)
 
 open! Import
 
-type 'a t = { fans : Int63.t array; mask : int; shift : int }
+type 'a t = { fans : int63 array; mask : int; shift : int }
 
 let equal t t' =
   let rec loop i =
