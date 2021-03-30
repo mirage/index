@@ -1,5 +1,7 @@
 (** Defines the namespacing of the various IO instances required by Index. *)
 
+open! Import
+
 val log : root:string -> string
 
 val log_async : root:string -> string

@@ -1,5 +1,3 @@
-module Int63 = Optint.Int63
-
 (** [Raw] wraps a file-descriptor with an file-format used internally by Index.
     The format contains the following header fields:
 
@@ -9,6 +7,8 @@ module Int63 = Optint.Int63
     - {b generation}: a 64-bit integer denoting the generation number;
     - {b fan}: a 64-bit length field, followed by a string containing that many
       bytes. *)
+
+open! Import
 
 type t
 (** The type of [raw] file handles. *)

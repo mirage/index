@@ -21,6 +21,7 @@ all copies or substantial portions of the Software. *)
     - linearly interpolate-able on the int63 type *)
 
 include Search_intf
+open! Import
 
 module Make
     (Entry : ENTRY)

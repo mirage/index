@@ -1,4 +1,4 @@
-module Int63 = Optint.Int63
+open! Import
 
 external pread_int : Unix.file_descr -> int -> bytes -> int -> int -> int
   = "caml_index_pread_int"

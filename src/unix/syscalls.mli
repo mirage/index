@@ -1,4 +1,4 @@
-module Int63 = Optint.Int63
+open! Import
 
 val pread :
   fd:Unix.file_descr ->

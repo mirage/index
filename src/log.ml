@@ -15,6 +15,8 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
+open! Import
+
 let src = Logs.Src.create "index" ~doc:"Index"
 
 module Log = (val Logs.src_log src : Logs.LOG)

@@ -1,3 +1,5 @@
+open! Import
+
 exception Invalid_size of string
 (** The exception raised when trying to encode a key or a value of size other
     than encoded_size *)

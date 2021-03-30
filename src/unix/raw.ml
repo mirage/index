@@ -1,4 +1,4 @@
-module Int63 = Optint.Int63
+open! Import
 module Stats = Index.Stats
 
 let ( ++ ) = Int63.add

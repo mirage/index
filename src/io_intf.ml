@@ -1,4 +1,4 @@
-module Int63 = Optint.Int63
+open! Import
 
 module type S = sig
   type t
