@@ -26,6 +26,8 @@ val close : t -> unit
 
 val fstat : t -> Unix.stats
 
+exception Not_written
+
 module Version : sig
   val get : t -> string
 
