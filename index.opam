@@ -21,7 +21,7 @@ build: [
 depends: [
   "ocaml"   {>= "4.08.0"}
   "dune"    {>= "2.7.0"}
-  "optint"  {>= "0.0.5"}
+  "optint"  {>= "0.1.0"}
   "repr"    {>= "0.2.0"}
   "ppx_repr"
   "fmt"
@@ -47,7 +47,3 @@ run-time can share a common singleton instance.
 
 Index supports multiple-reader/single-writer access. Concurrent access
 is safely managed using lock files."""
-
-pin-depends: [
-  [ "optint.dev" "git+https://github.com/mirage/optint#b1ad9aa3f3412fb0ec93d05b1cf519a01ff475cd" ]
-]
