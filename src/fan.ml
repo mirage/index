@@ -15,9 +15,9 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
-module Int63 = Optint.Int63
+open! Import
 
-type 'a t = { fans : Int63.t array; mask : int; shift : int }
+type 'a t = { fans : int63 array; mask : int; shift : int }
 
 let equal t t' =
   let rec loop i =

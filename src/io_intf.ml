@@ -1,4 +1,4 @@
-module Int63 = Optint.Int63
+open! Import
 
 module type S = sig
   type t
@@ -7,20 +7,20 @@ module type S = sig
     ?flush_callback:(unit -> unit) ->
     readonly:bool ->
     fresh:bool ->
-    generation:Int63.t ->
-    fan_size:Int63.t ->
+    generation:int63 ->
+    fan_size:int63 ->
     string ->
     t
 
-  val offset : t -> Int63.t
+  val offset : t -> int63
 
-  val read : t -> off:Int63.t -> len:int -> bytes -> int
+  val read : t -> off:int63 -> len:int -> bytes -> int
 
-  val clear : generation:Int63.t -> t -> unit
+  val clear : generation:int63 -> t -> unit
 
   val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
 
-  val get_generation : t -> Int63.t
+  val get_generation : t -> int63
 
   val set_fanout : t -> string -> unit
 
@@ -44,7 +44,7 @@ module type S = sig
   end
 
   module Header : sig
-    type header = { offset : Int63.t; generation : Int63.t }
+    type header = { offset : int63; generation : int63 }
 
     val set : t -> header -> unit
 
@@ -70,10 +70,10 @@ module type Io = sig
     include S with type t = S.t
 
     val iter :
-      page_size:Int63.t ->
-      ?min:Int63.t ->
-      ?max:Int63.t ->
-      (off:Int63.t -> buf:string -> buf_off:int -> int) ->
+      page_size:int63 ->
+      ?min:int63 ->
+      ?max:int63 ->
+      (off:int63 -> buf:string -> buf_off:int -> int) ->
       t ->
       unit
   end

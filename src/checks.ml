@@ -1,5 +1,5 @@
-module Int63 = Optint.Int63
 include Checks_intf
+open! Import
 
 module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
   module Entry = Data.Entry.Make (K) (V)

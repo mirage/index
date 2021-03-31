@@ -1,3 +1,5 @@
+open! Import
+
 type empty = |
 
 module type S = sig

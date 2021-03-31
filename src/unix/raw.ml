@@ -1,4 +1,4 @@
-module Int63 = Optint.Int63
+open! Import
 module Stats = Index.Stats
 
 let ( ++ ) = Int63.add
@@ -129,7 +129,7 @@ module Fan = struct
 end
 
 module Header = struct
-  type t = { offset : Int63.t; version : string; generation : Int63.t }
+  type t = { offset : int63; version : string; generation : int63 }
 
   (** NOTE: These functions must be equivalent to calling the above [set] /
       [get] functions individually. *)

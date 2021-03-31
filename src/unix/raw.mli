@@ -1,5 +1,3 @@
-module Int63 = Optint.Int63
-
 (** [Raw] wraps a file-descriptor with an file-format used internally by Index.
     The format contains the following header fields:
 
@@ -10,15 +8,17 @@ module Int63 = Optint.Int63
     - {b fan}: a 64-bit length field, followed by a string containing that many
       bytes. *)
 
+open! Import
+
 type t
 (** The type of [raw] file handles. *)
 
 val v : Unix.file_descr -> t
 (** Construct a [raw] value from a file descriptor. *)
 
-val unsafe_write : t -> off:Int63.t -> string -> unit
+val unsafe_write : t -> off:int63 -> string -> unit
 
-val unsafe_read : t -> off:Int63.t -> len:int -> bytes -> int
+val unsafe_read : t -> off:int63 -> len:int -> bytes -> int
 
 val fsync : t -> unit
 
@@ -33,15 +33,15 @@ module Version : sig
 end
 
 module Offset : sig
-  val get : t -> Int63.t
+  val get : t -> int63
 
-  val set : t -> Int63.t -> unit
+  val set : t -> int63 -> unit
 end
 
 module Generation : sig
-  val get : t -> Int63.t
+  val get : t -> int63
 
-  val set : t -> Int63.t -> unit
+  val set : t -> int63 -> unit
 end
 
 module Fan : sig
@@ -49,18 +49,18 @@ module Fan : sig
 
   val set : t -> string -> unit
 
-  val get_size : t -> Int63.t
+  val get_size : t -> int63
 
-  val set_size : t -> Int63.t -> unit
+  val set_size : t -> int63 -> unit
 end
 
 module Header : sig
   type raw
 
   type t = {
-    offset : Int63.t;  (** The length of the file containing valid data *)
+    offset : int63;  (** The length of the file containing valid data *)
     version : string;  (** Format version *)
-    generation : Int63.t;  (** Generation number *)
+    generation : int63;  (** Generation number *)
   }
 
   val get : raw -> t

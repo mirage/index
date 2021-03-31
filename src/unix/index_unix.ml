@@ -15,7 +15,7 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
-module Int63 = Optint.Int63
+open! Import
 
 let src = Logs.Src.create "index_unix" ~doc:"Index_unix"
 
@@ -34,11 +34,11 @@ module IO : Index.IO = struct
 
   type t = {
     mutable file : string;
-    mutable header : Int63.t;
+    mutable header : int63;
     mutable raw : Raw.t;
-    mutable offset : Int63.t;
-    mutable flushed : Int63.t;
-    mutable fan_size : Int63.t;
+    mutable offset : int63;
+    mutable flushed : int63;
+    mutable fan_size : int63;
     readonly : bool;
     buf : Buffer.t;
     flush_callback : unit -> unit;
@@ -102,7 +102,7 @@ module IO : Index.IO = struct
     Raw.Fan.set t.raw buf
 
   module Header = struct
-    type header = { offset : Int63.t; generation : Int63.t }
+    type header = { offset : int63; generation : int63 }
 
     let pp ppf { offset; generation } =
       Format.fprintf ppf "{ offset = %a; generation = %a }" Int63.pp offset

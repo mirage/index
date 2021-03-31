@@ -1,3 +1,5 @@
+open! Import
+
 let toplevel ~root name = Filename.(concat (concat root "index") name)
 
 let log = toplevel "log"

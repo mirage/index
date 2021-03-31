@@ -1,3 +1,5 @@
+open! Import
+
 type t = {
   mutable bytes_read : int;
   mutable nb_reads : int;

@@ -16,10 +16,7 @@ The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
 include Index_intf
-module Int63 = Optint.Int63
-module Stats = Stats
-module Cache = Cache
-module Checks = Checks
+open! Import
 
 module Key = struct
   module type S = Key
@@ -119,7 +116,7 @@ struct
   type instance = {
     config : config;
     root : string;  (** The root location of the index *)
-    mutable generation : Int63.t;
+    mutable generation : int63;
         (** The generation is a counter of rewriting operations (e.g. [clear]
             and [merge]). It is used to sync RO instances. *)
     mutable index : index option;
@@ -992,7 +989,10 @@ struct
   module Checks = Checks.Make (K) (V) (IO)
 end
 
+module Cache = Cache
+module Checks = Checks
 module Make = Make_private
+module Stats = Stats
 
 module Private = struct
   module Fan = Fan
