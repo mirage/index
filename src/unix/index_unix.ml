@@ -154,17 +154,26 @@ module IO : Index.IO = struct
     t.offset <- 0L;
     t.flushed <- t.header;
     Buffer.clear t.buf;
-    (* the generation is updated before calling clear. *)
-    Header.set t { offset = t.offset; generation };
+    let tmp = t.file ^ "_tmp" in
     Raw.close t.raw;
+    (* Rename file into a temporary file. This allows a fresh file to be
+       created, before writing the new generation in the temporary file. *)
+    Unix.rename t.file tmp;
     hook ();
-    (* delete the file. *)
-    Unix.unlink t.file;
-    (* and re-open a fresh instance *)
+    (* Open a fresh file. *)
     t.raw <-
       raw ~version:current_version ~generation ~offset:0L
         ~flags:Unix.[ O_CREAT; O_RDWR; O_CLOEXEC ]
-        t.file
+        t.file;
+    (* Set new generation in the temporary file. *)
+    let tmp_fd =
+      raw ~version:current_version ~generation ~offset:0L
+        ~flags:Unix.[ O_RDWR; O_CLOEXEC ]
+        tmp
+    in
+    (* Close and remove temporary file. *)
+    Raw.close tmp_fd;
+    Unix.unlink tmp
 
   let () = assert (String.length current_version = 8)
 
