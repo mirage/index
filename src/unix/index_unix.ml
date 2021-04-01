@@ -215,16 +215,16 @@ module IO : Index.IO = struct
             version current_version;
         let offset = Raw.Offset.get raw in
         let fan_size = Raw.Fan.get_size raw in
-        Some (v ~fan_size ~offset raw)
+        Ok (v ~fan_size ~offset raw)
       with Raw.Not_written ->
         (* The readonly instance cannot read a file that does not have a
            header.*)
         Raw.close raw;
-        None
+        Error `No_file_on_disk
     with
     | Unix.Unix_error (Unix.ENOENT, _, _) ->
         (* The readonly instance cannot open a non existing file. *)
-        None
+        Error `No_file_on_disk
     | e -> raise e
 
   let exists = Sys.file_exists

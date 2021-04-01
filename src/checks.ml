@@ -61,8 +61,8 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
     let with_io : type a. string -> (IO.t -> a) -> a option =
      fun path f ->
       match IO.v path with
-      | None -> None
-      | Some io ->
+      | Error `No_file_on_disk -> None
+      | Ok io ->
           let a = f io in
           IO.close io;
           Some a
@@ -118,8 +118,8 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
     let run ~root =
       let context = 2 in
       match IO.v (Layout.data ~root) with
-      | None -> Fmt.failwith "No data file in %s" root
-      | Some io ->
+      | Error `No_file_on_disk -> Fmt.failwith "No data file in %s" root
+      | Ok io ->
           let io_offset = IO.offset io in
           if Int63.compare io_offset encoded_sizeL < 0 then (
             if not (Int63.equal io_offset Int63.zero) then

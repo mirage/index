@@ -11,7 +11,7 @@ module type S = sig
     string ->
     t
 
-  val v_readonly : string -> t option
+  val v_readonly : string -> (t, [ `No_file_on_disk ]) result
 
   val offset : t -> int63
 
