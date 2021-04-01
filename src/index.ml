@@ -214,8 +214,8 @@ struct
         l "[%s] checking on-disk %s file" (Filename.basename t.root)
           (Filename.basename path));
     match IO.v_readonly path with
-    | None -> None
-    | Some io ->
+    | Error `No_file_on_disk -> None
+    | Ok io ->
         let mem = Tbl.create 0 in
         iter_io (fun e -> Tbl.replace mem e.key e.value) io;
         Some { io; mem }
@@ -239,8 +239,8 @@ struct
     Option.iter (fun (i : index) -> IO.close i.io) t.index;
     let index_path = Layout.data ~root:t.root in
     match IO.v_readonly index_path with
-    | None -> t.index <- None
-    | Some io ->
+    | Error `No_file_on_disk -> t.index <- None
+    | Ok io ->
         let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
         (* We maintain that [index] is [None] if the file is empty. *)
         if IO.offset io = 0L then t.index <- None
