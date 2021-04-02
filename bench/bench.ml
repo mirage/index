@@ -448,7 +448,70 @@ let get_suite_list minimal_flag =
     List.filter (fun bench -> bench.Index.speed = `Quick) Index.suite
   else Index.suite
 
-let run filter root output seed with_metrics log_size nb_entries json
+let repeat n f l =
+  let rec aux i acc = if i = n then acc else aux (i + 1) (f l :: acc) in
+  aux 0 []
+
+let mean l =
+  match l with
+  | [ hd ] -> hd
+  | hd :: tl ->
+      let ll = float (List.length l) in
+      List.fold_left
+        (fun acc bresult ->
+          List.fold_left2
+            (fun acc (tsm, resultm) (ts, result) ->
+              assert (Index.(tsm.name = ts.name));
+              ( tsm,
+                Benchmark.
+                  {
+                    time = resultm.time +. result.time;
+                    ops_per_sec = resultm.ops_per_sec +. result.ops_per_sec;
+                    mbs_per_sec = resultm.mbs_per_sec +. result.mbs_per_sec;
+                    read_amplification_calls =
+                      resultm.read_amplification_calls
+                      +. result.read_amplification_calls;
+                    read_amplification_size =
+                      resultm.read_amplification_size
+                      +. result.read_amplification_size;
+                    write_amplification_calls =
+                      resultm.write_amplification_calls
+                      +. result.write_amplification_calls;
+                    write_amplification_size =
+                      resultm.write_amplification_size
+                      +. result.write_amplification_size;
+                    replace_durations =
+                      List.map2 ( +. ) resultm.replace_durations
+                        result.replace_durations;
+                    merge_durations =
+                      List.map2 ( +. ) resultm.merge_durations
+                        result.merge_durations;
+                    nb_merges = resultm.nb_merges + result.nb_merges;
+                  } )
+              :: acc)
+            [] acc bresult)
+        hd tl
+      |> List.map (fun (es, res) ->
+             ( es,
+               Benchmark.
+                 {
+                   time = res.time /. ll;
+                   ops_per_sec = res.ops_per_sec /. ll;
+                   mbs_per_sec = res.mbs_per_sec /. ll;
+                   read_amplification_calls = res.read_amplification_calls /. ll;
+                   read_amplification_size = res.read_amplification_size /. ll;
+                   write_amplification_calls =
+                     res.write_amplification_calls /. ll;
+                   write_amplification_size = res.write_amplification_size /. ll;
+                   replace_durations =
+                     List.map (fun d -> d /. ll) res.replace_durations;
+                   merge_durations =
+                     List.map (fun d -> d /. ll) res.merge_durations;
+                   nb_merges = res.nb_merges / int_of_float ll;
+                 } ))
+  | _ -> assert false
+
+let run filter root output seed with_metrics log_size nb_entries nb_exec json
     sampling_interval minimal_flag =
   let config =
     {
@@ -470,15 +533,17 @@ let run filter root output seed with_metrics log_size nb_entries json
   in
   current_suite
   |> schedule name_filter
-  |> List.map (fun (b : Index.suite_elt) ->
-         let name =
-           match b.dependency with None -> b.name | Some name -> name
-         in
-         let result =
-           Index.run ~with_metrics ~nb_entries ~log_size ~root ~name
-             ~fresh:b.fresh ~readonly:b.readonly b.benchmark
-         in
-         (b, result))
+  |> repeat nb_exec
+       (List.map (fun (b : Index.suite_elt) ->
+            let name =
+              match b.dependency with None -> b.name | Some name -> name
+            in
+            let result =
+              Index.run ~with_metrics ~nb_entries ~log_size ~root ~name
+                ~fresh:b.fresh ~readonly:b.readonly b.benchmark
+            in
+            (b, result)))
+  |> mean
   |> fun results ->
   let fmt =
     (match output with None -> stdout | Some filename -> open_out filename)
@@ -549,6 +614,11 @@ let nb_entries =
   let env = env_var "NB_ENTRIES" in
   Arg.(value & opt int 10_000_000 & info [ "nb-entries" ] ~env ~doc)
 
+let nb_exec =
+  let doc = "Number of times the benchmarks should be repeated" in
+  let env = env_var "REP" in
+  Arg.(value & opt int 1 & info [ "nb-exec" ] ~env ~doc)
+
 let list_cmd =
   let doc = "List all available benchmarks." in
   (Term.(pure list_benches $ const ()), Term.info "list" ~doc)
@@ -579,6 +649,7 @@ let cmd =
       $ metrics_flag
       $ log_size
       $ nb_entries
+      $ nb_exec
       $ json_flag
       $ sampling_interval
       $ minimal_flag),
