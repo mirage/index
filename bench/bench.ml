@@ -128,18 +128,18 @@ module Benchmark = struct
 
   let pp_result fmt result =
     Format.fprintf fmt
-      "Total time: %f@\n\
-       Operations per second: %f@\n\
-       Mbytes per second: %f@\n\
-       Read amplification in syscalls: %f@\n\
-       Read amplification in bytes: %f@\n\
-       Write amplification in syscalls: %f@\n\
-       Write amplification in bytes: %f@\n\
+      "@[<v 0>Total time: %f@,\
+       Operations per second: %f@,\
+       Mbytes per second: %f@,\
+       Read amplification in syscalls: %f@,\
+       Read amplification in bytes: %f@,\
+       Write amplification in syscalls: %f@,\
+       Write amplification in bytes: %f@,\
        Last 10 merges cumulated duration (μs): %f@\n\
-       Number of merges : %d" result.time result.ops_per_sec result.mbs_per_sec
-      result.read_amplification_calls result.read_amplification_size
-      result.write_amplification_calls result.write_amplification_size
-      result.merges_duration result.nb_merges
+       Number of merges : %d@]" result.time result.ops_per_sec
+      result.mbs_per_sec result.read_amplification_calls
+      result.read_amplification_size result.write_amplification_calls
+      result.write_amplification_size result.merges_duration result.nb_merges
 end
 
 let make_bindings_pool nb_entries =
@@ -379,14 +379,15 @@ type config = {
 
 let pp_config fmt config =
   Format.fprintf fmt
-    "Key size: %d@\n\
-     Value size: %d@\n\
-     Number of bindings: %d@\n\
-     Log size: %d@\n\
-     Seed: %d@\n\
-     Metrics: %b@\n\
-     Sampling interval: %d" config.key_size config.value_size config.nb_entries
-    config.log_size config.seed config.with_metrics config.sampling_interval
+    "@[<v 0>Key size: %d@,\
+     Value size: %d@,\
+     Number of bindings: %d@,\
+     Log size: %d@,\
+     Seed: %d@,\
+     Metrics: %b@,\
+     Sampling interval: %d@]" config.key_size config.value_size
+    config.nb_entries config.log_size config.seed config.with_metrics
+    config.sampling_interval
 
 let cleanup root =
   let files = [ "data"; "log"; "lock"; "log_async"; "merge" ] in
@@ -415,12 +416,12 @@ let init config =
 
 let print fmt (config, results) =
   let pp_bench fmt (b, result) =
-    Format.fprintf fmt "%s@\n    @[%a@]" b.Index.synopsis Benchmark.pp_result
+    Format.fprintf fmt "@[<v 4>%s@,%a@]" b.Index.synopsis Benchmark.pp_result
       result
   in
-  Format.fprintf fmt "Configuration:@\n    @[%a@]@\n@\nResults:@\n    @[%a@]@\n"
+  Format.fprintf fmt "@[<v 4>Configuration:@,%a@,@]@,@[<v 4>Results:@,%a@]@."
     pp_config config
-    Fmt.(list ~sep:(any "@\n@\n") pp_bench)
+    Fmt.(list ~sep:(any "@,@,") pp_bench)
     results
 
 let print_json fmt (config, results) =
@@ -483,9 +484,8 @@ let mean l =
                     replace_durations =
                       List.map2 ( +. ) resultm.replace_durations
                         result.replace_durations;
-                    merge_durations =
-                      List.map2 ( +. ) resultm.merge_durations
-                        result.merge_durations;
+                    merges_duration =
+                      resultm.merges_duration +. result.merges_duration;
                     nb_merges = resultm.nb_merges + result.nb_merges;
                   } )
               :: acc)
@@ -505,8 +505,7 @@ let mean l =
                    write_amplification_size = res.write_amplification_size /. ll;
                    replace_durations =
                      List.map (fun d -> d /. ll) res.replace_durations;
-                   merge_durations =
-                     List.map (fun d -> d /. ll) res.merge_durations;
+                   merges_duration = res.merges_duration /. ll;
                    nb_merges = res.nb_merges / int_of_float ll;
                  } ))
   | _ -> assert false
