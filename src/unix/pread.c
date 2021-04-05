@@ -11,7 +11,7 @@ CAMLprim value caml_index_pread_int
 
   ssize_t ret;
   size_t fd = Int_val(v_fd);
-  size_t fd_off = Int_val(v_fd_off);
+  size_t fd_off = Long_val(v_fd_off);
   size_t buf_off = Long_val(v_buf_off);
   size_t len = Long_val(v_len);
 
