@@ -89,7 +89,7 @@ module Benchmark = struct
     write_amplification_calls : float;
     write_amplification_size : float;
     replace_durations : float list;
-    merge_durations : float list; [@key "merge_durations_us"]
+    merges_duration : float; [@key "merges_duration_us"]
     nb_merges : int;
   }
   [@@deriving yojson]
@@ -111,7 +111,7 @@ module Benchmark = struct
     let ops_per_sec = nb_entriesf /. time in
     let mbs_per_sec = entry_sizef *. nb_entriesf /. 1_048_576. /. time in
     let replace_durations = stats.replace_durations in
-    let merge_durations = stats.merge_durations in
+    let merges_duration = List.fold_left Float.add 0. stats.merge_durations in
     let nb_merges = stats.nb_merge in
     {
       time;
@@ -122,11 +122,9 @@ module Benchmark = struct
       write_amplification_calls;
       write_amplification_size;
       replace_durations;
-      merge_durations;
+      merges_duration;
       nb_merges;
     }
-
-  let pp_list times = String.concat "; " (List.map string_of_float times)
 
   let pp_result fmt result =
     Format.fprintf fmt
@@ -137,12 +135,11 @@ module Benchmark = struct
        Read amplification in bytes: %f@\n\
        Write amplification in syscalls: %f@\n\
        Write amplification in bytes: %f@\n\
-       Last 10 merge durations (μs): %s@\n\
+       Last 10 merges cumulated duration (μs): %f@\n\
        Number of merges : %d" result.time result.ops_per_sec result.mbs_per_sec
       result.read_amplification_calls result.read_amplification_size
       result.write_amplification_calls result.write_amplification_size
-      (pp_list result.merge_durations)
-      result.nb_merges
+      result.merges_duration result.nb_merges
 end
 
 let make_bindings_pool nb_entries =
