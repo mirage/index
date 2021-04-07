@@ -261,7 +261,7 @@ module Index = struct
         fresh = true;
         benchmark = write_sync;
         dependency = None;
-        speed = `Quick;
+        speed = `Slow;
       };
       {
         name = "replace_increasing_keys";
