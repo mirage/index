@@ -218,15 +218,12 @@ struct
     Log.debug (fun l ->
         l "[%s] checking on-disk %s file" (Filename.basename t.root)
           (Filename.basename path));
-    if IO.exists path then (
-      let io =
-        IO.v ~fresh:false ~readonly:true ~generation:Int63.zero
-          ~fan_size:Int63.zero path
-      in
-      let mem = Tbl.create 0 in
-      iter_io (fun e -> Tbl.replace mem e.key e.value) io;
-      Some { io; mem })
-    else None
+    match IO.v_readonly path with
+    | Error `No_file_on_disk -> None
+    | Ok io ->
+        let mem = Tbl.create 0 in
+        iter_io (fun e -> Tbl.replace mem e.key e.value) io;
+        Some { io; mem }
 
   (** Loads the entries from [log]'s IO into memory, starting from offset [min]. *)
   let sync_log_entries ?min log =
@@ -255,18 +252,13 @@ struct
        changed after a merge. *)
     Option.iter (fun (i : index) -> IO.close i.io) t.index;
     let index_path = Layout.data ~root:t.root in
-    if IO.exists index_path then
-      let io =
-        IO.v ~fresh:false ~readonly:true ~generation:Int63.zero
-          ~fan_size:Int63.zero index_path
-        (* Only [readonly] and [fresh] are actually used in this
-           configuration. *)
-      in
-      let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
-      (* We maintain that [index] is [None] if the file is empty. *)
-      if IO.offset io = Int63.zero then t.index <- None
-      else t.index <- Some { fan_out; io }
-    else t.index <- None
+    match IO.v_readonly index_path with
+    | Error `No_file_on_disk -> t.index <- None
+    | Ok io ->
+        let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
+        (* We maintain that [index] is [None] if the file is empty. *)
+        if IO.offset io = Int63.zero then t.index <- None
+        else t.index <- Some { fan_out; io }
 
   (** Syncs an instance entirely, by checking on-disk changes for [log], [sync],
       and [log_async]. *)
@@ -432,7 +424,7 @@ struct
       if readonly then if fresh then raise RO_not_allowed else None
       else
         let io =
-          IO.v ~flush_callback ~fresh ~readonly ~generation:Int63.zero
+          IO.v ~flush_callback ~fresh ~generation:Int63.zero
             ~fan_size:Int63.zero log_path
         in
         let entries = Int63.div (IO.offset io) entry_sizeL in
@@ -451,8 +443,8 @@ struct
        there is no need to do it here. *)
     if (not readonly) && IO.exists log_async_path then (
       let io =
-        IO.v ~flush_callback ~fresh ~readonly:false ~generation:Int63.zero
-          ~fan_size:Int63.zero log_async_path
+        IO.v ~flush_callback ~fresh ~generation:Int63.zero ~fan_size:Int63.zero
+          log_async_path
       in
       let entries = Int63.div (IO.offset io) entry_sizeL in
       Log.debug (fun l ->
@@ -474,27 +466,31 @@ struct
           log;
       IO.close io);
     let index =
-      let index_path = Layout.data ~root in
-      if IO.exists index_path then
-        let io =
-          (* NOTE: No [flush_callback] on the Index IO as we maintain the
-             invariant that any bindings it contains were previously persisted
-             in either [log] or [log_async]. *)
-          IO.v ?flush_callback:None ~fresh ~readonly ~generation
-            ~fan_size:Int63.zero index_path
-        in
-        let entries = Int63.div (IO.offset io) entry_sizeL in
-        if entries = Int63.zero then None
+      if readonly then None
+      else
+        let index_path = Layout.data ~root in
+        if IO.exists index_path then
+          let io =
+            (* NOTE: No [flush_callback] on the Index IO as we maintain the
+               invariant that any bindings it contains were previously persisted
+               in either [log] or [log_async]. *)
+            IO.v ?flush_callback:None ~fresh ~generation ~fan_size:Int63.zero
+              index_path
+          in
+          let entries = Int63.div (IO.offset io) entry_sizeL in
+          if entries = Int63.zero then None
+          else (
+            Log.debug (fun l ->
+                l "[%s] index file detected. Loading %a entries"
+                  (Filename.basename root) Int63.pp entries);
+            let fan_out =
+              Fan.import ~hash_size:K.hash_size (IO.get_fanout io)
+            in
+            Some { fan_out; io })
         else (
           Log.debug (fun l ->
-              l "[%s] index file detected. Loading %a entries"
-                (Filename.basename root) Int63.pp entries);
-          let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
-          Some { fan_out; io })
-      else (
-        Log.debug (fun l ->
-            l "[%s] no index file detected." (Filename.basename root));
-        None)
+              l "[%s] no index file detected." (Filename.basename root));
+          None)
     in
     {
       config;
@@ -675,7 +671,7 @@ struct
     let log_async =
       let io =
         let log_async_path = Layout.log_async ~root:t.root in
-        IO.v ~flush_callback:t.config.flush_callback ~fresh:true ~readonly:false
+        IO.v ~flush_callback:t.config.flush_callback ~fresh:true
           ~generation:(Int63.succ t.generation) ~fan_size:Int63.zero
           log_async_path
       in
@@ -726,7 +722,7 @@ struct
       in
       let merge =
         let merge_path = Layout.merge ~root:t.root in
-        IO.v ~fresh:true ~readonly:false ~generation
+        IO.v ~fresh:true ~generation
           ~fan_size:(Int63.of_int (Fan.exported_size fan_out))
           merge_path
       in
@@ -737,8 +733,8 @@ struct
             | `Abort -> `Aborted
             | `Continue ->
                 let io =
-                  IO.v ~fresh:true ~readonly:false ~generation
-                    ~fan_size:Int63.zero (Layout.data ~root:t.root)
+                  IO.v ~fresh:true ~generation ~fan_size:Int63.zero
+                    (Layout.data ~root:t.root)
                 in
                 append_remaining_log fan_out log_array 0 merge;
                 `Index_io io)

@@ -53,7 +53,10 @@ let encode_int63 n =
 
 let decode_int63 buf = Int63.decode ~off:0 buf
 
+exception Not_written
+
 let assert_read ~len n =
+  if n = 0 && n <> len then raise Not_written;
   assert (
     if Int.equal n len then true
     else (

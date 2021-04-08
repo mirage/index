@@ -157,28 +157,28 @@ module IO : Index.IO = struct
 
   let () = assert (String.length current_version = 8)
 
-  let v ?(flush_callback = fun () -> ()) ~readonly ~fresh ~generation ~fan_size
-      file =
-    let v ~fan_size ~offset raw =
-      let eight = Int63.of_int 8 in
-      let header = eight ++ eight ++ eight ++ eight ++ fan_size in
-      {
-        header;
-        file;
-        offset;
-        raw;
-        readonly;
-        fan_size;
-        buf = Buffer.create (4 * 1024);
-        flushed = header ++ offset;
-        flush_callback;
-      }
-    in
-    let mode = Unix.(if readonly then O_RDONLY else O_RDWR) in
+  let v_instance ?(flush_callback = fun () -> ()) ~readonly ~fan_size ~offset
+      file raw =
+    let eight = Int63.of_int 8 in
+    let header = eight ++ eight ++ eight ++ eight ++ fan_size in
+    {
+      header;
+      file;
+      offset;
+      raw;
+      readonly;
+      fan_size;
+      buf = Buffer.create (4 * 1024);
+      flushed = header ++ offset;
+      flush_callback;
+    }
+
+  let v ?flush_callback ~fresh ~generation ~fan_size file =
+    let v = v_instance ?flush_callback ~readonly:false file in
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
     | false ->
-        let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; mode ] 0o644 in
+        let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; O_RDWR ] 0o644 in
         let raw = Raw.v x in
         Raw.Offset.set raw Int63.zero;
         Raw.Fan.set_size raw fan_size;
@@ -186,11 +186,9 @@ module IO : Index.IO = struct
         Raw.Generation.set raw generation;
         v ~fan_size ~offset:Int63.zero raw
     | true ->
-        let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; mode ] 0o644 in
+        let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDWR ] 0o644 in
         let raw = Raw.v x in
-        if readonly && fresh then
-          Fmt.failwith "IO.v: cannot reset a readonly file"
-        else if fresh then (
+        if fresh then (
           Raw.Offset.set raw Int63.zero;
           Raw.Fan.set_size raw fan_size;
           Raw.Version.set raw current_version;
@@ -205,6 +203,31 @@ module IO : Index.IO = struct
           let offset = Raw.Offset.get raw in
           let fan_size = Raw.Fan.get_size raw in
           v ~fan_size ~offset raw
+
+  let v_readonly file =
+    let v = v_instance ~readonly:true file in
+    mkdir (Filename.dirname file);
+    try
+      let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDONLY ] 0o644 in
+      let raw = Raw.v x in
+      try
+        let version = Raw.Version.get raw in
+        if version <> current_version then
+          Fmt.failwith "Io.v: unsupported version %s (current version is %s)"
+            version current_version;
+        let offset = Raw.Offset.get raw in
+        let fan_size = Raw.Fan.get_size raw in
+        Ok (v ~fan_size ~offset raw)
+      with Raw.Not_written ->
+        (* The readonly instance cannot read a file that does not have a
+           header.*)
+        Raw.close raw;
+        Error `No_file_on_disk
+    with
+    | Unix.Unix_error (Unix.ENOENT, _, _) ->
+        (* The readonly instance cannot open a non existing file. *)
+        Error `No_file_on_disk
+    | e -> raise e
 
   let exists = Sys.file_exists
 

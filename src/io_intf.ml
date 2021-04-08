@@ -5,12 +5,13 @@ module type S = sig
 
   val v :
     ?flush_callback:(unit -> unit) ->
-    readonly:bool ->
     fresh:bool ->
     generation:int63 ->
     fan_size:int63 ->
     string ->
     t
+
+  val v_readonly : string -> (t, [ `No_file_on_disk ]) result
 
   val offset : t -> int63
 
