@@ -97,6 +97,8 @@ module IO : Index.IO = struct
 
   let get_fanout t = Raw.Fan.get t.raw
 
+  let get_fanout_size t = Raw.Fan.get_size t.raw
+
   let set_fanout t buf =
     assert (Int63.(equal (of_int (String.length buf)) t.fan_size));
     Raw.Fan.set t.raw buf

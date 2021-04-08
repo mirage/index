@@ -26,12 +26,10 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       Entry.decode (Bytes.unsafe_to_string buf) 0
   end
 
-  type size = Bytes of int [@@deriving repr]
+  type size = Bytes of int64 [@@deriving repr]
 
   let size_t =
-    let pp =
-      Fmt.using (fun (Bytes b) -> Int64.of_int b) Progress.Units.Bytes.pp
-    in
+    let pp = Fmt.using (fun (Bytes b) -> b) Progress.Units.Bytes.pp in
     Repr.like
       ~json:
         ( (fun e t ->
@@ -46,7 +44,12 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
     @@ info ~doc:"Path to the Index store on disk" ~docv:"PATH" []
 
   module Stat = struct
-    type io = { size : size; offset : int64; generation : int64 }
+    type io = {
+      size : size;
+      offset : int64;
+      generation : int64;
+      fanout_size : size;
+    }
     [@@deriving repr]
 
     type files = {
@@ -73,10 +76,11 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
     let io path =
       with_io path @@ fun io ->
       let IO.Header.{ offset; generation } = IO.Header.get io in
-      let size = Bytes (IO.size io) in
+      let fanout_size = Bytes (IO.get_fanout_size io |> Int63.to_int64) in
+      let size = Bytes (IO.size io |> Int64.of_int) in
       let offset = Int63.to_int64 offset in
       let generation = Int63.to_int64 generation in
-      { size; offset; generation }
+      { size; offset; generation; fanout_size }
 
     let run ~root =
       Logs.app (fun f -> f "Getting statistics for store: `%s'@," root);
@@ -90,8 +94,9 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
                f Format.str_formatter;
                Format.flush_str_formatter ())
       in
+      let entry_size = K.encoded_size + V.encoded_size |> Int64.of_int in
       {
-        entry_size = Bytes (K.encoded_size + V.encoded_size);
+        entry_size = Bytes entry_size;
         files = { data; log; log_async; merge; lock };
       }
       |> Repr.pp_json ~minify:false t Fmt.stdout
