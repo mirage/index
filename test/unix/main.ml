@@ -85,11 +85,10 @@ module Live = struct
   let different_size_for_value () =
     let* Context.{ rw; _ } = Context.with_empty_index () in
     let k = Key.v () in
-    let v =
-      ( String.init 200 (fun _i -> random_char ()),
-        String.init 200 (fun _i -> random_char ()) )
-    in
-    let exn = I.Private.Data.Invalid_size (Fmt.str "%a" Repr.(pp Value.t) v) in
+    let s1 = String.init 100 (fun _i -> random_char ()) in
+    let s2 = String.init 100 (fun _i -> random_char ()) in
+    let v = (s1, s2) in
+    let exn = I.Private.Data.Invalid_size s1 in
     Alcotest.check_raises
       "Cannot add a value of a different size than string_size." exn (fun () ->
         Index.replace rw k v)

@@ -95,6 +95,12 @@ module Entry = struct
   end
 end
 
+let check_size_or_apply f size s =
+  if String.length s <> size then (
+    Log.debug (fun l -> l "[ENCODE]\"%s\": expected size of %d" s size);
+    raise (Invalid_size s))
+  else f s
+
 module String_fixed (L : sig
   val length : int
 end) : sig
@@ -110,11 +116,11 @@ end = struct
 
   let hash_size = 30
 
-  let encode s f = f s
-
   let decode s off = String.sub s off L.length
 
   let encoded_size = L.length
+
+  let encode s f = check_size_or_apply f encoded_size s
 
   let equal = String.equal
 end
@@ -134,14 +140,14 @@ end = struct
 
   let hash_size = 30
 
-  let encode (s1, s2) f =
-    f s1;
-    f s2
-
   let decode s off =
     (String.sub s off L.length, String.sub s (off + L.length) L.length)
 
   let encoded_size = L.length lsl 1
+
+  let encode (s1, s2) f =
+    check_size_or_apply f (encoded_size / 2) s1;
+    check_size_or_apply f (encoded_size / 2) s2
 
   let equal (sa1, sb1) (sa2, sb2) = String.equal sa1 sa2 && String.equal sb1 sb2
 end
