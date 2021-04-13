@@ -7,6 +7,16 @@
 - Optimised the in-memory representation of index handles, resulting in a
   significant reduction in memory use. (#273)
 
+- `Key.encode` and `Value.encode` have the following type: `t -> (string -> unit) -> unit` (like `Repr`) instead of `t -> string`
+
+# Removed
+
+- `IO.append: t -> string -> unit` has been removed
+
+## Added
+
+- `IO.append_batch: t -> ((string -> unit) -> unit) -> unit` has been added
+
 # 1.3.0 (2021-01-05)
 
 ## Added
