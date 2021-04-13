@@ -221,6 +221,8 @@ module IO : Index.IO = struct
 
   let size { raw; _ } = (Raw.fstat raw).st_size
 
+  let size_header t = t.header |> Int64.to_int
+
   module Lock = struct
     type t = { path : string; fd : Unix.file_descr }
 

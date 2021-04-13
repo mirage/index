@@ -31,6 +31,9 @@ module type S = sig
 
   val close : t -> unit
 
+  val size_header : t -> int
+  (** [size_header t] is [t]'s header size. *)
+
   module Lock : sig
     type t
 
