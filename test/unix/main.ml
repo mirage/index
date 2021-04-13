@@ -812,7 +812,8 @@ module Encode = struct
     Alcotest.(check keyds) "Testing pair of strings keys" e.key ed.key;
     Alcotest.(check value) "Testing simple string values" e.value ed.value
 
-  let tests = [ ("encode", `Quick, encode); ("encode_string_pair", `Quick, encodeDS) ]
+  let tests =
+    [ ("encode", `Quick, encode); ("encode_string_pair", `Quick, encodeDS) ]
 end
 
 let () =
