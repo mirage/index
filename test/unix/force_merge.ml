@@ -297,6 +297,37 @@ let find_in_async_same_generation () =
   let t1 = Index.try_merge_aux ~force:true ~hook:(before f) w in
   Index.await t1 |> check_completed
 
+let sync_before_and_after_clearing_async () =
+  let* { Context.rw; clone; _ } = Context.with_full_index () in
+  let w = rw in
+  let ro = clone ~readonly:true () in
+  let k1 = Key.v () in
+  let v1 = Value.v () in
+  let k2 = Key.v () in
+  let v2 = Value.v () in
+  let add_in_async () =
+    Index.replace w k1 v1;
+    Index.replace w k2 v2;
+    Index.flush w;
+    Log.debug (fun l -> l "RO updates async's offset");
+    Index.sync ro
+  in
+  let sync_before_clear_async () =
+    Log.debug (fun l -> l "RO updates instance's generation");
+    Index.sync ro
+  in
+  let hook =
+    Hook.v (function
+      | `Before -> add_in_async ()
+      | `After_clear -> sync_before_clear_async ()
+      | _ -> ())
+  in
+  let t1 = Index.try_merge_aux ~force:true ~hook w in
+  Index.await t1 |> check_completed;
+  Index.sync ro;
+  test_one_entry ro k1 v1;
+  test_one_entry ro k2 v2
+
 (** RW adds a value in log and flushes it, so every subsequent RO sync should
     find that value. But if the RO sync occurs during a merge, after a clear but
     before a generation change, then the value is missed. Also test ro find at
@@ -422,6 +453,9 @@ let tests =
     ("find while merging", `Quick, find_while_merge);
     ("find in async without log", `Quick, find_in_async_generation_change);
     ("find in async with log", `Quick, find_in_async_same_generation);
+    ( "sync before and after clearing the async",
+      `Quick,
+      sync_before_and_after_clearing_async );
     ("sync and find after log cleared", `Quick, sync_after_clear_log);
     ("merge during ro sync", `Quick, merge_during_sync);
     ("is_merging", `Quick, test_is_merging);
