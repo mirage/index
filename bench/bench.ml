@@ -489,7 +489,8 @@ let mean l =
                     nb_merges = resultm.nb_merges + result.nb_merges;
                   } )
               :: acc)
-            [] acc bresult)
+            [] acc bresult
+          |> List.rev)
         hd tl
       |> List.map (fun (es, res) ->
              ( es,
