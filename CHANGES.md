@@ -1,5 +1,9 @@
 # Unreleased
 
+## Fixed
+
+- Crash-consistency bug could occur between `Key.encode` and `Value.encode` as a flush was possible between them
+
 ## Changed
 
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
