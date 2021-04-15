@@ -790,9 +790,12 @@ module Encode = struct
   let value = Alcotest.(pair string string)
 
   let encode () =
-    let e =
-      E.v "abcdefghijklmnopqrst" ("AbcdefghijklmnopqrsT", "aBCDEFGHIJKLMNOPQRSt")
+    let k = String.init String_size.length (fun _i -> random_char ()) in
+    let v =
+      ( String.init String_size.length (fun _i -> random_char ()),
+        String.init String_size.length (fun _i -> random_char ()) )
     in
+    let e = E.v k v in
     let buf = Buffer.create 30 in
     E.encode e (Buffer.add_string buf);
     let ed = E.decode (Buffer.contents buf) 0 in
@@ -800,11 +803,15 @@ module Encode = struct
     Alcotest.(check value) "Testing simple string values" e.value ed.value
 
   let encodeDS () =
-    let e =
-      EDS.v
-        ("abcdefghijklmnopqrst", "ABCDEFGHIJKLMNOPQRST")
-        ("AbcdefghijklmnopqrsT", "aBCDEFGHIJKLMNOPQRSt")
+    let k =
+      ( String.init String_size.length (fun _i -> random_char ()),
+        String.init String_size.length (fun _i -> random_char ()) )
     in
+    let v =
+      ( String.init String_size.length (fun _i -> random_char ()),
+        String.init String_size.length (fun _i -> random_char ()) )
+    in
+    let e = EDS.v k v in
     let buf = Buffer.create 30 in
     EDS.encode e (Buffer.add_string buf);
     let ed = EDS.decode (Buffer.contents buf) 0 in
