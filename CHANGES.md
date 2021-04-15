@@ -14,6 +14,9 @@
 
 - Benches are now executed 3 times and a new option `nb-exec` has been added (#292)
 
+- `clear` removes the files on disks and opens new ones containing only the
+  header. (#288)
+
 # 1.3.0 (2021-01-05)
 
 ## Added
