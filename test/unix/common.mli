@@ -7,7 +7,6 @@ module Log : Logs.LOG
 
 module Default : sig
   val log_size : int
-
   val size : int
 end
 

@@ -15,7 +15,6 @@ module type S = sig
   val offset : t -> int63
   val read : t -> off:int63 -> len:int -> bytes -> int
   val clear : generation:int63 -> ?hook:(unit -> unit) -> t -> unit
-
   val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
   val get_generation : t -> int63
   val set_fanout : t -> string -> unit

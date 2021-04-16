@@ -38,7 +38,6 @@ let random_string () = String.init String_size.length (fun _i -> random_char ())
 
 module Default = struct
   let log_size = 4
-
   let size = 103
 end
 
