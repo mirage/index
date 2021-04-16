@@ -474,6 +474,39 @@ module Readonly = struct
     Index.check_binding ro k2 v2;
     Index.check_binding ro k3 v3
 
+  let readonly_sync_and_merge_clear () =
+    let* Context.{ clone; rw; _ } = Context.with_empty_index () in
+    let ro = clone ~readonly:true () in
+    let merge = Semaphore.make false and sync = Semaphore.make false in
+    let merge_hook =
+      I.Private.Hook.v @@ function
+      | `Before ->
+          Semaphore.release sync;
+          Semaphore.acquire merge
+      | `After_clear -> Semaphore.release sync
+      | _ -> ()
+    in
+    let sync_hook =
+      I.Private.Hook.v @@ function
+      | `After_offset_read ->
+          Semaphore.release merge;
+          Semaphore.acquire sync
+      | _ -> ()
+    in
+    let gen i = (String.make Key.encoded_size i, Value.v ()) in
+    let k1, v1 = gen '1' in
+    let k2, v2 = gen '2' in
+
+    Index.replace rw k1 v1;
+    Index.flush rw;
+    let thread = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
+    Index.replace rw k2 v2;
+    Semaphore.acquire sync;
+    Index.sync' ~hook:sync_hook ro;
+    Index.await thread |> check_completed;
+    Semaphore.release sync;
+    Index.check_binding ro k1 v1
+
   let tests =
     [
       ("add", `Quick, readonly);
@@ -495,6 +528,9 @@ module Readonly = struct
         readonly_add_index_after_clear );
       ("readonly open after clear", `Quick, readonly_open_after_clear);
       ("race between sync and merge", `Quick, readonly_sync_and_merge);
+      ( "race between sync and end of merge",
+        `Quick,
+        readonly_sync_and_merge_clear );
     ]
 end
 
