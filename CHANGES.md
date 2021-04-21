@@ -7,6 +7,8 @@
 - Optimised the in-memory representation of index handles, resulting in a
   significant reduction in memory use. (#273)
 
+- Benches are now executed 3 times and a new option `nb-exec` has been added (#292)
+
 # 1.3.0 (2021-01-05)
 
 ## Added
