@@ -128,18 +128,18 @@ module Benchmark = struct
 
   let pp_result fmt result =
     Format.fprintf fmt
-      "Total time: %f@\n\
-       Operations per second: %f@\n\
-       Mbytes per second: %f@\n\
-       Read amplification in syscalls: %f@\n\
-       Read amplification in bytes: %f@\n\
-       Write amplification in syscalls: %f@\n\
-       Write amplification in bytes: %f@\n\
+      "@[<v 0>Total time: %f@,\
+       Operations per second: %f@,\
+       Mbytes per second: %f@,\
+       Read amplification in syscalls: %f@,\
+       Read amplification in bytes: %f@,\
+       Write amplification in syscalls: %f@,\
+       Write amplification in bytes: %f@,\
        Last 10 merges cumulated duration (μs): %f@\n\
-       Number of merges : %d" result.time result.ops_per_sec result.mbs_per_sec
-      result.read_amplification_calls result.read_amplification_size
-      result.write_amplification_calls result.write_amplification_size
-      result.merges_duration result.nb_merges
+       Number of merges : %d@]" result.time result.ops_per_sec
+      result.mbs_per_sec result.read_amplification_calls
+      result.read_amplification_size result.write_amplification_calls
+      result.write_amplification_size result.merges_duration result.nb_merges
 end
 
 let make_bindings_pool nb_entries =
@@ -379,14 +379,15 @@ type config = {
 
 let pp_config fmt config =
   Format.fprintf fmt
-    "Key size: %d@\n\
-     Value size: %d@\n\
-     Number of bindings: %d@\n\
-     Log size: %d@\n\
-     Seed: %d@\n\
-     Metrics: %b@\n\
-     Sampling interval: %d" config.key_size config.value_size config.nb_entries
-    config.log_size config.seed config.with_metrics config.sampling_interval
+    "@[<v 0>Key size: %d@,\
+     Value size: %d@,\
+     Number of bindings: %d@,\
+     Log size: %d@,\
+     Seed: %d@,\
+     Metrics: %b@,\
+     Sampling interval: %d@]" config.key_size config.value_size
+    config.nb_entries config.log_size config.seed config.with_metrics
+    config.sampling_interval
 
 let cleanup root =
   let files = [ "data"; "log"; "lock"; "log_async"; "merge" ] in
@@ -415,12 +416,12 @@ let init config =
 
 let print fmt (config, results) =
   let pp_bench fmt (b, result) =
-    Format.fprintf fmt "%s@\n    @[%a@]" b.Index.synopsis Benchmark.pp_result
+    Format.fprintf fmt "@[<v 4>%s@,%a@]" b.Index.synopsis Benchmark.pp_result
       result
   in
-  Format.fprintf fmt "Configuration:@\n    @[%a@]@\n@\nResults:@\n    @[%a@]@\n"
+  Format.fprintf fmt "@[<v 4>Configuration:@,%a@,@]@,@[<v 4>Results:@,%a@]@."
     pp_config config
-    Fmt.(list ~sep:(any "@\n@\n") pp_bench)
+    Fmt.(list ~sep:(any "@,@,") pp_bench)
     results
 
 let print_json fmt (config, results) =
@@ -448,7 +449,69 @@ let get_suite_list minimal_flag =
     List.filter (fun bench -> bench.Index.speed = `Quick) Index.suite
   else Index.suite
 
-let run filter root output seed with_metrics log_size nb_entries json
+let repeat n f l =
+  let rec aux i acc = if i = n then acc else aux (i + 1) (f l :: acc) in
+  aux 0 []
+
+let mean l =
+  match l with
+  | [ hd ] -> hd
+  | hd :: tl ->
+      let ll = float (List.length l) in
+      List.fold_left
+        (fun acc bresult ->
+          List.fold_left2
+            (fun acc (tsm, resultm) (ts, result) ->
+              assert (Index.(tsm.name = ts.name));
+              ( tsm,
+                Benchmark.
+                  {
+                    time = resultm.time +. result.time;
+                    ops_per_sec = resultm.ops_per_sec +. result.ops_per_sec;
+                    mbs_per_sec = resultm.mbs_per_sec +. result.mbs_per_sec;
+                    read_amplification_calls =
+                      resultm.read_amplification_calls
+                      +. result.read_amplification_calls;
+                    read_amplification_size =
+                      resultm.read_amplification_size
+                      +. result.read_amplification_size;
+                    write_amplification_calls =
+                      resultm.write_amplification_calls
+                      +. result.write_amplification_calls;
+                    write_amplification_size =
+                      resultm.write_amplification_size
+                      +. result.write_amplification_size;
+                    replace_durations =
+                      List.map2 ( +. ) resultm.replace_durations
+                        result.replace_durations;
+                    merges_duration =
+                      resultm.merges_duration +. result.merges_duration;
+                    nb_merges = resultm.nb_merges + result.nb_merges;
+                  } )
+              :: acc)
+            [] acc bresult
+          |> List.rev)
+        hd tl
+      |> List.map (fun (es, res) ->
+             ( es,
+               Benchmark.
+                 {
+                   time = res.time /. ll;
+                   ops_per_sec = res.ops_per_sec /. ll;
+                   mbs_per_sec = res.mbs_per_sec /. ll;
+                   read_amplification_calls = res.read_amplification_calls /. ll;
+                   read_amplification_size = res.read_amplification_size /. ll;
+                   write_amplification_calls =
+                     res.write_amplification_calls /. ll;
+                   write_amplification_size = res.write_amplification_size /. ll;
+                   replace_durations =
+                     List.map (fun d -> d /. ll) res.replace_durations;
+                   merges_duration = res.merges_duration /. ll;
+                   nb_merges = res.nb_merges / int_of_float ll;
+                 } ))
+  | _ -> assert false
+
+let run filter root output seed with_metrics log_size nb_entries nb_exec json
     sampling_interval minimal_flag =
   let config =
     {
@@ -470,15 +533,17 @@ let run filter root output seed with_metrics log_size nb_entries json
   in
   current_suite
   |> schedule name_filter
-  |> List.map (fun (b : Index.suite_elt) ->
-         let name =
-           match b.dependency with None -> b.name | Some name -> name
-         in
-         let result =
-           Index.run ~with_metrics ~nb_entries ~log_size ~root ~name
-             ~fresh:b.fresh ~readonly:b.readonly b.benchmark
-         in
-         (b, result))
+  |> repeat nb_exec
+       (List.map (fun (b : Index.suite_elt) ->
+            let name =
+              match b.dependency with None -> b.name | Some name -> name
+            in
+            let result =
+              Index.run ~with_metrics ~nb_entries ~log_size ~root ~name
+                ~fresh:b.fresh ~readonly:b.readonly b.benchmark
+            in
+            (b, result)))
+  |> mean
   |> fun results ->
   let fmt =
     (match output with None -> stdout | Some filename -> open_out filename)
@@ -549,6 +614,11 @@ let nb_entries =
   let env = env_var "NB_ENTRIES" in
   Arg.(value & opt int 10_000_000 & info [ "nb-entries" ] ~env ~doc)
 
+let nb_exec =
+  let doc = "Number of times the benchmarks should be repeated" in
+  let env = env_var "REP" in
+  Arg.(value & opt int 1 & info [ "nb-exec" ] ~env ~doc)
+
 let list_cmd =
   let doc = "List all available benchmarks." in
   (Term.(pure list_benches $ const ()), Term.info "list" ~doc)
@@ -579,6 +649,7 @@ let cmd =
       $ metrics_flag
       $ log_size
       $ nb_entries
+      $ nb_exec
       $ json_flag
       $ sampling_interval
       $ minimal_flag),
