@@ -24,6 +24,10 @@
 - `clear` removes the files on disks and opens new ones containing only the
   header. (#288)
 
+## Added
+
+- Added benchmarks that replay a trace of index operations. (#300)
+
 # 1.3.0 (2021-01-05)
 
 ## Added
