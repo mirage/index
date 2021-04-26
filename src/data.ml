@@ -92,8 +92,7 @@ module Entry = struct
         raise (Invalid_size encoded_key);
       if String.length encoded_value <> V.encoded_size then
         raise (Invalid_size encoded_value);
-      f encoded_key;
-      f encoded_value
+      f (encoded_key ^ encoded_value)
 
     let encode { key; value; _ } f = encode' key value f
   end
