@@ -620,9 +620,6 @@ struct
         match yield () with
         | `Abort -> `Aborted
         | `Continue ->
-            (* This yield is used to balance the resources between the merging
-               thread (here) and the main thread. *)
-            Thread.yield ();
             (* If the log entry has the same key as the index entry, we do not
                add the index one, respecting the [replace] semantics. *)
             if

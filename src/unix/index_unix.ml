@@ -355,7 +355,6 @@ module Thread = struct
     let thread = Thread.create protected_f () in
     Async { thread; result }
 
-  let yield = Thread.yield
   let return a = Value a
 
   let await t =

@@ -72,9 +72,6 @@ module type THREAD = sig
 
   val return : 'a -> 'a t
   (** [return ()] is a pre-terminated thread handle. *)
-
-  val yield : unit -> unit
-  (** Re-schedule the calling thread without suspending it. *)
 end
 
 module type S = sig
