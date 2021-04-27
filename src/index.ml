@@ -139,6 +139,10 @@ struct
             operation. All operations should be guarded by this lock. *)
     mutable pending_cancel : bool;
         (** A signal for the merging thread to terminate prematurely. *)
+    mutable replace_yield_frequency : int option;
+        (** A heuristic indicating the main thread the frequency of `yield` that
+            should be called in order to balance the ressources with the merging
+            thread. *)
   }
 
   include Private_types
@@ -505,6 +509,7 @@ struct
       rename_lock = Semaphore.make true;
       writer_lock;
       pending_cancel = false;
+      replace_yield_frequency = None;
     }
 
   type cache = (string * bool, instance) Cache.t
@@ -550,6 +555,8 @@ struct
 
   (** {1 Merges} *)
 
+  let merge_page_size = 10_000
+
   (** Appends the entry encoded in [buf] into [dst_io] and registers it in
       [fan_out] with hash [hash]. *)
   let append_buf_fanout fan_out hash buf_str dst_io =
@@ -586,9 +593,14 @@ struct
   let merge_with ~hook ~yield ~filter log index_io fan_out dst_io =
     (* We read the [index] by page; the [refill] function is in charge of
        refilling the page buffer when empty. *)
-    let len = 10_000 * Entry.encoded_size in
+    let len = merge_page_size * Entry.encoded_size in
     let buf = Bytes.create len in
-    let refill off = ignore (IO.read index_io ~off ~len buf) in
+    let refill off =
+      (* This yield is used to balance the resources between the merging thread
+         (here) and the main thread. It should be called once per page. *)
+      Thread.yield ();
+      ignore (IO.read index_io ~off ~len buf)
+    in
     let buf_str = Bytes.create Entry.encoded_size in
     let index_end = IO.offset index_io in
     refill Int63.zero;
@@ -620,9 +632,6 @@ struct
         match yield () with
         | `Abort -> `Aborted
         | `Continue ->
-            (* This yield is used to balance the resources between the merging
-               thread (here) and the main thread. *)
-            Thread.yield ();
             (* If the log entry has the same key as the index entry, we do not
                add the index one, respecting the [replace] semantics. *)
             if
@@ -656,6 +665,20 @@ struct
       incr n;
       !n
 
+  let yield_heuristic index_size log_size =
+    let open Int63 in
+    (* The number of yields called by the merging thread during its whole
+       execution. Relies on `yield` being called for each merging page. *)
+    let nb_merge_yields = div index_size (of_int merge_page_size) in
+    if nb_merge_yields = zero then None
+    else
+      (* This is the number of replaced entries between each `yield` necessary
+         such that the merging thread and the main thread call `yield` the same
+         number of time. *)
+      let yield_frequency = div log_size nb_merge_yields in
+      (* We leave some margin for the merging thread to finish. *)
+      to_int (div yield_frequency (of_int 2)) |> Option.some
+
   let merge' ?(blocking = false) ?filter ?(hook = fun _ -> ()) ~witness
       ?(force = false) t =
     let yield () = check_pending_cancel t in
@@ -686,6 +709,9 @@ struct
        a log, so that the [index] IO doesn't need to trigger the
        [flush_callback]. *)
     flush_instance ~no_async:() ~with_fsync:true t;
+    t.replace_yield_frequency <-
+      Option.bind t.index (fun (index : index) ->
+          yield_heuristic (IO.offset index.io) (Int63.of_int t.config.log_size));
 
     let go () =
       hook `Before;
@@ -786,6 +812,7 @@ struct
                   (* log_async.mem does not need to be cleared as we are discarding
                      it. *)
                   t.log_async <- None;
+                  t.replace_yield_frequency <- None;
                   Mtime.Span.abs_diff after_rename_lock before_rename_lock)
             in
             IO.close log_async.io;
@@ -876,8 +903,16 @@ struct
 
   (** {1 Replace} *)
 
+  let yield t =
+    let log = Option.get t.log in
+    (* yield every `t.replace_yield_frequency`, when it exists. *)
+    Option.iter
+      (fun i -> if Tbl.length log.mem mod i = 0 then Thread.yield ())
+      t.replace_yield_frequency
+
   let replace' ?hook ?(overcommit = false) t key value =
     let t = check_open t in
+    yield t;
     Stats.incr_nb_replace ();
     Log.debug (fun l ->
         l "[%s] replace %a %a" (Filename.basename t.root) pp_key key pp_value
