@@ -19,13 +19,10 @@ open! Import
 
 module type ARRAY = sig
   type t
-
   type elt
 
   val get : t -> int63 -> elt
-
   val length : t -> int63
-
   val pre_fetch : t -> low:int63 -> high:int63 -> unit
 end
 
@@ -43,7 +40,6 @@ module type ENTRY = sig
   end
 
   val to_key : t -> Key.t
-
   val to_value : t -> Value.t
 end
 
@@ -53,17 +49,13 @@ module type METRIC = sig
   module Entry : ENTRY
 
   val compare : t -> t -> int
-
   val of_entry : Entry.t -> t
-
   val of_key : Entry.Key.t -> t
-
   val linear_interpolate : low:int63 * t -> high:int63 * t -> t -> int63
 end
 
 module type S = sig
   module Entry : ENTRY
-
   module Array : ARRAY with type elt = Entry.t
 
   val interpolation_search :
@@ -72,11 +64,8 @@ end
 
 module type Search = sig
   module type ARRAY = ARRAY
-
   module type ENTRY = ENTRY
-
   module type METRIC = METRIC
-
   module type S = S
 
   module Make

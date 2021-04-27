@@ -42,19 +42,12 @@ let reset_stats () =
   stats.time_sync <- 0.0
 
 let get () = stats
-
 let incr_bytes_read n = stats.bytes_read <- stats.bytes_read + n
-
 let incr_bytes_written n = stats.bytes_written <- stats.bytes_written + n
-
 let incr_nb_reads () = stats.nb_reads <- succ stats.nb_reads
-
 let incr_nb_writes () = stats.nb_writes <- succ stats.nb_writes
-
 let incr_nb_merge () = stats.nb_merge <- succ stats.nb_merge
-
 let incr_nb_replace () = stats.nb_replace <- succ stats.nb_replace
-
 let incr_nb_sync () = stats.nb_sync <- succ stats.nb_sync
 
 let add_read n =
@@ -66,7 +59,6 @@ let add_write n =
   incr_nb_writes ()
 
 let replace_timer = ref (Mtime_clock.counter ())
-
 let nb_replace = ref 0
 
 let start_replace () =

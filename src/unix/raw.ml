@@ -31,9 +31,7 @@ let really_read fd fd_offset length buffer =
   aux fd_offset 0 length
 
 let fsync t = Unix.fsync t.fd
-
 let close t = Unix.close t.fd
-
 let fstat t = Unix.fstat t.fd
 
 let unsafe_write t ~off buf =
@@ -67,7 +65,6 @@ let assert_read ~len n =
 
 module Offset = struct
   let off = Int63.zero
-
   let set t n = unsafe_write t ~off (encode_int63 n)
 
   let get t =
