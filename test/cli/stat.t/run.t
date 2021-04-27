@@ -27,11 +27,6 @@ Running `stat` on an index after 10 merges:
         "offset": 3680,
         "generation": 9
       },
-      "log_async": {
-        "size": "32.0 B",
-        "offset": 0,
-        "generation": 10
-      },
       "lock": "<PID>"
     }
   }

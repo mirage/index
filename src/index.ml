@@ -140,17 +140,15 @@ struct
         t.generation <- Int64.succ t.generation;
         let log = Option.get t.log in
         let hook () = hook `IO_clear in
-        IO.clear ~generation:t.generation ~hook log.io;
+        IO.clear ~generation:t.generation ~hook ~reopen:true log.io;
         Tbl.clear log.mem;
-        may
-          (fun l ->
-            IO.clear ~generation:t.generation l.io;
-            IO.close l.io)
+        Option.iter
+          (fun (l : log) ->
+            IO.clear ~generation:t.generation ~reopen:false l.io)
           t.log_async;
         may
           (fun (i : index) ->
-            IO.clear ~generation:t.generation i.io;
-            IO.close i.io)
+            IO.clear ~generation:t.generation ~reopen:false i.io)
           t.index;
         t.index <- None;
         t.log_async <- None)
@@ -356,9 +354,8 @@ struct
                 Entry.encode e append_io)
               io;
             IO.flush log.io;
-            IO.clear ~generation io)
-          log;
-      IO.close io);
+            IO.clear ~generation ~reopen:false io)
+          log);
     let index =
       if readonly then None
       else
@@ -676,7 +673,7 @@ struct
                   IO.rename ~src:merge ~dst:index.io;
                   t.index <- Some index;
                   t.generation <- generation;
-                  IO.clear ~generation log.io;
+                  IO.clear ~generation ~reopen:true log.io;
                   Tbl.clear log.mem;
                   hook `After_clear;
                   let log_async = assert_and_get t.log_async in
@@ -698,13 +695,13 @@ struct
                    with exn ->
                      Semaphore.release t.merge_lock;
                      raise exn);
-                  IO.clear ~generation:(Int64.succ generation) log_async.io;
+                  IO.clear ~generation:(Int64.succ generation) ~reopen:false
+                    log_async.io;
                   (* log_async.mem does not need to be cleared as we are discarding
                      it. *)
                   t.log_async <- None;
                   Mtime.Span.abs_diff after_rename_lock before_rename_lock)
             in
-            IO.close log_async.io;
             hook `After;
             (`Completed, rename_lock_wait)
       in

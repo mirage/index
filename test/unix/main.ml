@@ -130,16 +130,21 @@ module Live = struct
     Index.clear rw;
     Index.close rw;
     let module I = Index_unix.Private.IO in
-    let test path msg =
+    let test_there path =
       match I.v_readonly path with
-      | Error `No_file_on_disk -> Alcotest.fail "expected data file"
+      | Error `No_file_on_disk -> Alcotest.failf "expected file: %s" path
       | Ok data ->
-          Alcotest.(check int) msg (I.size data) (I.size_header data);
+          Alcotest.(check int) path (I.size data) (I.size_header data);
           I.close data
     in
-    test (Layout.log ~root) "size of log file";
-    test (Layout.log_async ~root) "size of log_async file";
-    test (Layout.data ~root) "size of data file"
+    let test_not_there path =
+      match I.v_readonly path with
+      | Error `No_file_on_disk -> ()
+      | Ok _ -> Alcotest.failf "do not expect file: %s" path
+    in
+    test_there (Layout.log ~root);
+    test_not_there (Layout.log_async ~root);
+    test_not_there (Layout.data ~root)
 
   let duplicate_entries () =
     let* Context.{ rw; _ } = Context.with_empty_index () in
