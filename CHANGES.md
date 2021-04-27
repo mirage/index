@@ -1,11 +1,21 @@
 # Unreleased
 
+## Fixed
+
+- Fixed a crash-consistency bug due to a potential flush of an incomplete entry
+  to disk. Entries are now flushed as complete strings. (#301)
+
 ## Changed
 
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
 
 - Optimised the in-memory representation of index handles, resulting in a
   significant reduction in memory use. (#273)
+
+- Benches are now executed 3 times and a new option `nb-exec` has been added (#292)
+
+- `clear` removes the files on disks and opens new ones containing only the
+  header. (#288)
 
 # 1.3.0 (2021-01-05)
 

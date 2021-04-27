@@ -9,9 +9,7 @@ module Context = Common.Make_context (struct
 end)
 
 let after f = Hook.v (function `After -> f () | _ -> ())
-
 let after_clear f = Hook.v (function `After_clear -> f () | _ -> ())
-
 let before f = Hook.v (function `Before -> f () | _ -> ())
 
 let before_offset_read f =
@@ -398,7 +396,9 @@ let test_non_blocking_clear () =
     | _ -> ()
   in
   let clear_hook =
-    Hook.v @@ function `Abort_signalled -> Semaphore.release merge
+    Hook.v @@ function
+    | `Abort_signalled -> Semaphore.release merge
+    | `IO_clear -> ()
   in
   add_bindings rw;
   let thread = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
@@ -425,7 +425,9 @@ let test_abort_merge ~abort_merge () =
     | `Before -> ()
   in
   let abort_hook =
-    Hook.v @@ function `Abort_signalled -> Semaphore.release merge
+    Hook.v @@ function
+    | `Abort_signalled -> Semaphore.release merge
+    | `IO_clear -> ()
   in
   let t = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
   Semaphore.acquire merge_started;

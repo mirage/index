@@ -33,10 +33,13 @@ module String_size = struct
 end
 
 let () = Random.self_init ()
-
 let random_char () = char_of_int (33 + Random.int 94)
-
 let random_string () = String.init String_size.length (fun _i -> random_char ())
+
+module Default = struct
+  let log_size = 4
+  let size = 103
+end
 
 module Key = struct
   include Index.Key.String_fixed (String_size)
@@ -48,7 +51,6 @@ module Value = struct
   include Index.Value.String_fixed (String_size)
 
   let v = random_string
-
   let equal = String.equal
 end
 
@@ -124,7 +126,7 @@ struct
 
   let ignore (_ : t) = ()
 
-  let empty_index ?(log_size = 4) ?flush_callback ?throttle () =
+  let empty_index ?(log_size = Default.log_size) ?flush_callback ?throttle () =
     let name = fresh_name "empty_index" in
     let cache = Index.empty_cache () in
     let rw =
@@ -141,8 +143,8 @@ struct
     in
     { rw; tbl; clone; close_all = (fun () -> !close_all ()) }
 
-  let full_index ?(size = 103) ?(log_size = 4) ?(flush_callback = fun () -> ())
-      ?throttle () =
+  let full_index ?(size = Default.size) ?(log_size = Default.log_size)
+      ?(flush_callback = fun () -> ()) ?throttle () =
     let f =
       (* Disable [flush_callback] while adding initial entries *)
       ref (fun () -> ())
@@ -187,13 +189,9 @@ struct
 end
 
 let ( let* ) f k = f k
-
 let uncurry f (x, y) = f x y
-
 let ignore_value (_ : Value.t) = ()
-
 let ignore_bool (_ : bool) = ()
-
 let ignore_index (_ : Index.t) = ()
 
 let check_equivalence index htbl =

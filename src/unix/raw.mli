@@ -17,42 +17,32 @@ val v : Unix.file_descr -> t
 (** Construct a [raw] value from a file descriptor. *)
 
 val unsafe_write : t -> off:int63 -> string -> unit
-
 val unsafe_read : t -> off:int63 -> len:int -> bytes -> int
-
 val fsync : t -> unit
-
 val close : t -> unit
-
 val fstat : t -> Unix.stats
 
 exception Not_written
 
 module Version : sig
   val get : t -> string
-
   val set : t -> string -> unit
 end
 
 module Offset : sig
   val get : t -> int63
-
   val set : t -> int63 -> unit
 end
 
 module Generation : sig
   val get : t -> int63
-
   val set : t -> int63 -> unit
 end
 
 module Fan : sig
   val get : t -> string
-
   val set : t -> string -> unit
-
   val get_size : t -> int63
-
   val set_size : t -> int63 -> unit
 end
 
@@ -66,7 +56,6 @@ module Header : sig
   }
 
   val get : raw -> t
-
   val set : raw -> t -> unit
 end
 with type raw := t

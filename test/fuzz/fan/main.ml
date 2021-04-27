@@ -3,17 +3,11 @@ module Fan = Index.Private.Fan
 module Int63 = Optint.Int63
 
 let hash_size = 30
-
 let entry_size = 56
-
 let entry_sizeL = Int63.of_int entry_size
-
 let int_bound = 100_000_000
-
 let bounded_int = map [ int ] (fun i -> abs i mod int_bound)
-
 let hash = map [ bytes ] Hashtbl.hash
-
 let hash_list = map [ list hash ] (List.sort compare)
 
 let empty_fan_with_size =

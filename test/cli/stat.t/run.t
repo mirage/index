@@ -24,7 +24,7 @@ Running `stat` on an index after 10 merges:
         "fanout_size": "128.0 B"
       },
       "log": {
-        "size": "3.9 KiB",
+        "size": "3.6 KiB",
         "offset": 3680,
         "generation": 9,
         "fanout_size": "0.0 B"
