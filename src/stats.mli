@@ -28,23 +28,13 @@ type t = {
     - [time_sync] is the duration of the latest call to sync. *)
 
 val reset_stats : unit -> unit
-
 val get : unit -> t
-
 val add_read : int -> unit
-
 val add_write : int -> unit
-
 val incr_nb_merge : unit -> unit
-
 val incr_nb_replace : unit -> unit
-
 val incr_nb_sync : unit -> unit
-
 val start_replace : unit -> unit
-
 val end_replace : sampling_interval:int -> unit
-
 val sync_with_timer : (unit -> unit) -> unit
-
 val add_merge_duration : Mtime.Span.t -> unit

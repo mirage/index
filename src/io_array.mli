@@ -21,7 +21,6 @@ module type ELT = sig
   type t
 
   val encoded_size : int
-
   val decode : string -> int -> t
 end
 

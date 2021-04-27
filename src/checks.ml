@@ -103,7 +103,6 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
 
   module Integrity_check = struct
     let encoded_sizeL = Int63.of_int Entry.encoded_size
-
     let encoded_sizeLd = Int64.of_int Entry.encoded_size
 
     let print_window_around central_offset io context =

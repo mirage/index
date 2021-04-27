@@ -28,7 +28,6 @@ end
 
 module Index : sig
   open Index.Private
-
   include S with type key = Key.t and type value = Value.t
 
   val replace_random :
@@ -88,13 +87,9 @@ val ( let* ) : ('a -> 'b) -> 'a -> 'b
 (** CPS monad *)
 
 val ( >> ) : ('a -> 'b) -> ('b -> 'c) -> 'a -> 'c
-
 val uncurry : ('a -> 'b -> 'c) -> 'a * 'b -> 'c
-
 val ignore_value : Value.t -> unit
-
 val ignore_bool : bool -> unit
-
 val ignore_index : Index.t -> unit
 
 type binding = Key.t * Value.t
@@ -105,5 +100,4 @@ val check_completed :
   ([ `Aborted | `Completed ], [ `Async_exn of exn ]) result -> unit
 
 val check_equivalence : Index.t -> (Key.t, Value.t) Hashtbl.t -> unit
-
 val check_disjoint : Index.t -> (Key.t, Value.t) Hashtbl.t -> unit

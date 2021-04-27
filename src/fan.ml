@@ -46,7 +46,6 @@ let v ~hash_size ~entry_size n =
   }
 
 let nb_fans t = Array.length t.fans
-
 let fan t h = (h land t.mask) lsr t.shift
 
 let search t h =

@@ -21,7 +21,6 @@ module type ELT = sig
   type t
 
   val encoded_size : int
-
   val decode : string -> int -> t
 end
 
@@ -42,11 +41,8 @@ module Make (IO : Io.S) (Elt : ELT) :
   end
 
   type io = IO.t
-
   type elt = Elt.t
-
   type buffer = { buf : bytes; low_off : int63; high_off : int63 }
-
   type t = { io : IO.t; mutable buffer : buffer option }
 
   let v io = { io; buffer = None }

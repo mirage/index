@@ -6,7 +6,6 @@ open Common
 type index = Common.Index.t
 
 let ( // ) = Filename.concat
-
 let root = "_tests" // "unix.main"
 
 module Context = Common.Make_context (struct
@@ -52,7 +51,6 @@ let mem_entry f k _ =
   if not (f k) then Alcotest.failf "Wrong insertion: %s key is missing." k
 
 let mem_index_entry index = mem_entry (Index.mem index)
-
 let mem_tbl_entry tbl = mem_entry (Hashtbl.mem tbl)
 
 let check_equivalence_mem index tbl =
