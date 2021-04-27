@@ -14,7 +14,10 @@ module type S = sig
   val v_readonly : string -> (t, [ `No_file_on_disk ]) result
   val offset : t -> int63
   val read : t -> off:int63 -> len:int -> bytes -> int
-  val clear : generation:int63 -> ?hook:(unit -> unit) -> t -> unit
+
+  val clear :
+    generation:int63 -> ?hook:(unit -> unit) -> reopen:bool -> t -> unit
+
   val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
   val get_generation : t -> int63
   val set_fanout : t -> string -> unit

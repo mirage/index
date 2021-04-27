@@ -152,30 +152,25 @@ module IO : Index.IO = struct
     Raw.Fan.set raw "";
     raw
 
-  let clear ~generation ?(hook = fun () -> ()) t =
+  let clear ~generation ?(hook = fun () -> ()) ~reopen t =
     t.offset <- Int63.zero;
     t.flushed <- t.header;
     Buffer.clear t.buf;
-    let tmp = t.file ^ "_tmp" in
-    Raw.close t.raw;
-    (* Rename file into a temporary file. This allows a fresh file to be
+    (* Remove the file current file. This allows a fresh file to be
        created, before writing the new generation in the temporary file. *)
-    Unix.rename t.file tmp;
-    hook ();
+    let old = t.raw in
+    Unix.unlink t.file;
     (* Open a fresh file. *)
-    t.raw <-
-      raw ~version:current_version ~generation ~offset:Int63.zero
-        ~flags:Unix.[ O_CREAT; O_RDWR; O_CLOEXEC ]
-        t.file;
-    (* Set new generation in the temporary file. *)
-    let tmp_fd =
-      raw ~version:current_version ~generation ~offset:Int63.zero
-        ~flags:Unix.[ O_RDWR; O_CLOEXEC ]
-        tmp
-    in
-    (* Close and remove temporary file. *)
-    Raw.close tmp_fd;
-    Unix.unlink tmp
+    if reopen then
+      t.raw <-
+        raw ~version:current_version ~generation ~offset:Int63.zero
+          ~flags:Unix.[ O_CREAT; O_RDWR; O_CLOEXEC ]
+          t.file;
+    hook ();
+    (* Set new generation in the old file. *)
+    Raw.Header.set old
+      { Raw.Header.offset = Int63.zero; generation; version = current_version };
+    Raw.close old
 
   let () = assert (String.length current_version = 8)
 
