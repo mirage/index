@@ -113,6 +113,8 @@ struct
     mutable log_async : log option;
     mutable open_instances : int;
     writer_lock : IO.Lock.t option;
+    sync_lock : Semaphore.t;
+        (** A lock that prevents multiple [sync] to happen at the same time. *)
     merge_lock : Semaphore.t;
     rename_lock : Semaphore.t;
     mutable pending_cancel : bool;
@@ -252,6 +254,7 @@ struct
         else t.index <- Some { fan_out; io }
 
   let sync_log ?(hook = fun _ -> ()) t =
+    Semaphore.with_acquire "sync" t.sync_lock @@ fun () ->
     Log.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
     (match t.log with
@@ -393,6 +396,7 @@ struct
       open_instances = 1;
       merge_lock = Semaphore.make true;
       rename_lock = Semaphore.make true;
+      sync_lock = Semaphore.make true;
       writer_lock;
       pending_cancel = false;
     }

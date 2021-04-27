@@ -4,6 +4,8 @@
 
 - Reduce allocations during merge (#274, #277)
 
+- Protect concurrent syncs with a lock (#309)
+
 ## Changed
 
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
