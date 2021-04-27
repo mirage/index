@@ -255,7 +255,14 @@ module type Private = sig
       [sampling_interval] is not set, no operation is timed. *)
 
   val sync' :
-    ?hook:[ `Before_offset_read | `After_offset_read ] hook -> t -> unit
+    ?hook:
+      [ `Before_offset_read
+      | `After_offset_read
+      | `Reload_log
+      | `Reload_log_async ]
+      hook ->
+    t ->
+    unit
   (** Hooks:
 
       - [`Before_offset_read]: before reading the generation number and the

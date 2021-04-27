@@ -547,6 +547,48 @@ module Readonly = struct
     Semaphore.release sync;
     Index.check_binding ro k1 v1
 
+  let reload_log_async () =
+    let* Context.{ rw; clone; _ } = Context.with_empty_index () in
+    let ro = clone ~readonly:true () in
+    let reload_log = ref 0 in
+    let reload_log_async = ref 0 in
+    let merge = Semaphore.make false in
+    let sync = Semaphore.make false in
+    let merge_hook =
+      I.Private.Hook.v @@ function
+      | `Before ->
+          Semaphore.release sync;
+          Semaphore.acquire merge
+      | `After_clear -> Semaphore.release sync
+      | _ -> ()
+    in
+    let sync_hook =
+      I.Private.Hook.v (function
+        | `Reload_log -> reload_log := succ !reload_log
+        | `Reload_log_async -> reload_log_async := succ !reload_log_async
+        | _ -> ())
+    in
+    let k1, v1 = (Key.v (), Value.v ()) in
+    let k2, v2 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    Index.flush rw;
+    let t = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
+    Index.replace rw k2 v2;
+    Index.flush rw;
+    Semaphore.acquire sync;
+    Index.sync' ~hook:sync_hook ro;
+    Index.sync' ~hook:sync_hook ro;
+    Index.sync' ~hook:sync_hook ro;
+    Index.sync' ~hook:sync_hook ro;
+    Semaphore.release merge;
+    Index.check_binding ro k1 v1;
+    Index.check_binding ro k2 v2;
+    if !reload_log <> 0 then
+      Alcotest.failf "%d reloadings of log per merge" !reload_log;
+    if !reload_log_async <> 1 then
+      Alcotest.failf "%d reloadings of log async per merge" !reload_log_async;
+    Index.await t |> check_completed
+
   let tests =
     [
       ("add", `Quick, readonly);
@@ -572,6 +614,7 @@ module Readonly = struct
       ( "race between sync and end of merge",
         `Quick,
         readonly_sync_and_merge_clear );
+      ("reload log and log async", `Quick, reload_log_async);
     ]
 end
 

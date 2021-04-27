@@ -230,7 +230,7 @@ struct
     iter_io ?min add_log_entry log.io
 
   (** Syncs the [log_async] of the instance by checking on-disk changes. *)
-  let sync_log_async t =
+  let sync_log_async ~hook t =
     match t.log_async with
     | None -> t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
     | Some log ->
@@ -238,6 +238,7 @@ struct
         let h = IO.Header.get log.io in
         (* If the generation has changed *)
         if t.generation <> h.generation then (
+          hook `Reload_log_async;
           (* close the file .*)
           IO.close log.io;
           (* check that file is on disk, reopen and reload everything. *)
@@ -281,7 +282,7 @@ struct
        worse, [log_async] and [log] might contain duplicated entries,
        but we won't miss any. These entries will be added to [log.mem]
        using Tbl.replace where they will be deduplicated. *)
-    sync_log_async t;
+    sync_log_async ~hook t;
     match t.log with
     | None -> ()
     | Some log ->
@@ -296,6 +297,7 @@ struct
           Log.debug (fun l ->
               l "[%s] generation has changed, reading log and index from disk"
                 (Filename.basename t.root));
+          hook `Reload_log;
           t.generation <- h.generation;
           IO.close log.io;
           t.log <- try_load_log t (Layout.log ~root:t.root);
