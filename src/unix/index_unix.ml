@@ -148,6 +148,7 @@ module IO : Index.IO = struct
     let header = { Raw.Header.offset; version; generation } in
     Raw.Header.set raw header;
     Raw.Fan.set raw "";
+    Raw.fsync raw;
     raw
 
   let clear ~generation ?(hook = fun () -> ()) ~reopen t =
@@ -197,23 +198,23 @@ module IO : Index.IO = struct
   let v ?flush_callback ~fresh ~generation ~fan_size file =
     let v = v_instance ?flush_callback ~readonly:false file in
     mkdir (Filename.dirname file);
+    let header =
+      { Raw.Header.offset = 0L; version = current_version; generation }
+    in
     match Sys.file_exists file with
     | false ->
         let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; O_RDWR ] 0o644 in
         let raw = Raw.v x in
-        Raw.Offset.set raw 0L;
+        Raw.Header.set raw header;
         Raw.Fan.set_size raw fan_size;
-        Raw.Version.set raw current_version;
-        Raw.Generation.set raw generation;
         v ~fan_size ~offset:0L raw
     | true ->
         let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDWR ] 0o644 in
         let raw = Raw.v x in
         if fresh then (
-          Raw.Offset.set raw 0L;
+          Raw.Header.set raw header;
           Raw.Fan.set_size raw fan_size;
-          Raw.Version.set raw current_version;
-          Raw.Generation.set raw generation;
+          Raw.fsync raw;
           v ~fan_size ~offset:0L raw)
         else
           let version = Raw.Version.get raw in

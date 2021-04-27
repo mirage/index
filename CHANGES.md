@@ -12,6 +12,9 @@
 
 - Release the merge lock if a merge raises an exception (#312)
 
+- Added fsync after `Index.clear` to signal more quickly to read-only instances
+  than something has changed in the file (#308)
+
 ## Changed
 
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
