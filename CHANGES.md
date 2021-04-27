@@ -1,5 +1,10 @@
 # Unreleased
 
+## Fixed
+
+- Fixed a crash-consistency bug due to a potential flush of an incomplete entry
+  to disk. Entries are now flushed as complete strings. (#301)
+
 ## Changed
 
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
