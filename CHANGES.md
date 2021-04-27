@@ -9,6 +9,9 @@
   progress: the `log_async` file was not cached properly and fully reloaded
   from disk every time. (#310)
 
+- Added fsync after `Index.clear` to signal more quickly to read-only instances
+  than something has changed in the file (#308)
+
 ## Changed
 
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
