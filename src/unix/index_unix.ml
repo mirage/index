@@ -144,13 +144,38 @@ module IO : Index.IO = struct
     in
     (aux [@tailcall]) dirname (fun () -> ())
 
-  let clear ~generation t =
+  let raw ~flags ~version ~offset ~generation file =
+    let x = Unix.openfile file flags 0o644 in
+    let raw = Raw.v x in
+    let header = { Raw.Header.offset; version; generation } in
+    Raw.Header.set raw header;
+    Raw.Fan.set raw "";
+    raw
+
+  let clear ~generation ?(hook = fun () -> ()) t =
     t.offset <- Int63.zero;
     t.flushed <- t.header;
-    Header.set t { offset = t.offset; generation };
-    Raw.Fan.set t.raw "";
     Buffer.clear t.buf;
-    Raw.fsync t.raw
+    let tmp = t.file ^ "_tmp" in
+    Raw.close t.raw;
+    (* Rename file into a temporary file. This allows a fresh file to be
+       created, before writing the new generation in the temporary file. *)
+    Unix.rename t.file tmp;
+    hook ();
+    (* Open a fresh file. *)
+    t.raw <-
+      raw ~version:current_version ~generation ~offset:Int63.zero
+        ~flags:Unix.[ O_CREAT; O_RDWR; O_CLOEXEC ]
+        t.file;
+    (* Set new generation in the temporary file. *)
+    let tmp_fd =
+      raw ~version:current_version ~generation ~offset:Int63.zero
+        ~flags:Unix.[ O_RDWR; O_CLOEXEC ]
+        tmp
+    in
+    (* Close and remove temporary file. *)
+    Raw.close tmp_fd;
+    Unix.unlink tmp
 
   let () = assert (String.length current_version = 8)
 

@@ -164,7 +164,8 @@ struct
         t.pending_cancel <- false;
         t.generation <- Int63.succ t.generation;
         let log = Option.get t.log in
-        IO.clear ~generation:t.generation log.io;
+        let hook () = hook `IO_clear in
+        IO.clear ~generation:t.generation ~hook log.io;
         Tbl.clear log.mem;
         Option.iter
           (fun l ->
@@ -235,9 +236,13 @@ struct
     | Some log ->
         let offset = IO.offset log.io in
         let h = IO.Header.get log.io in
-        (* If the generation has changed, reload everything. *)
-        if t.generation <> h.generation then sync_log_entries log
-          (* else if the disk offset is greater, reload the newest data. *)
+        (* If the generation has changed *)
+        if t.generation <> h.generation then (
+          (* close the file .*)
+          IO.close log.io;
+          (* check that file is on disk, reopen and reload everything. *)
+          t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
+          (* else if the disk offset is greater, reload the newest data. *))
         else if offset < h.offset then sync_log_entries ~min:offset log
           (* else if the offset is lesser, that means the [log_async] was
              cleared, and the generation should have changed. *)
@@ -292,7 +297,8 @@ struct
               l "[%s] generation has changed, reading log and index from disk"
                 (Filename.basename t.root));
           t.generation <- h.generation;
-          sync_log_entries log;
+          IO.close log.io;
+          t.log <- try_load_log t (Layout.log ~root:t.root);
           sync_index t)
         else if log_offset < h.offset then (
           (* else if the disk offset is greater, we read the newest bindings. *)
@@ -990,6 +996,7 @@ module Private = struct
   module Io_array = Io_array
   module Search = Search
   module Data = Data
+  module Layout = Layout
 
   module Hook = struct
     type 'a t = 'a -> unit

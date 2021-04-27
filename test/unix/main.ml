@@ -1,4 +1,5 @@
 module Hook = Index.Private.Hook
+module Layout = Index.Private.Layout
 module Semaphore = Semaphore_compat.Semaphore.Binary
 module I = Index
 open Common
@@ -115,6 +116,29 @@ module Live = struct
     Alcotest.check_raises "Finding absent should raise Not_found" Not_found
       (fun () -> Key.v () |> Index.find rw2 |> ignore_value)
 
+  let files_on_disk_after_clear () =
+    let root = Context.fresh_name "full_index" in
+    let rw = Index.v ~fresh:true ~log_size:Default.log_size root in
+    for _ = 1 to Default.size do
+      let k = Key.v () in
+      let v = Value.v () in
+      Index.replace rw k v
+    done;
+    Index.flush rw;
+    Index.clear rw;
+    Index.close rw;
+    let module I = Index_unix.Private.IO in
+    let test path msg =
+      match I.v_readonly path with
+      | Error `No_file_on_disk -> Alcotest.fail "expected data file"
+      | Ok data ->
+          Alcotest.(check int) msg (I.size data) (I.size_header data);
+          I.close data
+    in
+    test (Layout.log ~root) "size of log file";
+    test (Layout.log_async ~root) "size of log_async file";
+    test (Layout.data ~root) "size of data file"
+
   let duplicate_entries () =
     let* Context.{ rw; _ } = Context.with_empty_index () in
     let k1, v1, v2, v3 = (Key.v (), Value.v (), Value.v (), Value.v ()) in
@@ -141,6 +165,7 @@ module Live = struct
       ("clear and iter", `Quick, iter_after_clear);
       ("clear and find", `Quick, find_after_clear);
       ("open after clear", `Quick, open_after_clear);
+      ("files on disk after clear", `Quick, files_on_disk_after_clear);
       ("duplicate entries", `Quick, duplicate_entries);
     ]
 end
@@ -270,6 +295,23 @@ module Readonly = struct
     Index.sync ro;
     check_no_index_entry rw k;
     check_no_index_entry ro k
+
+  (* If sync is called right after the generation is set, and before the old
+     file is removed, the readonly instance reopens the old file. It does not
+     try to reopen the file until the next generation change occurs. *)
+  let readonly_io_clear () =
+    let* Context.{ rw; clone; _ } = Context.with_full_index () in
+    let ro = clone ~readonly:true () in
+    let hook =
+      Hook.v @@ function `IO_clear -> Index.sync ro | `Abort_signalled -> ()
+    in
+    Index.clear' ~hook rw;
+    let k, v = (Key.v (), Value.v ()) in
+    Index.replace rw k v;
+    Index.flush rw;
+    Index.sync ro;
+    Index.check_binding rw k v;
+    Index.check_binding ro k v
 
   let hashtbl_pick tbl =
     match Hashtbl.fold (fun k v acc -> (k, v) :: acc) tbl [] with
@@ -472,6 +514,39 @@ module Readonly = struct
     Index.check_binding ro k2 v2;
     Index.check_binding ro k3 v3
 
+  let readonly_sync_and_merge_clear () =
+    let* Context.{ clone; rw; _ } = Context.with_empty_index () in
+    let ro = clone ~readonly:true () in
+    let merge = Semaphore.make false and sync = Semaphore.make false in
+    let merge_hook =
+      I.Private.Hook.v @@ function
+      | `Before ->
+          Semaphore.release sync;
+          Semaphore.acquire merge
+      | `After_clear -> Semaphore.release sync
+      | _ -> ()
+    in
+    let sync_hook =
+      I.Private.Hook.v @@ function
+      | `After_offset_read ->
+          Semaphore.release merge;
+          Semaphore.acquire sync
+      | _ -> ()
+    in
+    let gen i = (String.make Key.encoded_size i, Value.v ()) in
+    let k1, v1 = gen '1' in
+    let k2, v2 = gen '2' in
+
+    Index.replace rw k1 v1;
+    Index.flush rw;
+    let thread = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
+    Index.replace rw k2 v2;
+    Semaphore.acquire sync;
+    Index.sync' ~hook:sync_hook ro;
+    Index.await thread |> check_completed;
+    Semaphore.release sync;
+    Index.check_binding ro k1 v1
+
   let tests =
     [
       ("add", `Quick, readonly);
@@ -493,6 +568,10 @@ module Readonly = struct
         readonly_add_index_after_clear );
       ("readonly open after clear", `Quick, readonly_open_after_clear);
       ("race between sync and merge", `Quick, readonly_sync_and_merge);
+      ("race between sync and clear", `Quick, readonly_io_clear);
+      ( "race between sync and end of merge",
+        `Quick,
+        readonly_sync_and_merge_clear );
     ]
 end
 
