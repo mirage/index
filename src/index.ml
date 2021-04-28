@@ -666,9 +666,6 @@ struct
       - [t.log_async] has been created;
       - [t.merge_lock] is acquired before entry, and released immediately after
         this function returns or raises an exception. *)
-  let compare_entry (e : Entry.t) (e' : Entry.t) =
-    compare e.key_hash e'.key_hash
-
   let unsafe_perform_merge ~witness ~filter ~hook t =
     hook `Before;
     let log = Option.get t.log in
@@ -687,7 +684,7 @@ struct
           i + 1)
         log.mem 0
       |> ignore;
-      Array.fast_sort compare_entry b;
+      Array.fast_sort Entry.compare b;
       b
     in
     let fan_size =
