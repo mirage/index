@@ -230,9 +230,11 @@ struct
     iter_io ?min add_log_entry log.io
 
   (** Syncs the [log_async] of the instance by checking on-disk changes. *)
-  let sync_log_async t =
+  let sync_log_async ~hook t =
     match t.log_async with
-    | None -> t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
+    | None ->
+        hook `Reload_log_async;
+        t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
     | Some log ->
         let offset = IO.offset log.io in
         let h = IO.Header.get log.io in
@@ -241,6 +243,7 @@ struct
           (* close the file .*)
           IO.close log.io;
           (* check that file is on disk, reopen and reload everything. *)
+          hook `Reload_log_async;
           t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
           (* else if the disk offset is greater, reload the newest data. *))
         else if offset < h.offset then sync_log_entries ~min:offset log
@@ -287,7 +290,7 @@ struct
        worse, [log_async] and [log] might contain duplicated entries,
        but we won't miss any. These entries will be added to [log.mem]
        using Tbl.replace where they will be deduplicated. *)
-    sync_log_async t;
+    sync_log_async ~hook t;
     match t.log with
     | None -> ()
     | Some log ->
@@ -303,6 +306,7 @@ struct
               l "[%s] generation has changed: %a -> %a"
                 (Filename.basename t.root) Int63.pp t.generation Int63.pp
                 h.generation);
+          hook `Reload_log;
           t.generation <- h.generation;
           IO.close log.io;
           t.log <- try_load_log t (Layout.log ~root:t.root);
