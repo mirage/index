@@ -6,6 +6,10 @@
 
 - Protect concurrent syncs with a lock (#309)
 
+- Fixed a performance issue for `Index.sync` when there is a blocking merge in
+  progress: the `log_async` file was not cached properly and fully reloaded
+  from disk every time. (#310)
+
 - Release the merge lock if a merge raises an exception (#312)
 
 ## Changed

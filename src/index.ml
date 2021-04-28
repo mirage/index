@@ -234,8 +234,12 @@ struct
     | Some log ->
         let offset = IO.offset log.io in
         let h = IO.Header.get log.io in
-        (* If the generation has changed *)
-        if t.generation <> h.generation then (
+        if
+          (* the generation has changed *)
+          h.generation > Int64.succ t.generation
+          || (* the last sync was done between clear(log) and clear(log_async) *)
+          (h.generation = Int64.succ t.generation && h.offset = 0L)
+        then (
           (* close the file .*)
           IO.close log.io;
           (* check that file is on disk, reopen and reload everything. *)
