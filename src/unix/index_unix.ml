@@ -157,7 +157,7 @@ module IO : Index.IO = struct
     t.flushed <- t.header;
     Buffer.clear t.buf;
     (* Remove the file current file. This allows a fresh file to be
-       created, before writing the new generation in the temporary file. *)
+       created, before writing the new generation in the old file. *)
     let old = t.raw in
     Unix.unlink t.file;
     (* Open a fresh file. *)
