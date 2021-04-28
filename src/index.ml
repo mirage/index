@@ -329,8 +329,7 @@ struct
       if readonly then if fresh then raise RO_not_allowed else None
       else
         let io =
-          IO.v ~flush_callback ~fresh ~generation:0L
-            ~fan_size:0L log_path
+          IO.v ~flush_callback ~fresh ~generation:0L ~fan_size:0L log_path
         in
         let entries = Int64.div (IO.offset io) entry_sizeL in
         Log.debug (fun l ->
@@ -348,8 +347,7 @@ struct
        there is no need to do it here. *)
     if (not readonly) && IO.exists log_async_path then (
       let io =
-        IO.v ~flush_callback ~fresh ~generation:0L ~fan_size:0L
-          log_async_path
+        IO.v ~flush_callback ~fresh ~generation:0L ~fan_size:0L log_async_path
       in
       let entries = Int64.div (IO.offset io) entry_sizeL in
       Log.debug (fun l ->
@@ -378,8 +376,7 @@ struct
             (* NOTE: No [flush_callback] on the Index IO as we maintain the
                invariant that any bindings it contains were previously persisted
                in either [log] or [log_async]. *)
-            IO.v ?flush_callback:None ~fresh ~generation ~fan_size:0L
-              index_path
+            IO.v ?flush_callback:None ~fresh ~generation ~fan_size:0L index_path
           in
           let entries = Int64.div (IO.offset io) entry_sizeL in
           if entries = 0L then None
@@ -708,8 +705,7 @@ struct
       let io =
         let log_async_path = Layout.log_async ~root:t.root in
         IO.v ~flush_callback:t.config.flush_callback ~fresh:true
-          ~generation:(Int64.succ t.generation) ~fan_size:0L
-          log_async_path
+          ~generation:(Int64.succ t.generation) ~fan_size:0L log_async_path
       in
       let mem = Tbl.create 0 in
       { io; mem }
