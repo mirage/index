@@ -1,7 +1,7 @@
 _bench/
 _build/
 _metrics/
-_opam/
+_opam
 _tests/
 *.install
 *.merlin
