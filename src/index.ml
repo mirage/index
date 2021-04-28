@@ -132,6 +132,8 @@ struct
     writer_lock : IO.Lock.t option;
         (** A lock that prevents multiple RW instances to be open at the same
             time. *)
+    sync_lock : Semaphore.t;
+        (** A lock that prevents multiple [sync] to happen at the same time. *)
     merge_lock : Semaphore.t;
         (** A lock that prevents multiple [merges] to happen at the same time. *)
     rename_lock : Semaphore.t;
@@ -265,6 +267,7 @@ struct
   (** Syncs an instance entirely, by checking on-disk changes for [log], [sync],
       and [log_async]. *)
   let sync_instance ?(hook = fun _ -> ()) t =
+    Semaphore.with_acquire "sync" t.sync_lock @@ fun () ->
     Log.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
     (match t.log with
@@ -503,6 +506,7 @@ struct
       open_instances = 1;
       merge_lock = Semaphore.make true;
       rename_lock = Semaphore.make true;
+      sync_lock = Semaphore.make true;
       writer_lock;
       pending_cancel = false;
     }
