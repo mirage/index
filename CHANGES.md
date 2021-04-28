@@ -5,6 +5,10 @@
 - Fixed a crash-consistency bug due to a potential flush of an incomplete entry
   to disk. Entries are now flushed as complete strings. (#301)
 
+- Fixed a performance issue for `Index.sync` when there is a blocking merge in
+  progress: the `log_async` file was not cached properly and fully reloaded
+  from disk every time. (#310)
+
 ## Changed
 
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
