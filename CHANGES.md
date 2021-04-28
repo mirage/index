@@ -6,6 +6,8 @@
 
 - Protect concurrent syncs with a lock (#309)
 
+- Release the merge lock if a merge raises an exception (#312)
+
 ## Changed
 
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
