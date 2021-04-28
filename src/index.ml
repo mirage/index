@@ -689,7 +689,10 @@ struct
     flush_instance ~no_async:() ~with_fsync:true t;
 
     let go () =
-      hook `Before;
+      (try hook `Before
+       with exn ->
+         Semaphore.release t.merge_lock;
+         raise exn);
       let log = Option.get t.log in
       let generation = Int63.succ t.generation in
       let log_array =
@@ -763,7 +766,10 @@ struct
                   t.generation <- generation;
                   IO.clear ~generation ~reopen:true log.io;
                   Tbl.clear log.mem;
-                  hook `After_clear;
+                  (try hook `After_clear
+                   with exn ->
+                     Semaphore.release t.merge_lock;
+                     raise exn);
                   let log_async = Option.get t.log_async in
                   let append_io = IO.append log.io in
                   Tbl.iter
@@ -790,7 +796,10 @@ struct
                   t.log_async <- None;
                   Mtime.Span.abs_diff after_rename_lock before_rename_lock)
             in
-            hook `After;
+            (try hook `After
+             with exn ->
+               Semaphore.release t.merge_lock;
+               raise exn);
             (`Completed, rename_lock_wait)
       in
       let total_duration = Mtime_clock.count counter in
