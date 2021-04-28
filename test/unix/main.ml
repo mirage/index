@@ -29,6 +29,20 @@ let random_existing_key tbl =
     Alcotest.fail "Provided table contains no keys."
   with Found k -> k
 
+let add_binding ?hook t =
+  match Index.replace_random ?hook t with
+  | binding, None -> binding
+  | binding, Some _ ->
+      Alcotest.failf "New binding %a triggered an unexpected merge operation"
+        pp_binding binding
+
+let add_overflow_binding ?hook t =
+  match Index.replace_random ?hook t with
+  | binding, Some merge_result -> (binding, merge_result)
+  | binding, None ->
+      Alcotest.failf "Expected new binding %a to trigger a merge operation"
+        pp_binding binding
+
 let test_replace t =
   let k = Key.v () in
   let v = Value.v () in
@@ -841,20 +855,6 @@ end
 
 (** Tests of [Index.v ~throttle]*)
 module Throttle = struct
-  let add_binding ?hook t =
-    match Index.replace_random ?hook t with
-    | binding, None -> binding
-    | binding, Some _ ->
-        Alcotest.failf "New binding %a triggered an unexpected merge operation"
-          pp_binding binding
-
-  let add_overflow_binding ?hook t =
-    match Index.replace_random ?hook t with
-    | binding, Some merge_result -> (binding, merge_result)
-    | binding, None ->
-        Alcotest.failf "Expected new binding %a to trigger a merge operation"
-          pp_binding binding
-
   let merge () =
     let* Context.{ rw; tbl; _ } =
       Context.with_full_index ~throttle:`Overcommit_memory ()
@@ -899,6 +899,33 @@ module Throttle = struct
     ]
 end
 
+module Try_merge = struct
+  let test_during_async_merge () =
+    let log_size = 4 in
+    let* Context.{ rw; _ } = Context.with_empty_index ~log_size () in
+    let m = Semaphore.make false in
+    let hook =
+      Hook.v @@ function
+      | `Merge `Before ->
+          let not_previously_held = Semaphore.try_acquire m in
+          Alcotest.(check bool)
+            "Lock not previously held" true not_previously_held
+      | _ -> ()
+    in
+    for _ = 1 to log_size do
+      ignore (add_binding rw : binding)
+    done;
+    Log.app (fun m -> m "Triggering an implicit merge");
+    let _, merge_result = add_overflow_binding ~hook rw in
+    Log.app (fun m -> m "Running `try_merge` while a merge is ongoing");
+    Index.try_merge rw;
+    Semaphore.release m;
+    Index.await merge_result |> check_completed;
+    ()
+
+  let tests = [ ("during_async_merge", `Quick, test_during_async_merge) ]
+end
+
 let () =
   Common.report ();
   Alcotest.run "index.unix"
@@ -911,5 +938,6 @@ let () =
       ("close", Close.tests);
       ("filter", Filter.tests);
       ("flush_callback", Flush_callback.tests);
+      ("try_merge", Try_merge.tests);
       ("throttle", Throttle.tests);
     ]
