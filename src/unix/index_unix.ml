@@ -144,7 +144,7 @@ module IO : Index.IO = struct
     in
     (aux [@tailcall]) dirname (fun () -> ())
 
-  let raw ~flags ~version ~offset ~generation file =
+  let raw_file ~flags ~version ~offset ~generation file =
     let x = Unix.openfile file flags 0o644 in
     let raw = Raw.v x in
     let header = { Raw.Header.offset; version; generation } in
@@ -158,17 +158,24 @@ module IO : Index.IO = struct
     t.offset <- Int63.zero;
     t.flushed <- t.header;
     Buffer.clear t.buf;
-    (* Remove the file current file. This allows a fresh file to be
-       created, before writing the new generation in the old file. *)
     let old = t.raw in
-    Unix.unlink t.file;
-    (* Open a fresh file. *)
-    if reopen then
+
+    if reopen then (
+      (* Open a fresh file and rename it to ensure atomicity:
+         concurrent readers should never see the file disapearing. *)
+      let tmp_file = t.file ^ "_tmp" in
       t.raw <-
-        raw ~version:current_version ~generation ~offset:Int63.zero
+        raw_file ~version:current_version ~generation ~offset:Int63.zero
           ~flags:Unix.[ O_CREAT; O_RDWR; O_CLOEXEC ]
-          t.file;
+          tmp_file;
+      Unix.rename tmp_file t.file)
+    else
+      (* Remove the file current file. This allows a fresh file to be
+         created, before writing the new generation in the old file. *)
+      Unix.unlink t.file;
+
     hook ();
+
     (* Set new generation in the old file. *)
     Raw.Header.set old
       { Raw.Header.offset = Int63.zero; generation; version = current_version };

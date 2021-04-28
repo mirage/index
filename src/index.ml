@@ -269,14 +269,14 @@ struct
     Log.debug (fun l ->
         l "[%s] checking for changes on disk (generation=%a)"
           (Filename.basename t.root) Int63.pp t.generation);
-    (* If the last sync was concurrent with a merge, [t.log] needs to
-       be first reloaded (see NOTE1 bellow). *)
+    (* the first sync needs to load the log file. *)
     let () =
       match t.log with
       | None -> t.log <- try_load_log t (Layout.log ~root:t.root)
       | Some _ -> ()
     in
     (* There is a race between sync and merge:
+
        - At the end of the merge, the entries in log_async are copied
        into log. [merge] starts by calling IO.Header.set(log) with a
        new generation number, copies all the entries and then clear
@@ -305,9 +305,9 @@ struct
                 h.generation);
           t.generation <- h.generation;
           IO.close log.io;
-          (* NOTE1: If there is a merge in progress, [IO.clear log] could make
-             the log file disapear temporay and thus  [t.log  <- None] here. *)
           t.log <- try_load_log t (Layout.log ~root:t.root);
+          (* The log file is never removed (even by clear). *)
+          assert (t.log <> None);
           sync_index t)
         else if log_offset < h.offset then (
           (* else if the disk offset is greater, we read the newest bindings. *)
