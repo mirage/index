@@ -666,14 +666,122 @@ struct
       incr n;
       !n
 
+  (** Merges the entries in [t.log] into the data file, ensuring that concurrent
+      writes are not lost.
+
+      The caller must ensure the following:
+
+      - [t.log] has been loaded;
+      - [t.log_async] has been created;
+      - [t.merge_lock] is acquired before entry, and released immediately after
+        this function returns or raises an exception. *)
+  let unsafe_perform_merge ~witness ~filter ~hook t =
+    hook `Before;
+    let log = Option.get t.log in
+    let generation = Int63.succ t.generation in
+    let log_array =
+      Option.iter
+        (fun f ->
+          Tbl.filter_map_inplace
+            (fun key value -> if f (key, value) then Some value else None)
+            log.mem)
+        filter;
+      let b = Array.make (Tbl.length log.mem) witness in
+      Tbl.fold
+        (fun key value i ->
+          b.(i) <- Entry.v key value;
+          i + 1)
+        log.mem 0
+      |> ignore;
+      Array.fast_sort Entry.compare b;
+      b
+    in
+    let fan_size =
+      match t.index with
+      | None -> Tbl.length log.mem
+      | Some index ->
+          (Int63.to_int (IO.offset index.io) / Entry.encoded_size)
+          + Array.length log_array
+    in
+    let fan_out =
+      Fan.v ~hash_size:K.hash_size ~entry_size:Entry.encoded_size fan_size
+    in
+    let merge =
+      let merge_path = Layout.merge ~root:t.root in
+      IO.v ~fresh:true ~generation
+        ~fan_size:(Int63.of_int (Fan.exported_size fan_out))
+        merge_path
+    in
+    let merge_result : [ `Index_io of IO.t | `Aborted ] =
+      match t.index with
+      | None -> (
+          match check_pending_cancel t with
+          | `Abort -> `Aborted
+          | `Continue ->
+              let io =
+                IO.v ~fresh:true ~generation ~fan_size:Int63.zero
+                  (Layout.data ~root:t.root)
+              in
+              append_remaining_log fan_out log_array 0 merge;
+              `Index_io io)
+      | Some index -> (
+          match
+            merge_with ~hook
+              ~yield:(fun () -> check_pending_cancel t)
+              ~filter log_array index.io fan_out merge
+          with
+          | `Completed -> `Index_io index.io
+          | `Aborted -> `Aborted)
+    in
+    match merge_result with
+    | `Aborted -> (`Aborted, Mtime.Span.zero)
+    | `Index_io io ->
+        let fan_out = Fan.finalize fan_out in
+        let index = { io; fan_out } in
+        IO.set_fanout merge (Fan.export index.fan_out);
+        let before_rename_lock = Mtime_clock.counter () in
+        let rename_lock_duration =
+          Semaphore.with_acquire "merge-rename" t.rename_lock (fun () ->
+              let rename_lock_duration = Mtime_clock.count before_rename_lock in
+              IO.rename ~src:merge ~dst:index.io;
+              t.index <- Some index;
+              t.generation <- generation;
+              IO.clear ~generation ~reopen:true log.io;
+              Tbl.clear log.mem;
+              hook `After_clear;
+              let log_async = Option.get t.log_async in
+              let append_io = IO.append log.io in
+              Tbl.iter
+                (fun key value ->
+                  Tbl.replace log.mem key value;
+                  Entry.encode' key value append_io)
+                log_async.mem;
+              (* NOTE: It {i may} not be necessary to trigger the
+                 [flush_callback] here. If the instance has been recently
+                 flushed (or [log_async] just reached the [auto_flush_limit]),
+                 we're just moving already-persisted values around. However, we
+                 trigger the callback anyway for simplicity. *)
+              (* `fsync` is necessary, since bindings in `log_async` may have
+                 been explicitely `fsync`ed during the merge, so we need to
+                 maintain their durability. *)
+              IO.flush ~with_fsync:true log.io;
+              IO.clear ~generation:(Int63.succ generation) ~reopen:false
+                log_async.io;
+              (* log_async.mem does not need to be cleared as we are discarding
+                 it. *)
+              t.log_async <- None;
+              rename_lock_duration)
+        in
+        hook `After;
+        (`Completed, rename_lock_duration)
+
   let merge' ?(blocking = false) ?filter ?(hook = fun _ -> ()) ~witness
       ?(force = false) t =
-    let yield () = check_pending_cancel t in
-    let counter = Mtime_clock.counter () in
+    let merge_started = Mtime_clock.counter () in
     let merge_id = merge_counter () in
     let msg = Fmt.strf "merge { id=%d }" merge_id in
     Semaphore.acquire msg t.merge_lock;
-    let merge_lock_wait = Mtime_clock.count counter in
+    let merge_lock_wait = Mtime_clock.count merge_started in
     Log.info (fun l ->
         let pp_forced ppf () = if force then Fmt.string ppf "; force=true" in
         l "[%s] merge started { id=%d%a }" (Filename.basename t.root) merge_id
@@ -696,119 +804,18 @@ struct
        a log, so that the [index] IO doesn't need to trigger the
        [flush_callback]. *)
     flush_instance ~no_async:() ~with_fsync:true t;
-
     let go () =
-      hook `Before;
-      let log = Option.get t.log in
-      let generation = Int63.succ t.generation in
-      let log_array =
-        let compare_entry (e : Entry.t) (e' : Entry.t) =
-          compare e.key_hash e'.key_hash
-        in
-        Option.iter
-          (fun f ->
-            Tbl.filter_map_inplace
-              (fun key value -> if f (key, value) then Some value else None)
-              log.mem)
-          filter;
-        let b = Array.make (Tbl.length log.mem) witness in
-        Tbl.fold
-          (fun key value i ->
-            b.(i) <- Entry.v key value;
-            i + 1)
-          log.mem 0
-        |> ignore;
-        Array.fast_sort compare_entry b;
-        b
+      let merge_result, rename_lock_wait =
+        Fun.protect
+          (fun () -> unsafe_perform_merge ~filter ~hook ~witness t)
+          ~finally:(fun () -> Semaphore.release t.merge_lock)
       in
-      let fan_size =
-        match t.index with
-        | None -> Tbl.length log.mem
-        | Some index ->
-            (Int63.to_int (IO.offset index.io) / Entry.encoded_size)
-            + Array.length log_array
-      in
-      let fan_out =
-        Fan.v ~hash_size:K.hash_size ~entry_size:Entry.encoded_size fan_size
-      in
-      let merge =
-        let merge_path = Layout.merge ~root:t.root in
-        IO.v ~fresh:true ~generation
-          ~fan_size:(Int63.of_int (Fan.exported_size fan_out))
-          merge_path
-      in
-      let merge_result : [ `Index_io of IO.t | `Aborted ] =
-        match t.index with
-        | None -> (
-            match yield () with
-            | `Abort -> `Aborted
-            | `Continue ->
-                let io =
-                  IO.v ~fresh:true ~generation ~fan_size:Int63.zero
-                    (Layout.data ~root:t.root)
-                in
-                append_remaining_log fan_out log_array 0 merge;
-                `Index_io io)
-        | Some index -> (
-            match
-              merge_with ~hook ~yield ~filter log_array index.io fan_out merge
-            with
-            | `Completed -> `Index_io index.io
-            | `Aborted -> `Aborted)
-      in
-      let cleanup_result, rename_lock_wait =
-        match merge_result with
-        | `Aborted -> (`Aborted, Mtime.Span.zero)
-        | `Index_io io ->
-            let fan_out = Fan.finalize fan_out in
-            let index = { io; fan_out } in
-            IO.set_fanout merge (Fan.export index.fan_out);
-            let rename_lock_wait =
-              let before_rename_lock = Mtime_clock.count counter in
-              Semaphore.with_acquire "merge-rename" t.rename_lock (fun () ->
-                  let after_rename_lock = Mtime_clock.count counter in
-                  IO.rename ~src:merge ~dst:index.io;
-                  t.index <- Some index;
-                  t.generation <- generation;
-                  IO.clear ~generation ~reopen:true log.io;
-                  Tbl.clear log.mem;
-                  hook `After_clear;
-                  let log_async = Option.get t.log_async in
-                  let append_io = IO.append log.io in
-                  Tbl.iter
-                    (fun key value ->
-                      Tbl.replace log.mem key value;
-                      Entry.encode' key value append_io)
-                    log_async.mem;
-                  (* NOTE: It {i may} not be necessary to trigger the
-                     [flush_callback] here. If the instance has been recently
-                     flushed (or [log_async] just reached the [auto_flush_limit]),
-                     we're just moving already-persisted values around. However, we
-                     trigger the callback anyway for simplicity. *)
-                  (* `fsync` is necessary, since bindings in `log_async` may have
-                     been explicitely `fsync`ed during the merge, so we need to
-                     maintain their durability. *)
-                  (try IO.flush ~with_fsync:true log.io
-                   with exn ->
-                     Semaphore.release t.merge_lock;
-                     raise exn);
-                  IO.clear ~generation:(Int63.succ generation) ~reopen:false
-                    log_async.io;
-                  (* log_async.mem does not need to be cleared as we are discarding
-                     it. *)
-                  t.log_async <- None;
-                  Mtime.Span.abs_diff after_rename_lock before_rename_lock)
-            in
-            hook `After;
-            (`Completed, rename_lock_wait)
-      in
-      let total_duration = Mtime_clock.count counter in
+      let total_duration = Mtime_clock.count merge_started in
       let merge_duration = Mtime.Span.abs_diff total_duration merge_lock_wait in
-      Semaphore.release t.merge_lock;
       Stats.add_merge_duration merge_duration;
       Log.info (fun l ->
           let action =
-            match cleanup_result with
+            match merge_result with
             | `Aborted -> "aborted"
             | `Completed -> "completed"
           in
@@ -818,7 +825,7 @@ struct
             (Filename.basename t.root) action merge_id Mtime.Span.pp
             total_duration Mtime.Span.pp merge_duration Mtime.Span.pp
             merge_lock_wait Mtime.Span.pp rename_lock_wait);
-      cleanup_result
+      merge_result
     in
     if blocking then go () |> Thread.return else Thread.async go
 
