@@ -213,14 +213,14 @@ struct
       the temporary [log_async], or to fill the [log] field when they have been
       created before their RW counterpart. *)
   let try_load_log t path =
-    Log.debug (fun l ->
-        l "[%s] checking on-disk %s file" (Filename.basename t.root)
-          (Filename.basename path));
     match IO.v_readonly path with
     | Error `No_file_on_disk -> None
     | Ok io ->
         let mem = Tbl.create 0 in
         iter_io (fun e -> Tbl.replace mem e.key e.value) io;
+        Log.debug (fun l ->
+            l "[%s] loaded %d entries from %s" (Filename.basename t.root)
+              (Tbl.length mem) (Filename.basename path));
         Some { io; mem }
 
   (** Loads the entries from [log]'s IO into memory, starting from offset [min]. *)
@@ -267,10 +267,15 @@ struct
   let sync_instance ?(hook = fun _ -> ()) t =
     Semaphore.with_acquire "sync" t.sync_lock @@ fun () ->
     Log.debug (fun l ->
-        l "[%s] checking for changes on disk" (Filename.basename t.root));
-    (match t.log with
-    | None -> t.log <- try_load_log t (Layout.log ~root:t.root)
-    | Some _ -> ());
+        l "[%s] checking for changes on disk (generation=%a)"
+          (Filename.basename t.root) Int63.pp t.generation);
+    (* If the last sync was concurrent with a merge, [t.log] needs to
+       be first reloaded (see NOTE1 bellow). *)
+    let () =
+      match t.log with
+      | None -> t.log <- try_load_log t (Layout.log ~root:t.root)
+      | Some _ -> ()
+    in
     (* There is a race between sync and merge:
        - At the end of the merge, the entries in log_async are copied
        into log. [merge] starts by calling IO.Header.set(log) with a
@@ -295,10 +300,13 @@ struct
           (* If the generation has changed, then we need to reload both the
              [index] and the [log]. The new generation is the one on disk. *)
           Log.debug (fun l ->
-              l "[%s] generation has changed, reading log and index from disk"
-                (Filename.basename t.root));
+              l "[%s] generation has changed: %a -> %a"
+                (Filename.basename t.root) Int63.pp t.generation Int63.pp
+                h.generation);
           t.generation <- h.generation;
           IO.close log.io;
+          (* NOTE1: If there is a merge in progress, [IO.clear log] could make
+             the log file disapear temporay and thus  [t.log  <- None] here. *)
           t.log <- try_load_log t (Layout.log ~root:t.root);
           sync_index t)
         else if log_offset < h.offset then (
@@ -314,6 +322,7 @@ struct
           (* TODO: Handle the "impossible" case differently? *)
           Log.debug (fun l ->
               l "[%s] no changes detected" (Filename.basename t.root))
+
   (** {1 Find and Mem}*)
 
   module IOArray = Io_array.Make (IO) (Entry)
@@ -395,7 +404,7 @@ struct
     let f t =
       Stats.incr_nb_sync ();
       let t = check_open t in
-      Log.debug (fun l -> l "[%s] sync" (Filename.basename t.root));
+      Log.info (fun l -> l "[%s] sync" (Filename.basename t.root));
       if t.config.readonly then sync_instance ?hook t else raise RW_not_allowed
     in
     Stats.sync_with_timer (fun () -> f t)

@@ -148,6 +148,8 @@ module IO : Index.IO = struct
     let x = Unix.openfile file flags 0o644 in
     let raw = Raw.v x in
     let header = { Raw.Header.offset; version; generation } in
+    Log.debug (fun m ->
+        m "[%s] raw set_header %a" file Header.pp { offset; generation });
     Raw.Header.set raw header;
     Raw.Fan.set raw "";
     raw
