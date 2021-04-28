@@ -287,6 +287,8 @@ struct
           t.generation <- h.generation;
           IO.close log.io;
           t.log <- try_load_log t (Layout.log ~root:t.root);
+          (* The log file is never removed (even by clear). *)
+          assert (t.log <> None);
           sync_index t)
         else if log_offset < h.offset then (
           Log.debug (fun l ->

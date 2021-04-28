@@ -13,7 +13,7 @@
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
 
 - `clear` removes the files on disks and opens new ones containing only the
-  header. (#288, #307)
+  header. (#288, #307, #317)
 
 # 1.3.0 (2021-01-05)
 
