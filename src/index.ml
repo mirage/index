@@ -446,11 +446,11 @@ struct
           IO.v ~flush_callback ~fresh ~generation:Int63.zero
             ~fan_size:Int63.zero log_path
         in
-        let entries = Int63.div (IO.offset io) entry_sizeL in
+        let entries = Int63.(to_int_exn (IO.offset io / entry_sizeL)) in
         Log.debug (fun l ->
-            l "[%s] log file detected. Loading %a entries"
-              (Filename.basename root) Int63.pp entries);
-        let mem = Tbl.create (Int63.to_int entries) in
+            l "[%s] log file detected. Loading %d entries"
+              (Filename.basename root) entries);
+        let mem = Tbl.create entries in
         iter_io (fun e -> Tbl.replace mem e.key e.value) io;
         Some { io; mem }
     in
@@ -708,7 +708,7 @@ struct
       match t.index with
       | None -> Tbl.length log.mem
       | Some index ->
-          (Int63.to_int (IO.offset index.io) / Entry.encoded_size)
+          Int63.(to_int_exn (IO.offset index.io / entry_sizeL))
           + Array.length log_array
     in
     let fan_out =

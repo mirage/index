@@ -53,10 +53,8 @@ module Make (IO : Io.S) (Elt : ELT) :
     assert (n = Elt.encoded_size);
     Elt.decode (Bytes.unsafe_to_string buf) 0
 
-  let ( -- ) = Int63.sub
-
   let get_entry_from_buffer buf off =
-    let buf_off = Int63.(to_int @@ (off -- buf.low_off)) in
+    let buf_off = Int63.(to_int_exn (off - buf.low_off)) in
     assert (buf_off <= Bytes.length buf.buf);
     Elt.decode (Bytes.unsafe_to_string buf.buf) buf_off
 
@@ -67,13 +65,13 @@ module Make (IO : Io.S) (Elt : ELT) :
         Int63.compare off b.low_off >= 0 && Int63.compare off b.high_off <= 0
 
   let get t i =
-    let off = Int63.(mul i Elt.encoded_sizeL) in
+    let off = Int63.(i * Elt.encoded_sizeL) in
     match t.buffer with
     | Some b when is_in_buffer t off -> (
         try get_entry_from_buffer b off with _ -> assert false)
     | _ -> get_entry_from_io t.io off
 
-  let length t = Int63.(div (IO.offset t.io) Elt.encoded_sizeL)
+  let length t = Int63.(IO.offset t.io / Elt.encoded_sizeL)
 
   let max_buffer_size =
     (* The prefetched area should not exceed 4096 in most cases, thanks to the
@@ -85,7 +83,7 @@ module Make (IO : Io.S) (Elt : ELT) :
   let buf = Bytes.create max_buffer_size
 
   let set_buffer t ~low ~high =
-    let range = Elt.encoded_size * (1 + Int63.to_int (high -- low)) in
+    let range = Elt.encoded_size * (1 + Int63.(to_int_exn (high - low))) in
     let low_off = Int63.mul low Elt.encoded_sizeL in
     let high_off = Int63.mul high Elt.encoded_sizeL in
     let n = IO.read t.io ~off:low_off ~len:range buf in
@@ -93,7 +91,7 @@ module Make (IO : Io.S) (Elt : ELT) :
     t.buffer <- Some { buf; low_off; high_off }
 
   let pre_fetch t ~low ~high =
-    let range = Elt.encoded_size * (1 + Int63.to_int (high -- low)) in
+    let range = Elt.encoded_size * (1 + Int63.(to_int_exn (high - low))) in
     if Int63.compare low high > 0 then
       Log.warn (fun m ->
           m "Requested pre-fetch region is empty: [%a, %a]" Int63.pp low
