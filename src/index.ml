@@ -113,6 +113,8 @@ struct
     mutable log_async : log option;
     mutable open_instances : int;
     writer_lock : IO.Lock.t option;
+    sync_lock : Semaphore.t;
+        (** A lock that prevents multiple [sync] to happen at the same time. *)
     merge_lock : Semaphore.t;
     rename_lock : Semaphore.t;
     mutable pending_cancel : bool;
@@ -138,18 +140,17 @@ struct
     Semaphore.with_acquire "clear" t.merge_lock (fun () ->
         t.pending_cancel <- false;
         t.generation <- Int64.succ t.generation;
-        let log = assert_and_get t.log in
-        IO.clear ~generation:t.generation log.io;
+        let log = Option.get t.log in
+        let hook () = hook `IO_clear in
+        IO.clear ~generation:t.generation ~hook ~reopen:true log.io;
         Tbl.clear log.mem;
-        may
-          (fun l ->
-            IO.clear ~generation:t.generation l.io;
-            IO.close l.io)
+        Option.iter
+          (fun (l : log) ->
+            IO.clear ~generation:t.generation ~reopen:false l.io)
           t.log_async;
         may
           (fun (i : index) ->
-            IO.clear ~generation:t.generation i.io;
-            IO.close i.io)
+            IO.clear ~generation:t.generation ~reopen:false i.io)
           t.index;
         t.index <- None;
         t.log_async <- None)
@@ -213,43 +214,54 @@ struct
     Log.debug (fun l ->
         l "[%s] checking on-disk %s file" (Filename.basename t.root)
           (Filename.basename path));
-    if IO.exists path then (
-      let io =
-        IO.v ~fresh:false ~readonly:true ~generation:0L ~fan_size:0L path
-      in
-      let mem = Tbl.create 0 in
-      iter_io (fun e -> Tbl.replace mem e.key e.value) io;
-      Some { io; mem })
-    else None
+    match IO.v_readonly path with
+    | Error `No_file_on_disk -> None
+    | Ok io ->
+        let mem = Tbl.create 0 in
+        iter_io (fun e -> Tbl.replace mem e.key e.value) io;
+        Some { io; mem }
 
   let sync_log_entries ?min log =
     let add_log_entry (e : Entry.t) = Tbl.replace log.mem e.key e.value in
     if min = None then Tbl.clear log.mem;
     iter_io ?min add_log_entry log.io
 
-  let sync_log_async t =
+  let sync_log_async ~hook t =
     match t.log_async with
-    | None -> t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
+    | None ->
+        hook `Reload_log_async;
+        t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
     | Some log ->
         let offset = IO.offset log.io in
         let h = IO.Header.get log.io in
-        if t.generation <> h.generation then sync_log_entries log
+        if
+          (* the generation has changed *)
+          h.generation > Int64.succ t.generation
+          || (* the last sync was done between clear(log) and clear(log_async) *)
+          (h.generation = Int64.succ t.generation && h.offset = 0L)
+        then (
+          (* close the file .*)
+          IO.close log.io;
+          (* check that file is on disk, reopen and reload everything. *)
+          hook `Reload_log_async;
+          t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
+          (* else if the disk offset is greater, reload the newest data. *))
         else if offset < h.offset then sync_log_entries ~min:offset log
         else if offset > h.offset then assert false
 
-  let sync_index ~generation t =
-    may (fun (i : index) -> IO.close i.io) t.index;
+  let sync_index t =
+    Option.iter (fun (i : index) -> IO.close i.io) t.index;
     let index_path = Layout.data ~root:t.root in
-    if not (IO.exists index_path) then t.index <- None
-    else
-      let io =
-        IO.v ~fresh:false ~readonly:true ~generation ~fan_size:0L index_path
-      in
-      let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
-      if IO.offset io = 0L then t.index <- None
-      else t.index <- Some { fan_out; io }
+    match IO.v_readonly index_path with
+    | Error `No_file_on_disk -> t.index <- None
+    | Ok io ->
+        let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
+        (* We maintain that [index] is [None] if the file is empty. *)
+        if IO.offset io = 0L then t.index <- None
+        else t.index <- Some { fan_out; io }
 
   let sync_log ?(hook = fun _ -> ()) t =
+    Semaphore.with_acquire "sync" t.sync_lock @@ fun () ->
     Log.debug (fun l ->
         l "[%s] checking for changes on disk" (Filename.basename t.root));
     (match t.log with
@@ -267,7 +279,7 @@ struct
        worse, [log_async] and [log] might contain duplicated entries,
        but we won't miss any. These entries will be added to [log.mem]
        using Tbl.replace where they will be deduplicated. *)
-    sync_log_async t;
+    sync_log_async ~hook t;
     match t.log with
     | None -> ()
     | Some log ->
@@ -277,11 +289,15 @@ struct
         hook `After_offset_read;
         if t.generation <> h.generation then (
           Log.debug (fun l ->
-              l "[%s] generation has changed, reading log and index from disk"
-                (Filename.basename t.root));
+              l "[%s] generation has changed: %Ld -> %Ld"
+                (Filename.basename t.root) t.generation h.generation);
+          hook `Reload_log;
           t.generation <- h.generation;
-          sync_log_entries log;
-          sync_index ~generation:h.generation t)
+          IO.close log.io;
+          t.log <- try_load_log t (Layout.log ~root:t.root);
+          (* The log file is never removed (even by clear). *)
+          assert (t.log <> None);
+          sync_index t)
         else if log_offset < h.offset then (
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
@@ -313,8 +329,7 @@ struct
       if readonly then if fresh then raise RO_not_allowed else None
       else
         let io =
-          IO.v ~flush_callback ~fresh ~readonly ~generation:0L ~fan_size:0L
-            log_path
+          IO.v ~flush_callback ~fresh ~generation:0L ~fan_size:0L log_path
         in
         let entries = Int64.div (IO.offset io) entry_sizeL in
         Log.debug (fun l ->
@@ -332,8 +347,7 @@ struct
        there is no need to do it here. *)
     if (not readonly) && IO.exists log_async_path then (
       let io =
-        IO.v ~flush_callback ~fresh ~readonly:false ~generation:0L ~fan_size:0L
-          log_async_path
+        IO.v ~flush_callback ~fresh ~generation:0L ~fan_size:0L log_async_path
       in
       let entries = Int64.div (IO.offset io) entry_sizeL in
       Log.debug (fun l ->
@@ -351,31 +365,33 @@ struct
                 Entry.encode e append_io)
               io;
             IO.flush log.io;
-            IO.clear ~generation io)
-          log;
-      IO.close io);
+            IO.clear ~generation ~reopen:false io)
+          log);
     let index =
-      let index_path = Layout.data ~root in
-      if IO.exists index_path then
-        let io =
-          (* NOTE: No [flush_callback] on the Index IO as we maintain the
-             invariant that any bindings it contains were previously persisted
-             in either [log] or [log_async]. *)
-          IO.v ?flush_callback:None ~fresh ~readonly ~generation ~fan_size:0L
-            index_path
-        in
-        let entries = Int64.div (IO.offset io) entry_sizeL in
-        if entries = 0L then None
+      if readonly then None
+      else
+        let index_path = Layout.data ~root in
+        if IO.exists index_path then
+          let io =
+            (* NOTE: No [flush_callback] on the Index IO as we maintain the
+               invariant that any bindings it contains were previously persisted
+               in either [log] or [log_async]. *)
+            IO.v ?flush_callback:None ~fresh ~generation ~fan_size:0L index_path
+          in
+          let entries = Int64.div (IO.offset io) entry_sizeL in
+          if entries = 0L then None
+          else (
+            Log.debug (fun l ->
+                l "[%s] index file detected. Loading %Ld entries"
+                  (Filename.basename root) entries);
+            let fan_out =
+              Fan.import ~hash_size:K.hash_size (IO.get_fanout io)
+            in
+            Some { fan_out; io })
         else (
           Log.debug (fun l ->
-              l "[%s] index file detected. Loading %Ld entries"
-                (Filename.basename root) entries);
-          let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
-          Some { fan_out; io })
-      else (
-        Log.debug (fun l ->
-            l "[%s] no index file detected." (Filename.basename root));
-        None)
+              l "[%s] no index file detected." (Filename.basename root));
+          None)
     in
     {
       config;
@@ -387,6 +403,7 @@ struct
       open_instances = 1;
       merge_lock = Semaphore.make true;
       rename_lock = Semaphore.make true;
+      sync_lock = Semaphore.make true;
       writer_lock;
       pending_cancel = false;
     }
@@ -506,31 +523,45 @@ struct
     let len = entries * Entry.encoded_size in
     let buf = Bytes.create len in
     let refill off = ignore (IO.read index_io ~off ~len buf) in
+    let buf_str = Bytes.create Entry.encoded_size in
     let index_end = IO.offset index_io in
     refill 0L;
+    let filter =
+      Option.fold
+        ~none:(fun _ _ -> true)
+        ~some:(fun f key entry_off ->
+          (* When the filter is not provided, we don't need to decode the value. *)
+          let value =
+            Entry.decode_value (Bytes.unsafe_to_string buf) entry_off
+          in
+          f (key, value))
+        filter
+    in
     let rec go first_entry index_offset buf_offset log_i =
       if index_offset >= index_end then (
         append_remaining_log fan_out log log_i dst_io;
         `Completed)
       else
         let index_offset = Int64.add index_offset entry_sizeL in
-        let e = Entry.decode (Bytes.unsafe_to_string buf) buf_offset in
-        let log_i = merge_from_log fan_out log log_i e.key_hash dst_io in
+        let index_key, index_key_hash =
+          Entry.decode_key (Bytes.unsafe_to_string buf) buf_offset
+        in
+        let log_i = merge_from_log fan_out log log_i index_key_hash dst_io in
         match yield () with
         | `Abort -> `Aborted
         | `Continue ->
             Thread.yield ();
-            (if
-             (log_i >= Array.length log
-             ||
-             let key = log.(log_i).key in
-             not K.(equal key e.key))
-             && filter (e.key, e.value)
-            then
-             let buf_str = Bytes.sub buf buf_offset Entry.encoded_size in
-             append_buf_fanout fan_out e.key_hash
-               (Bytes.unsafe_to_string buf_str)
-               dst_io);
+            if
+              (log_i >= Array.length log
+              ||
+              let log_key = log.(log_i).key in
+              not K.(equal log_key index_key))
+              && filter index_key buf_offset
+            then (
+              Bytes.blit buf buf_offset buf_str 0 Entry.encoded_size;
+              append_buf_fanout fan_out index_key_hash
+                (Bytes.unsafe_to_string buf_str)
+                dst_io);
             if first_entry then hook `After_first_entry;
             let buf_offset =
               let n = buf_offset + Entry.encoded_size in
@@ -549,14 +580,122 @@ struct
       incr n;
       !n
 
-  let merge' ?(blocking = false) ?(filter = fun _ -> true) ?(hook = fun _ -> ())
-      ~witness ?(force = false) t =
-    let yield () = check_pending_cancel t in
-    let counter = Mtime_clock.counter () in
+  (** Merges the entries in [t.log] into the data file, ensuring that concurrent
+      writes are not lost.
+
+      The caller must ensure the following:
+
+      - [t.log] has been loaded;
+      - [t.log_async] has been created;
+      - [t.merge_lock] is acquired before entry, and released immediately after
+        this function returns or raises an exception. *)
+  let unsafe_perform_merge ~witness ~filter ~hook t =
+    hook `Before;
+    let log = Option.get t.log in
+    let generation = Int64.succ t.generation in
+    let log_array =
+      Option.iter
+        (fun f ->
+          Tbl.filter_map_inplace
+            (fun key value -> if f (key, value) then Some value else None)
+            log.mem)
+        filter;
+      let b = Array.make (Tbl.length log.mem) witness in
+      Tbl.fold
+        (fun key value i ->
+          b.(i) <- Entry.v key value;
+          i + 1)
+        log.mem 0
+      |> ignore;
+      Array.fast_sort Entry.compare b;
+      b
+    in
+    let fan_size =
+      match t.index with
+      | None -> Tbl.length log.mem
+      | Some index ->
+          (Int64.to_int (IO.offset index.io) / Entry.encoded_size)
+          + Array.length log_array
+    in
+    let fan_out =
+      Fan.v ~hash_size:K.hash_size ~entry_size:Entry.encoded_size fan_size
+    in
+    let merge =
+      let merge_path = Layout.merge ~root:t.root in
+      IO.v ~fresh:true ~generation
+        ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
+        merge_path
+    in
+    let merge_result : [ `Index_io of IO.t | `Aborted ] =
+      match t.index with
+      | None -> (
+          match check_pending_cancel t with
+          | `Abort -> `Aborted
+          | `Continue ->
+              let io =
+                IO.v ~fresh:true ~generation ~fan_size:0L
+                  (Layout.data ~root:t.root)
+              in
+              append_remaining_log fan_out log_array 0 merge;
+              `Index_io io)
+      | Some index -> (
+          match
+            merge_with ~hook
+              ~yield:(fun () -> check_pending_cancel t)
+              ~filter log_array index.io fan_out merge
+          with
+          | `Completed -> `Index_io index.io
+          | `Aborted -> `Aborted)
+    in
+    match merge_result with
+    | `Aborted -> (`Aborted, Mtime.Span.zero)
+    | `Index_io io ->
+        let fan_out = Fan.finalize fan_out in
+        let index = { io; fan_out } in
+        IO.set_fanout merge (Fan.export index.fan_out);
+        let before_rename_lock = Mtime_clock.counter () in
+        let rename_lock_duration =
+          Semaphore.with_acquire "merge-rename" t.rename_lock (fun () ->
+              let rename_lock_duration = Mtime_clock.count before_rename_lock in
+              IO.rename ~src:merge ~dst:index.io;
+              t.index <- Some index;
+              t.generation <- generation;
+              IO.clear ~generation ~reopen:true log.io;
+              Tbl.clear log.mem;
+              hook `After_clear;
+              let log_async = Option.get t.log_async in
+              let append_io = IO.append log.io in
+              Tbl.iter
+                (fun key value ->
+                  Tbl.replace log.mem key value;
+                  Entry.encode' key value append_io)
+                log_async.mem;
+              (* NOTE: It {i may} not be necessary to trigger the
+                 [flush_callback] here. If the instance has been recently
+                 flushed (or [log_async] just reached the [auto_flush_limit]),
+                 we're just moving already-persisted values around. However, we
+                 trigger the callback anyway for simplicity. *)
+              (* `fsync` is necessary, since bindings in `log_async` may have
+                 been explicitely `fsync`ed during the merge, so we need to
+                 maintain their durability. *)
+              IO.flush ~with_fsync:true log.io;
+              IO.clear ~generation:(Int64.succ generation) ~reopen:false
+                log_async.io;
+              (* log_async.mem does not need to be cleared as we are discarding
+                 it. *)
+              t.log_async <- None;
+              rename_lock_duration)
+        in
+        hook `After;
+        (`Completed, rename_lock_duration)
+
+  let merge' ?(blocking = false) ?filter ?(hook = fun _ -> ()) ~witness
+      ?(force = false) t =
+    let merge_started = Mtime_clock.counter () in
     let merge_id = merge_counter () in
     let msg = Fmt.strf "merge { id=%d }" merge_id in
     Semaphore.acquire msg t.merge_lock;
-    let merge_lock_wait = Mtime_clock.count counter in
+    let merge_lock_wait = Mtime_clock.count merge_started in
     Log.info (fun l ->
         let pp_forced ppf () = if force then Fmt.string ppf "; force=true" in
         l "[%s] merge started { id=%d%a }" (Filename.basename t.root) merge_id
@@ -565,7 +704,7 @@ struct
     let log_async =
       let io =
         let log_async_path = Layout.log_async ~root:t.root in
-        IO.v ~flush_callback:t.config.flush_callback ~fresh:true ~readonly:false
+        IO.v ~flush_callback:t.config.flush_callback ~fresh:true
           ~generation:(Int64.succ t.generation) ~fan_size:0L log_async_path
       in
       let mem = Tbl.create 0 in
@@ -578,116 +717,18 @@ struct
        a log, so that the [index] IO doesn't need to trigger the
        [flush_callback]. *)
     flush_instance ~no_async:() ~with_fsync:true t;
-
     let go () =
-      hook `Before;
-      let log = assert_and_get t.log in
-      let generation = Int64.succ t.generation in
-      let log_array =
-        let compare_entry (e : Entry.t) (e' : Entry.t) =
-          compare e.key_hash e'.key_hash
-        in
-        Tbl.filter_map_inplace
-          (fun key value -> if filter (key, value) then Some value else None)
-          log.mem;
-        let b = Array.make (Tbl.length log.mem) witness in
-        Tbl.fold
-          (fun key value i ->
-            b.(i) <- Entry.v key value;
-            i + 1)
-          log.mem 0
-        |> ignore;
-        Array.fast_sort compare_entry b;
-        b
+      let merge_result, rename_lock_wait =
+        Fun.protect
+          (fun () -> unsafe_perform_merge ~filter ~hook ~witness t)
+          ~finally:(fun () -> Semaphore.release t.merge_lock)
       in
-      let fan_size =
-        match t.index with
-        | None -> Tbl.length log.mem
-        | Some index ->
-            (Int64.to_int (IO.offset index.io) / Entry.encoded_size)
-            + Array.length log_array
-      in
-      let fan_out =
-        Fan.v ~hash_size:K.hash_size ~entry_size:Entry.encoded_size fan_size
-      in
-      let merge =
-        let merge_path = Layout.merge ~root:t.root in
-        IO.v ~fresh:true ~readonly:false ~generation
-          ~fan_size:(Int64.of_int (Fan.exported_size fan_out))
-          merge_path
-      in
-      let merge_result : [ `Index_io of IO.t | `Aborted ] =
-        match t.index with
-        | None -> (
-            match yield () with
-            | `Abort -> `Aborted
-            | `Continue ->
-                let io =
-                  IO.v ~fresh:true ~readonly:false ~generation ~fan_size:0L
-                    (Layout.data ~root:t.root)
-                in
-                append_remaining_log fan_out log_array 0 merge;
-                `Index_io io)
-        | Some index -> (
-            match
-              merge_with ~hook ~yield ~filter log_array index.io fan_out merge
-            with
-            | `Completed -> `Index_io index.io
-            | `Aborted -> `Aborted)
-      in
-      let cleanup_result, rename_lock_wait =
-        match merge_result with
-        | `Aborted -> (`Aborted, Mtime.Span.zero)
-        | `Index_io io ->
-            let fan_out = Fan.finalize fan_out in
-            let index = { io; fan_out } in
-            IO.set_fanout merge (Fan.export index.fan_out);
-            let rename_lock_wait =
-              let before_rename_lock = Mtime_clock.count counter in
-              Semaphore.with_acquire "merge-rename" t.rename_lock (fun () ->
-                  let after_rename_lock = Mtime_clock.count counter in
-                  IO.rename ~src:merge ~dst:index.io;
-                  t.index <- Some index;
-                  t.generation <- generation;
-                  IO.clear ~generation log.io;
-                  Tbl.clear log.mem;
-                  hook `After_clear;
-                  let log_async = assert_and_get t.log_async in
-                  let append_io = IO.append log.io in
-                  Tbl.iter
-                    (fun key value ->
-                      Tbl.replace log.mem key value;
-                      Entry.encode' key value append_io)
-                    log_async.mem;
-                  (* NOTE: It {i may} not be necessary to trigger the
-                     [flush_callback] here. If the instance has been recently
-                     flushed (or [log_async] just reached the [auto_flush_limit]),
-                     we're just moving already-persisted values around. However, we
-                     trigger the callback anyway for simplicity. *)
-                  (* `fsync` is necessary, since bindings in `log_async` may have
-                     been explicitely `fsync`ed during the merge, so we need to
-                     maintain their durability. *)
-                  (try IO.flush ~with_fsync:true log.io
-                   with exn ->
-                     Semaphore.release t.merge_lock;
-                     raise exn);
-                  IO.clear ~generation:(Int64.succ generation) log_async.io;
-                  (* log_async.mem does not need to be cleared as we are discarding
-                     it. *)
-                  t.log_async <- None;
-                  Mtime.Span.abs_diff after_rename_lock before_rename_lock)
-            in
-            IO.close log_async.io;
-            hook `After;
-            (`Completed, rename_lock_wait)
-      in
-      let total_duration = Mtime_clock.count counter in
+      let total_duration = Mtime_clock.count merge_started in
       let merge_duration = Mtime.Span.abs_diff total_duration merge_lock_wait in
-      Semaphore.release t.merge_lock;
       Stats.add_merge_duration merge_duration;
       Log.info (fun l ->
           let action =
-            match cleanup_result with
+            match merge_result with
             | `Aborted -> "aborted"
             | `Completed -> "completed"
           in
@@ -697,7 +738,7 @@ struct
             (Filename.basename t.root) action merge_id Mtime.Span.pp
             total_duration Mtime.Span.pp merge_duration Mtime.Span.pp
             merge_lock_wait Mtime.Span.pp rename_lock_wait);
-      cleanup_result
+      merge_result
     in
     if blocking then go () |> Thread.return else Thread.async go
 
@@ -876,6 +917,7 @@ module Private = struct
   module Io_array = Io_array
   module Search = Search
   module Data = Data
+  module Layout = Layout
 
   module Hook = struct
     type 'a t = 'a -> unit

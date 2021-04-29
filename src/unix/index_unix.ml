@@ -142,53 +142,79 @@ module IO : Index.IO = struct
     in
     (aux [@tailcall]) dirname (fun () -> ())
 
-  let clear ~generation t =
+  let raw_file ~flags ~version ~offset ~generation file =
+    let x = Unix.openfile file flags 0o644 in
+    let raw = Raw.v x in
+    let header = { Raw.Header.offset; version; generation } in
+    Raw.Header.set raw header;
+    Raw.Fan.set raw "";
+    Raw.fsync raw;
+    raw
+
+  let clear ~generation ?(hook = fun () -> ()) ~reopen t =
     t.offset <- 0L;
     t.flushed <- t.header;
-    Header.set t { offset = t.offset; generation };
-    Raw.Fan.set t.raw "";
     Buffer.clear t.buf;
-    Raw.fsync t.raw
+    let old = t.raw in
+
+    if reopen then (
+      (* Open a fresh file and rename it to ensure atomicity:
+         concurrent readers should never see the file disapearing. *)
+      let tmp_file = t.file ^ "_tmp" in
+      t.raw <-
+        raw_file ~version:current_version ~generation ~offset:0L
+          ~flags:Unix.[ O_CREAT; O_RDWR; O_CLOEXEC ]
+          tmp_file;
+      Unix.rename tmp_file t.file)
+    else
+      (* Remove the file current file. This allows a fresh file to be
+         created, before writing the new generation in the old file. *)
+      Unix.unlink t.file;
+
+    hook ();
+
+    (* Set new generation in the old file. *)
+    Raw.Header.set old
+      { Raw.Header.offset = 0L; generation; version = current_version };
+    Raw.close old
 
   let () = assert (String.length current_version = 8)
 
-  let v ?(flush_callback = fun () -> ()) ~readonly ~fresh ~generation ~fan_size
-      file =
-    let v ~fan_size ~offset raw =
-      let header = 8L ++ 8L ++ 8L ++ 8L ++ fan_size in
-      {
-        header;
-        file;
-        offset;
-        raw;
-        readonly;
-        fan_size;
-        buf = Buffer.create (4 * 1024);
-        flushed = header ++ offset;
-        flush_callback;
-      }
-    in
-    let mode = Unix.(if readonly then O_RDONLY else O_RDWR) in
+  let v_instance ?(flush_callback = fun () -> ()) ~readonly ~fan_size ~offset
+      file raw =
+    let header = 8L ++ 8L ++ 8L ++ 8L ++ fan_size in
+    {
+      header;
+      file;
+      offset;
+      raw;
+      readonly;
+      fan_size;
+      buf = Buffer.create (4 * 1024);
+      flushed = header ++ offset;
+      flush_callback;
+    }
+
+  let v ?flush_callback ~fresh ~generation ~fan_size file =
+    let v = v_instance ?flush_callback ~readonly:false file in
     mkdir (Filename.dirname file);
+    let header =
+      { Raw.Header.offset = 0L; version = current_version; generation }
+    in
     match Sys.file_exists file with
     | false ->
-        let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; mode ] 0o644 in
+        let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; O_RDWR ] 0o644 in
         let raw = Raw.v x in
-        Raw.Offset.set raw 0L;
+        Raw.Header.set raw header;
         Raw.Fan.set_size raw fan_size;
-        Raw.Version.set raw current_version;
-        Raw.Generation.set raw generation;
         v ~fan_size ~offset:0L raw
     | true ->
-        let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; mode ] 0o644 in
+        let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDWR ] 0o644 in
         let raw = Raw.v x in
-        if readonly && fresh then
-          Fmt.failwith "IO.v: cannot reset a readonly file"
-        else if fresh then (
-          Raw.Offset.set raw 0L;
+        if fresh then (
+          Raw.Header.set raw header;
           Raw.Fan.set_size raw fan_size;
-          Raw.Version.set raw current_version;
-          Raw.Generation.set raw generation;
+          Raw.fsync raw;
           v ~fan_size ~offset:0L raw)
         else
           let version = Raw.Version.get raw in
@@ -200,9 +226,30 @@ module IO : Index.IO = struct
           let fan_size = Raw.Fan.get_size raw in
           v ~fan_size ~offset raw
 
+  let v_readonly file =
+    let v = v_instance ~readonly:true file in
+    mkdir (Filename.dirname file);
+    try
+      let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDONLY ] 0o644 in
+      let raw = Raw.v x in
+      let version = Raw.Version.get raw in
+      if version <> current_version then
+        Fmt.failwith "Io.v: unsupported version %s (current version is %s)"
+          version current_version;
+      let offset = Raw.Offset.get raw in
+      let fan_size = Raw.Fan.get_size raw in
+      Ok (v ~fan_size ~offset raw)
+    with
+    | Unix.Unix_error (Unix.ENOENT, _, _) ->
+        (* The readonly instance cannot open a non existing file. *)
+        Error `No_file_on_disk
+    | e -> raise e
+
   let exists = Sys.file_exists
 
   let size { raw; _ } = (Raw.fstat raw).st_size
+
+  let size_header t = t.header |> Int64.to_int
 
   module Lock = struct
     type t = { path : string; fd : Unix.file_descr }

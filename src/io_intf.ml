@@ -3,18 +3,20 @@ module type S = sig
 
   val v :
     ?flush_callback:(unit -> unit) ->
-    readonly:bool ->
     fresh:bool ->
     generation:int64 ->
     fan_size:int64 ->
     string ->
     t
 
+  val v_readonly : string -> (t, [ `No_file_on_disk ]) result
+
   val offset : t -> int64
 
   val read : t -> off:int64 -> len:int -> bytes -> int
 
-  val clear : generation:int64 -> t -> unit
+  val clear :
+    generation:int64 -> ?hook:(unit -> unit) -> reopen:bool -> t -> unit
 
   val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
 
@@ -29,6 +31,9 @@ module type S = sig
   val append : t -> string -> unit
 
   val close : t -> unit
+
+  val size_header : t -> int
+  (** [size_header t] is [t]'s header size. *)
 
   module Lock : sig
     type t

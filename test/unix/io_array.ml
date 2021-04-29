@@ -28,8 +28,7 @@ module IOArray = Index.Private.Io_array.Make (IO) (Entry)
 
 let entry = Alcotest.(pair string string)
 
-let fresh_io name =
-  IO.v ~readonly:false ~fresh:true ~generation:0L ~fan_size:0L (root // name)
+let fresh_io name = IO.v ~fresh:true ~generation:0L ~fan_size:0L (root // name)
 
 (* Append a random sequence of [size] keys to an IO instance and return
    a pair of an IOArray and an equivalent in-memory array. *)

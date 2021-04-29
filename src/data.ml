@@ -57,9 +57,16 @@ module Entry = struct
 
     val decode : string -> int -> t
 
+    val decode_key : string -> int -> key * int
+
+    val decode_value : string -> int -> value
+
     val encode : t -> (string -> unit) -> unit
 
     val encode' : key -> value -> (string -> unit) -> unit
+
+    val compare : t -> t -> int
+    (* Compare entries by their key hash. *)
   end
 
   module Make (K : Key) (V : Value) :
@@ -75,6 +82,12 @@ module Entry = struct
       let value = V.decode string (off + K.encoded_size) in
       { key; key_hash = K.hash key; value }
 
+    let decode_key string off =
+      let key = K.decode string off in
+      (key, K.hash key)
+
+    let decode_value string off = V.decode string (off + K.encoded_size)
+
     let encode' key value f =
       let encoded_key = K.encode key in
       let encoded_value = V.encode value in
@@ -82,10 +95,11 @@ module Entry = struct
         raise (Invalid_size encoded_key);
       if String.length encoded_value <> V.encoded_size then
         raise (Invalid_size encoded_value);
-      f encoded_key;
-      f encoded_value
+      f (encoded_key ^ encoded_value)
 
     let encode { key; value; _ } f = encode' key value f
+
+    let compare a b = Int.compare a.key_hash b.key_hash
   end
 end
 

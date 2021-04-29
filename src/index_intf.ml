@@ -235,7 +235,7 @@ module type Private = sig
       concurrent merge operations, but {i before} blocking on those
       cancellations having completed. *)
 
-  val clear' : hook:[ `Abort_signalled ] hook -> t -> unit
+  val clear' : hook:[ `Abort_signalled | `IO_clear ] hook -> t -> unit
 
   val try_merge_aux :
     ?hook:merge_stages hook -> ?force:bool -> t -> merge_result async
@@ -253,7 +253,14 @@ module type Private = sig
       [sampling_interval] is not set, no operation is timed. *)
 
   val sync' :
-    ?hook:[ `Before_offset_read | `After_offset_read ] hook -> t -> unit
+    ?hook:
+      [ `Before_offset_read
+      | `After_offset_read
+      | `Reload_log
+      | `Reload_log_async ]
+      hook ->
+    t ->
+    unit
   (** Hooks:
 
       - [`Before_offset_read]: before reading the generation number and the
@@ -363,6 +370,7 @@ module type Index = sig
     module Io_array = Io_array
     module Fan = Fan
     module Data = Data
+    module Layout = Layout
 
     module type S = Private with type 'a hook := 'a Hook.t
 
