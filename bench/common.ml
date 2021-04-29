@@ -23,10 +23,10 @@ module Seq = struct
 end
 
 let with_timer f =
-  let t0 = Sys.time () in
+  let started = Mtime_clock.counter () in
   let a = f () in
-  let t1 = Sys.time () -. t0 in
-  (t1, a)
+  let duration = Mtime_clock.count started in
+  (a, duration)
 
 let with_progress_bar ~sampling_interval ~message ~n ~unit =
   let bar =

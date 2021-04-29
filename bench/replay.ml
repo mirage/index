@@ -65,7 +65,7 @@ module Encoding = struct
 end
 
 let decoded_seq_of_encoded_chan_with_prefixes :
-    'a Repr.ty -> in_channel -> 'a Seq.t =
+      'a. 'a Repr.ty -> in_channel -> 'a Seq.t =
  fun repr channel ->
   let decode_bin = Repr.decode_bin repr |> Repr.unstage in
   let decode_prefix = Repr.(decode_bin int32 |> unstage) in
@@ -107,10 +107,10 @@ module Trace = struct
 end
 
 module Benchmark = struct
-  type result = { time : float; size : int }
+  type result = { time : Mtime.Span.t; size : int }
 
   let run config f =
-    let time, res = with_timer f in
+    let res, time = with_timer f in
     let size = FSHelper.get_size config.root in
     ({ time; size }, res)
 
@@ -120,8 +120,8 @@ module Benchmark = struct
     usage.maxrss / 1024L / 1024L
 
   let pp_results ppf result =
-    Format.fprintf ppf "Total time: %f; Size on disk: %d M; Maxrss: %Ld"
-      result.time result.size (get_maxrss ())
+    Format.fprintf ppf "Total time: %a; Size on disk: %d M; Maxrss: %Ld"
+      Mtime.Span.pp result.time result.size (get_maxrss ())
 end
 
 module type S = sig
