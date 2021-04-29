@@ -1,32 +1,11 @@
 let ( >> ) f g x = g (f x)
-
-let reporter ?(prefix = "") () =
-  let report src level ~over k msgf =
-    let k _ =
-      over ();
-      k ()
-    in
-    let ppf = match level with Logs.App -> Fmt.stdout | _ -> Fmt.stderr in
-    let with_stamp h _tags k fmt =
-      let dt = Unix.gettimeofday () in
-      Fmt.kpf k ppf
-        ("%s%+04.0fus %a %a @[" ^^ fmt ^^ "@]@.")
-        prefix dt
-        Fmt.(styled `Magenta string)
-        (Logs.Src.name src) Logs_fmt.pp_header (level, h)
-    in
-    msgf @@ fun ?header ?tags fmt -> with_stamp header tags k fmt
-  in
-  { Logs.report }
-
 let src = Logs.Src.create "test/unix" ~doc:"Index_unix tests"
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
 let report () =
   Logs_threaded.enable ();
-  Logs.set_level (Some Logs.Debug);
-  Logs.set_reporter (reporter ())
+  Index.Private.Logs.setup ~level:Logs.Debug ()
 
 module String_size = struct
   let length = 20

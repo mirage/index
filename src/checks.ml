@@ -157,30 +157,14 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
   module Cli = struct
     open Cmdliner
 
-    let setup_log =
-      let init style_renderer level =
-        let format_reporter =
-          let report _src level ~over k msgf =
-            let k _ =
-              over ();
-              k ()
-            in
-            msgf @@ fun ?header:_ ?tags:_ fmt ->
-            match level with
-            | Logs.App ->
-                Fmt.kpf k Fmt.stderr
-                  ("@[<v 0>%a" ^^ fmt ^^ "@]@.")
-                  Fmt.(styled `Bold (styled (`Fg `Cyan) string))
-                  ">> "
-            | _ -> Fmt.kpf k Fmt.stdout ("@[<v 0>" ^^ fmt ^^ "@]@.")
-          in
-          { Logs.report }
-        in
-        Fmt_tty.setup_std_outputs ?style_renderer ();
-        Logs.set_level level;
-        Logs.set_reporter format_reporter
+    let reporter =
+      let pp_header ppf = function
+        | Logs.App, header ->
+            Fmt.(styled `Bold (styled (`Fg `Cyan) string)) ppf ">> ";
+            Fmt.(option string) ppf header
+        | _, header -> Fmt.(option string) ppf header
       in
-      Term.(const init $ Fmt_cli.style_renderer () $ Logs_cli.level ())
+      Logs_fmt.reporter ~pp_header ()
 
     let main () : empty =
       let default =
@@ -193,10 +177,10 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       Term.(
         eval_choice default
           [
-            ( Stat.term $ setup_log,
+            ( Stat.term $ Logs.setup_term ~reporter (),
               Term.info ~doc:"Print high-level statistics about the store."
                 "stat" );
-            ( Integrity_check.term $ setup_log,
+            ( Integrity_check.term $ Logs.setup_term ~reporter (),
               Term.info
                 ~doc:"Search the store for integrity faults and corruption."
                 "integrity-check" );

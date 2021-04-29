@@ -14,31 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-let reporter ?(prefix = "") () =
-  let report src level ~over k msgf =
-    let k _ =
-      over ();
-      k ()
-    in
-    let ppf = match level with Logs.App -> Fmt.stdout | _ -> Fmt.stderr in
-    let with_stamp h _tags k fmt =
-      let dt = Unix.gettimeofday () in
-      Fmt.kpf k ppf
-        ("%s%+04.0fus %a %a @[" ^^ fmt ^^ "@]@.")
-        prefix dt Logs_fmt.pp_header (level, h)
-        Fmt.(styled `Magenta string)
-        (Logs.Src.name src)
-    in
-    msgf @@ fun ?header ?tags fmt -> with_stamp header tags k fmt
-  in
-  { Logs.report }
-
-let setup_log style_renderer level =
-  Fmt_tty.setup_std_outputs ?style_renderer ();
-  Logs.set_level level;
-  Logs.set_reporter (reporter ());
-  ()
-
 module Seq = struct
   include Seq
 

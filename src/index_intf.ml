@@ -374,6 +374,17 @@ module type Index = sig
     module Data = Data
     module Layout = Layout
 
+    module Logs : sig
+      val setup :
+        ?reporter:Logs.reporter ->
+        ?style_renderer:Fmt.style_renderer ->
+        ?level:Logs.level ->
+        unit ->
+        unit
+
+      val setup_term : ?reporter:Logs.reporter -> unit -> unit Cmdliner.Term.t
+    end
+
     module type S = Private with type 'a hook := 'a Hook.t
 
     module Make

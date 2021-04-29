@@ -1022,6 +1022,7 @@ module Private = struct
   module Search = Search
   module Data = Data
   module Layout = Layout
+  module Logs = Logs
 
   module Hook = struct
     type 'a t = 'a -> unit

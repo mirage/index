@@ -37,6 +37,7 @@ module Encoding = struct
   module Int63 = struct
     include Optint.Int63
 
+    (* TODO: upstream this to Repr *)
     let t : t Repr.t =
       let open Repr in
       (map int64) of_int64 to_int64
@@ -129,6 +130,8 @@ module type S = sig
   val v : string -> t
   val close : t -> unit
 end
+
+module Index_lib = Index
 
 module Index = struct
   module Index =
@@ -233,10 +236,9 @@ let trace_data_file =
   in
   Arg.(required @@ pos 0 (some string) None doc)
 
-let setup_log =
-  Term.(const setup_log $ Fmt_cli.style_renderer () $ Logs_cli.level ())
-
-let main_term = Term.(const main $ setup_log $ nb_ops $ trace_data_file)
+let main_term =
+  Term.(
+    const main $ Index_lib.Private.Logs.setup_term () $ nb_ops $ trace_data_file)
 
 let () =
   let man =
