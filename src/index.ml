@@ -42,11 +42,11 @@ exception Closed
 module Make_private
     (K : Key)
     (V : Value)
-    (IO : Io.S)
-    (Semaphore : SEMAPHORE)
-    (Thread : THREAD)
+    (Platform : PLATFORM)
     (Cache : Cache.S) =
 struct
+  open Platform
+
   type 'a async = 'a Thread.t
 
   let await = Thread.await

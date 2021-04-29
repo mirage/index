@@ -374,8 +374,14 @@ module Thread = struct
         | None -> assert false)
 end
 
+module Platform = struct
+  module IO = IO
+  module Semaphore = Semaphore
+  module Thread = Thread
+end
+
 module Make (K : Index.Key.S) (V : Index.Value.S) =
-  Index.Make (K) (V) (IO) (Semaphore) (Thread)
+  Index.Make (K) (V) (Platform)
 
 module Syscalls = Syscalls
 
@@ -384,5 +390,5 @@ module Private = struct
   module Raw = Raw
 
   module Make (K : Index.Key.S) (V : Index.Value.S) =
-    Index.Private.Make (K) (V) (IO) (Semaphore) (Thread)
+    Index.Private.Make (K) (V) (Platform)
 end
