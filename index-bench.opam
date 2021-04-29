@@ -1,23 +1,16 @@
 opam-version: "2.0"
-maintainer:   "Clement Pascutto"
-authors:      ["Clement Pascutto" "Thomas Gazagnaire" "Ioana Cristescu"]
-license:      "MIT"
-homepage:     "https://github.com/mirage/index"
-bug-reports:  "https://github.com/mirage/index/issues"
-dev-repo:     "git+https://github.com/mirage/index.git"
-
-build: [
- ["dune" "subst"] {dev}
- ["dune" "build" "-p" name "-j" jobs]
- ["dune" "runtest" "-p" name] {with-test}
-]
-
+synopsis: "Index benchmarking suite"
+maintainer: "Clement Pascutto"
+authors: ["Clement Pascutto" "Thomas Gazagnaire" "Ioana Cristescu"]
+license: "MIT"
+homepage: "https://github.com/mirage/index"
+bug-reports: "https://github.com/mirage/index/issues"
 depends: [
-  "ocaml"   {>= "4.03.0"}
+  "ocaml" {>= "4.03.0"}
   "cmdliner"
-  "dune"    {>= "2.7.0"}
+  "dune" {>= "2.7.0"}
   "fmt"
-  "index"   {= version}
+  "index" {= version}
   "metrics"
   "metrics-unix"
   "ppx_deriving_yojson"
@@ -25,6 +18,16 @@ depends: [
   "stdlib-shims"
   "yojson"
   "ppx_repr"
+  "tezos-context-hash"
+  "logs" {>= "0.7.0" & with-test}
+  "optint" {>= "0.1.0" & with-test}
+  "progress" {>= "0.1.1" & with-test}
+  "repr" {>= "0.2.1" & with-test}
+  "rusage" {>= "1.0.0" & with-test}
 ]
-
-synopsis: "Index benchmarking suite"
+build: [
+  ["dune" "subst"] {pinned}
+  ["dune" "build" "-p" name "-j" jobs]
+  ["dune" "runtest" "-p" name] {with-test}
+]
+dev-repo: "git+https://github.com/mirage/index.git"

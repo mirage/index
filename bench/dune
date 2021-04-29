@@ -1,10 +1,16 @@
 (executable
  (public_name bench)
+ (modules bench)
  (package index-bench)
  (preprocess
   (pps ppx_repr ppx_deriving_yojson))
  (libraries index index.unix cmdliner metrics metrics-unix yojson fmt re
    stdlib-shims))
+
+(library
+ (name common)
+ (modules common)
+ (libraries progress progress.unix logs fmt))
 
 (alias
  (name bench)
@@ -14,3 +20,19 @@
  (alias runbench)
  (action
   (run ./bench.exe)))
+
+(executable
+ (name replay)
+ (modules replay)
+ (preprocess
+  (pps ppx_repr))
+ (libraries index index.unix unix cmdliner logs repr ppx_repr common
+   tezos-context-hash optint fmt rusage))
+
+;; Require the above executables to compile during tests
+
+(rule
+ (alias runtest)
+ (package index-bench)
+ (deps bench.exe replay.exe)
+ (action (progn)))
