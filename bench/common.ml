@@ -59,6 +59,5 @@ module FSHelper = struct
     if Sys.file_exists root then (
       let cmd = Printf.sprintf "rm -rf %s" root in
       Logs.info (fun l -> l "exec: %s" cmd);
-      let _ = Sys.command cmd in
-      ())
+      ignore (Sys.command cmd : int))
 end

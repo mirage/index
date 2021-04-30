@@ -178,10 +178,9 @@ struct
               | Find (k, b) ->
                   let k = key_to_hash k in
                   let b' =
-                    try
-                      let _ = Store.find store k in
-                      true
-                    with Not_found -> false
+                    match Store.find store k with
+                    | (_ : Store.value) -> true
+                    | exception Not_found -> false
                   in
                   if b <> b' then
                     Fmt.failwith "Operation find %a expected %b got %b"
@@ -220,7 +219,7 @@ let main () nb_ops trace_data_file =
   FSHelper.rm_dir root;
   let config = { trace_data_file; root; nb_ops } in
   let results = Bench.run_read_trace config in
-  Logs.app (fun l -> l "%a@." (fun ppf f -> f ppf) results)
+  Logs.app (fun l -> l "%t@." results)
 
 open Cmdliner
 
