@@ -378,6 +378,7 @@ module Platform = struct
   module IO = IO
   module Semaphore = Semaphore
   module Thread = Thread
+  module Clock = Mtime_clock
 end
 
 module Make (K : Index.Key.S) (V : Index.Value.S) =

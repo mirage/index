@@ -68,6 +68,11 @@ struct
 
   let entry_sizeL = Int63.of_int Entry.encoded_size
 
+  module Stats = struct
+    include Stats.Make (Clock)
+    include Stats
+  end
+
   module Tbl = Hashtbl.Make (K)
 
   module IO = struct
@@ -747,10 +752,10 @@ struct
         let fan_out = Fan.finalize fan_out in
         let index = { io; fan_out } in
         IO.set_fanout merge (Fan.export index.fan_out);
-        let before_rename_lock = Mtime_clock.counter () in
+        let before_rename_lock = Clock.counter () in
         let rename_lock_duration =
           Semaphore.with_acquire "merge-rename" t.rename_lock (fun () ->
-              let rename_lock_duration = Mtime_clock.count before_rename_lock in
+              let rename_lock_duration = Clock.count before_rename_lock in
               IO.rename ~src:merge ~dst:index.io;
               t.index <- Some index;
               t.generation <- generation;
@@ -785,11 +790,11 @@ struct
 
   let merge' ?(blocking = false) ?filter ?(hook = fun _ -> ()) ~witness
       ?(force = false) t =
-    let merge_started = Mtime_clock.counter () in
+    let merge_started = Clock.counter () in
     let merge_id = merge_counter () in
     let msg = Fmt.strf "merge { id=%d }" merge_id in
     Semaphore.acquire msg t.merge_lock;
-    let merge_lock_wait = Mtime_clock.count merge_started in
+    let merge_lock_wait = Clock.count merge_started in
     Log.info (fun l ->
         let pp_forced ppf () = if force then Fmt.string ppf "; force=true" in
         l "[%s] merge started { id=%d%a }" (Filename.basename t.root) merge_id
@@ -818,7 +823,7 @@ struct
           (fun () -> unsafe_perform_merge ~filter ~hook ~witness t)
           ~finally:(fun () -> Semaphore.release t.merge_lock)
       in
-      let total_duration = Mtime_clock.count merge_started in
+      let total_duration = Clock.count merge_started in
       let merge_duration = Mtime.Span.abs_diff total_duration merge_lock_wait in
       Stats.add_merge_duration merge_duration;
       Log.info (fun l ->
@@ -933,11 +938,12 @@ struct
     ignore (replace' ?hook:None ?overcommit t key value : _ async option)
 
   let replace_with_timer ?sampling_interval t key value =
-    if sampling_interval <> None then Stats.start_replace ();
-    replace t key value;
     match sampling_interval with
-    | None -> ()
-    | Some sampling_interval -> Stats.end_replace ~sampling_interval
+    | None -> replace t key value (* XXX(craigfe): why not log duration here? *)
+    | Some sampling_interval ->
+        Stats.start_replace ();
+        replace t key value;
+        Stats.end_replace ~sampling_interval
 
   (** {1 Filter} *)
 
