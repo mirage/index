@@ -377,10 +377,13 @@ module type Index = sig
         ?reporter:Logs.reporter ->
         ?style_renderer:Fmt.style_renderer ->
         ?level:Logs.level ->
-        unit ->
+        (module Platform.CLOCK) ->
         unit
 
-      val setup_term : ?reporter:Logs.reporter -> unit -> unit Cmdliner.Term.t
+      val setup_term :
+        ?reporter:Logs.reporter ->
+        (module Platform.CLOCK) ->
+        unit Cmdliner.Term.t
     end
 
     module type S = Private with type 'a hook := 'a Hook.t

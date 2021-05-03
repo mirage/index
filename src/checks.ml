@@ -1,7 +1,8 @@
 include Checks_intf
 open! Import
 
-module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
+module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
+  open Platform
   module Entry = Data.Entry.Make (K) (V)
 
   module IO = struct
@@ -177,10 +178,10 @@ module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) = struct
       Term.(
         eval_choice default
           [
-            ( Stat.term $ Logs.setup_term ~reporter (),
+            ( Stat.term $ Logs.setup_term ~reporter (module Clock),
               Term.info ~doc:"Print high-level statistics about the store."
                 "stat" );
-            ( Integrity_check.term $ Logs.setup_term ~reporter (),
+            ( Integrity_check.term $ Logs.setup_term ~reporter (module Clock),
               Term.info
                 ~doc:"Search the store for integrity faults and corruption."
                 "integrity-check" );

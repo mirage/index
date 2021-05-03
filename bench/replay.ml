@@ -237,7 +237,10 @@ let trace_data_file =
 
 let main_term =
   Term.(
-    const main $ Index_lib.Private.Logs.setup_term () $ nb_ops $ trace_data_file)
+    const main
+    $ Index_lib.Private.Logs.setup_term (module Mtime_clock)
+    $ nb_ops
+    $ trace_data_file)
 
 let () =
   let man =

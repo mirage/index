@@ -25,10 +25,16 @@ module type S = sig
       checks. *)
 end
 
+module type Platform_args = sig
+  module IO : Io.S
+  module Clock : Platform.CLOCK
+end
+
 module type Checks = sig
   type nonrec empty = empty
 
   module type S = S
+  module type Platform_args = Platform_args
 
-  module Make (K : Data.Key) (V : Data.Value) (IO : Io.S) : S
+  module Make (K : Data.Key) (V : Data.Value) (_ : Platform_args) : S
 end

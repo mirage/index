@@ -939,7 +939,7 @@ struct
 
   let replace_with_timer ?sampling_interval t key value =
     match sampling_interval with
-    | None -> replace t key value (* XXX(craigfe): why not log duration here? *)
+    | None -> replace t key value
     | Some sampling_interval ->
         Stats.start_replace ();
         replace t key value;
@@ -1013,7 +1013,7 @@ struct
 
   let close = close' ~hook:(fun _ -> ())
 
-  module Checks = Checks.Make (K) (V) (IO)
+  module Checks = Checks.Make (K) (V) (Platform)
 end
 
 module Cache = Cache
