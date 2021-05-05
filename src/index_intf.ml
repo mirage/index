@@ -77,6 +77,13 @@ module type THREAD = sig
   (** Re-schedule the calling thread without suspending it. *)
 end
 
+module type PLATFORM = sig
+  module IO : IO
+  module Semaphore : SEMAPHORE
+  module Thread : THREAD
+  module Clock : Io.CLOCK
+end
+
 module type S = sig
   type t
   (** The type for indexes. *)
@@ -302,18 +309,14 @@ module type Index = sig
     end) : S with type t = string
   end
 
-  module type IO = sig
-    include Io.S
-    (** @inline *)
-  end
+  (** Platform dependencies required by {!Make}. *)
 
-  module type SEMAPHORE = sig
-    include SEMAPHORE
-    (** @inline *)
-  end
+  module type IO = IO
+  module type SEMAPHORE = SEMAPHORE
+  module type THREAD = THREAD
 
-  module type THREAD = sig
-    include THREAD
+  module type PLATFORM = sig
+    include PLATFORM
     (** @inline *)
   end
 
@@ -342,13 +345,8 @@ module type Index = sig
   (** The exception raised when any operation is attempted on a closed index,
       except for [close], which is idempotent. *)
 
-  module Make
-      (K : Key.S)
-      (V : Value.S)
-      (IO : IO)
-      (_ : SEMAPHORE)
-      (T : THREAD)
-      (C : Cache.S) : S with type key = K.t and type value = V.t
+  module Make (K : Key.S) (V : Value.S) (_ : PLATFORM) (C : Cache.S) :
+    S with type key = K.t and type value = V.t
 
   (** Run-time metric tracking for index instances. *)
   module Stats : sig
@@ -374,14 +372,23 @@ module type Index = sig
     module Data = Data
     module Layout = Layout
 
+    module Logs : sig
+      val setup :
+        ?reporter:Logs.reporter ->
+        ?style_renderer:Fmt.style_renderer ->
+        ?level:Logs.level ->
+        (module Platform.CLOCK) ->
+        unit
+
+      val setup_term :
+        ?reporter:Logs.reporter ->
+        (module Platform.CLOCK) ->
+        unit Cmdliner.Term.t
+    end
+
     module type S = Private with type 'a hook := 'a Hook.t
 
-    module Make
-        (K : Key)
-        (V : Value)
-        (IO : IO)
-        (_ : SEMAPHORE)
-        (T : THREAD)
-        (C : Cache.S) : S with type key = K.t and type value = V.t
+    module Make (K : Key) (V : Value) (_ : PLATFORM) (C : Cache.S) :
+      S with type key = K.t and type value = V.t
   end
 end

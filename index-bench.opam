@@ -19,9 +19,10 @@ depends: [
   "yojson"
   "ppx_repr"
   "tezos-context-hash"
-  "logs" {>= "0.7.0" & with-test}
+  "mtime"
+  "logs" {>= "0.7.0"}
   "optint" {>= "0.1.0" & with-test}
-  "progress" {>= "0.1.1" & with-test}
+  "progress" {>= "0.1.1"}
   "repr" {>= "0.2.1" & with-test}
   "rusage" {>= "1.0.0" & with-test}
 ]

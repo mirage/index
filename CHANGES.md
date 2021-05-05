@@ -24,6 +24,12 @@
 - `clear` removes the files on disks and opens new ones containing only the
   header. (#288)
 
+- `Index.Make` now requires an implementation of a monotonic time source.
+  (#321)
+
+- The `Index.Make` functor now takes a single `Platform` argument containing all
+  system dependencies (i.e. `IO`, `Clock`, `Semaphore` and `Thread`).  (#321)
+
 ## Added
 
 - Added benchmarks that replay a trace of index operations. (#300)

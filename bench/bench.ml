@@ -60,15 +60,24 @@ end
 
 let with_stats f =
   Stats.reset_stats ();
-  let t0 = Sys.time () in
-  let _ = f () in
-  let t1 = Sys.time () -. t0 in
+  let _, duration = Common.with_timer f in
   let stats = Stats.get () in
-  (t1, stats)
+  (duration, stats)
+
+module Mtime = struct
+  include Mtime
+
+  module Span = struct
+    include Span
+
+    let to_yojson s = `String (Fmt.to_to_string pp s)
+    let div a b = of_uint64_ns (Int64.div (to_uint64_ns a) (Int64.of_int b))
+  end
+end
 
 module Benchmark = struct
   type result = {
-    time : float;
+    time : Mtime.Span.t;
     ops_per_sec : float;
     mbs_per_sec : float;
     read_amplification_calls : float;
@@ -79,10 +88,11 @@ module Benchmark = struct
     merges_duration : float; [@key "merges_duration_us"]
     nb_merges : int;
   }
-  [@@deriving yojson]
+  [@@deriving to_yojson]
 
   let run ~nb_entries f =
     let time, stats = with_stats (fun () -> f ()) in
+    let time_sec = Mtime.Span.to_s time in
     let nb_entriesf = float_of_int nb_entries in
     let entry_sizef = float_of_int entry_size in
     let read_amplification_size =
@@ -95,8 +105,8 @@ module Benchmark = struct
     let write_amplification_calls =
       float_of_int stats.nb_writes /. nb_entriesf
     in
-    let ops_per_sec = nb_entriesf /. time in
-    let mbs_per_sec = entry_sizef *. nb_entriesf /. 1_048_576. /. time in
+    let ops_per_sec = nb_entriesf /. time_sec in
+    let mbs_per_sec = entry_sizef *. nb_entriesf /. 1_048_576. /. time_sec in
     let replace_durations = stats.replace_durations in
     let merges_duration = List.fold_left Float.add 0. stats.merge_durations in
     let nb_merges = stats.nb_merge in
@@ -115,7 +125,7 @@ module Benchmark = struct
 
   let pp_result fmt result =
     Format.fprintf fmt
-      "@[<v 0>Total time: %f@,\
+      "@[<v 0>Total time: %a@,\
        Operations per second: %f@,\
        Mbytes per second: %f@,\
        Read amplification in syscalls: %f@,\
@@ -123,7 +133,7 @@ module Benchmark = struct
        Write amplification in syscalls: %f@,\
        Write amplification in bytes: %f@,\
        Last 10 merges cumulated duration (μs): %f@\n\
-       Number of merges : %d@]" result.time result.ops_per_sec
+       Number of merges : %d@]" Mtime.Span.pp result.time result.ops_per_sec
       result.mbs_per_sec result.read_amplification_calls
       result.read_amplification_size result.write_amplification_calls
       result.write_amplification_size result.merges_duration result.nb_merges
@@ -442,7 +452,8 @@ let mean l =
   match l with
   | [ hd ] -> hd
   | hd :: tl ->
-      let ll = float (List.length l) in
+      let ll = List.length l in
+      let ll_f = float ll in
       List.fold_left
         (fun acc bresult ->
           List.fold_left2
@@ -451,7 +462,7 @@ let mean l =
               ( tsm,
                 Benchmark.
                   {
-                    time = resultm.time +. result.time;
+                    time = Mtime.Span.add resultm.time result.time;
                     ops_per_sec = resultm.ops_per_sec +. result.ops_per_sec;
                     mbs_per_sec = resultm.mbs_per_sec +. result.mbs_per_sec;
                     read_amplification_calls =
@@ -481,18 +492,20 @@ let mean l =
              ( es,
                Benchmark.
                  {
-                   time = res.time /. ll;
-                   ops_per_sec = res.ops_per_sec /. ll;
-                   mbs_per_sec = res.mbs_per_sec /. ll;
-                   read_amplification_calls = res.read_amplification_calls /. ll;
-                   read_amplification_size = res.read_amplification_size /. ll;
+                   time = Mtime.Span.div res.time ll;
+                   ops_per_sec = res.ops_per_sec /. ll_f;
+                   mbs_per_sec = res.mbs_per_sec /. ll_f;
+                   read_amplification_calls =
+                     res.read_amplification_calls /. ll_f;
+                   read_amplification_size = res.read_amplification_size /. ll_f;
                    write_amplification_calls =
-                     res.write_amplification_calls /. ll;
-                   write_amplification_size = res.write_amplification_size /. ll;
+                     res.write_amplification_calls /. ll_f;
+                   write_amplification_size =
+                     res.write_amplification_size /. ll_f;
                    replace_durations =
-                     List.map (fun d -> d /. ll) res.replace_durations;
-                   merges_duration = res.merges_duration /. ll;
-                   nb_merges = res.nb_merges / int_of_float ll;
+                     List.map (fun d -> d /. ll_f) res.replace_durations;
+                   merges_duration = res.merges_duration /. ll_f;
+                   nb_merges = res.nb_merges / ll;
                  } ))
   | _ -> assert false
 

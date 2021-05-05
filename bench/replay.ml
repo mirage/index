@@ -37,6 +37,7 @@ module Encoding = struct
   module Int63 = struct
     include Optint.Int63
 
+    (* TODO: upstream this to Repr *)
     let t : t Repr.t =
       let open Repr in
       (map int64) of_int64 to_int64
@@ -64,7 +65,7 @@ module Encoding = struct
 end
 
 let decoded_seq_of_encoded_chan_with_prefixes :
-    'a Repr.ty -> in_channel -> 'a Seq.t =
+      'a. 'a Repr.ty -> in_channel -> 'a Seq.t =
  fun repr channel ->
   let decode_bin = Repr.decode_bin repr |> Repr.unstage in
   let decode_prefix = Repr.(decode_bin int32 |> unstage) in
@@ -106,10 +107,10 @@ module Trace = struct
 end
 
 module Benchmark = struct
-  type result = { time : float; size : int }
+  type result = { time : Mtime.Span.t; size : int }
 
   let run config f =
-    let time, res = with_timer f in
+    let res, time = with_timer f in
     let size = FSHelper.get_size config.root in
     ({ time; size }, res)
 
@@ -119,8 +120,8 @@ module Benchmark = struct
     usage.maxrss / 1024L / 1024L
 
   let pp_results ppf result =
-    Format.fprintf ppf "Total time: %f; Size on disk: %d M; Maxrss: %Ld"
-      result.time result.size (get_maxrss ())
+    Format.fprintf ppf "Total time: %a; Size on disk: %d M; Maxrss: %Ld"
+      Mtime.Span.pp result.time result.size (get_maxrss ())
 end
 
 module type S = sig
@@ -129,6 +130,8 @@ module type S = sig
   val v : string -> t
   val close : t -> unit
 end
+
+module Index_lib = Index
 
 module Index = struct
   module Index =
@@ -175,10 +178,9 @@ struct
               | Find (k, b) ->
                   let k = key_to_hash k in
                   let b' =
-                    try
-                      let _ = Store.find store k in
-                      true
-                    with Not_found -> false
+                    match Store.find store k with
+                    | (_ : Store.value) -> true
+                    | exception Not_found -> false
                   in
                   if b <> b' then
                     Fmt.failwith "Operation find %a expected %b got %b"
@@ -217,7 +219,7 @@ let main () nb_ops trace_data_file =
   FSHelper.rm_dir root;
   let config = { trace_data_file; root; nb_ops } in
   let results = Bench.run_read_trace config in
-  Logs.app (fun l -> l "%a@." (fun ppf f -> f ppf) results)
+  Logs.app (fun l -> l "%t@." results)
 
 open Cmdliner
 
@@ -233,10 +235,12 @@ let trace_data_file =
   in
   Arg.(required @@ pos 0 (some string) None doc)
 
-let setup_log =
-  Term.(const setup_log $ Fmt_cli.style_renderer () $ Logs_cli.level ())
-
-let main_term = Term.(const main $ setup_log $ nb_ops $ trace_data_file)
+let main_term =
+  Term.(
+    const main
+    $ Index_lib.Private.Logs.setup_term (module Mtime_clock)
+    $ nb_ops
+    $ trace_data_file)
 
 let () =
   let man =
