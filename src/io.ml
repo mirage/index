@@ -27,7 +27,7 @@ module Extend (S : S) = struct
       let remaining = Int63.sub max_off offset in
       if remaining <= Int63.zero then ()
       else
-        let len = Int63.to_int (min remaining page_size) in
+        let len = Int63.to_int_exn (min remaining page_size) in
         let raw = Bytes.create len in
         let n = read io ~off:offset ~len raw in
         let rec read_page page off =
