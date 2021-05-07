@@ -592,6 +592,54 @@ module Readonly = struct
     Alcotest.(check int) "reloadings of log async per merge" 1 !reload_log_async;
     Index.await t |> check_completed
 
+  let race_log_async () =
+    let* Context.{ rw; clone; _ } = Context.with_empty_index () in
+    let ro = clone ~readonly:true () in
+    let merge = Semaphore.make false in
+    let sync = Semaphore.make false in
+    let merge2 = Semaphore.make false in
+    let merge_hook1 =
+      I.Private.Hook.v @@ function
+      | `Before ->
+          Semaphore.acquire merge;
+          Semaphore.release sync
+      | `After_clear -> Index.sync ro
+      | _ -> ()
+    in
+    let merge_hook2 =
+      I.Private.Hook.v @@ function
+      | `Before ->
+          Semaphore.acquire merge2;
+          Semaphore.acquire merge
+      | _ -> ()
+    in
+    let k1, v1 = (Key.v (), Value.v ()) in
+    let k2, v2 = (Key.v (), Value.v ()) in
+    let k3, v3 = (Key.v (), Value.v ()) in
+    let k4, v4 = (Key.v (), Value.v ()) in
+    Index.replace rw k1 v1;
+    Index.flush rw;
+    let t = Index.try_merge_aux ~force:true ~hook:merge_hook1 rw in
+    Semaphore.release merge;
+    Log.debug (fun l -> l "read log async");
+    Index.replace rw k2 v2;
+    Index.flush rw;
+    Index.sync ro;
+    Index.check_binding ro k2 v2;
+    Semaphore.acquire sync;
+    Index.await t |> check_completed;
+    Index.replace rw k3 v3;
+    Index.flush rw;
+    let t = Index.try_merge_aux ~force:true ~hook:merge_hook2 rw in
+    Semaphore.release merge2;
+    Log.debug (fun l -> l "XXX read log async after second merge");
+    Index.replace rw k4 v4;
+    Index.flush rw;
+    Index.sync ro;
+    Index.check_binding ro k4 v4;
+    Semaphore.release merge;
+    Index.await t |> check_completed
+
   let tests =
     [
       ("add", `Quick, readonly);
@@ -618,6 +666,7 @@ module Readonly = struct
         `Quick,
         readonly_sync_and_merge_clear );
       ("reload log and log async", `Quick, reload_log_async);
+      ("race log async", `Quick, race_log_async);
     ]
 end
 
@@ -899,6 +948,35 @@ module Throttle = struct
     ]
 end
 
+module BatchReads = struct
+  let add_values ?(batch_size = 10) t tbl =
+    let rec loop i =
+      if i = 0 then Index.flush t
+      else
+        let k = Key.v () in
+        let v = Value.v () in
+        Index.replace t k v;
+        Hashtbl.replace tbl k v;
+        loop (i - 1)
+    in
+    loop batch_size
+
+  let readonly_reads_rw_writes () =
+    let nb_batch_writes = 3 in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
+    let ro = clone ~readonly:true () in
+    check_equivalence ro tbl;
+
+    for _i = 0 to nb_batch_writes do
+      add_values rw tbl;
+      (* check_equivalence rw tbl; *)
+      Index.sync ro;
+      check_equivalence ro tbl
+    done
+
+  let tests = [ ("reads and writes", `Quick, readonly_reads_rw_writes) ]
+end
+
 let () =
   Common.report ();
   Alcotest.run "index.unix"
@@ -912,4 +990,5 @@ let () =
       ("filter", Filter.tests);
       ("flush_callback", Flush_callback.tests);
       ("throttle", Throttle.tests);
+      ("batch", BatchReads.tests);
     ]
