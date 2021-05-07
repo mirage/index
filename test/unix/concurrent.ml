@@ -34,10 +34,22 @@ let wait pid =
   | Unix.WEXITED 0 -> Log.debug (fun l -> l "Child %d finished work" pid)
   | _ -> Alcotest.failf "Child %d died unexpectedly" pid
 
+let lsof () =
+  let name = "/tmp/" in
+  let pid = string_of_int (Unix.getpid ()) in
+  let fd_file = name ^ "tmp_" ^ pid in
+  let lsof_command = "lsof -a -s -p " ^ pid ^ " >> " ^ fd_file in
+  match Unix.system lsof_command with
+  | Unix.WEXITED 0 -> ()
+  | Unix.WEXITED _ ->
+      failwith "failing `lsof` command. Is `lsof` installed on your system?"
+  | Unix.WSIGNALED _ | Unix.WSTOPPED _ ->
+      failwith "`lsof` command was interrupted"
+
 module WriteBatch = struct
-  let nb_workers = 5
-  let nb_batch_writes = 100
-  let batch_size = 20
+  let nb_workers = 1
+  let nb_batch_writes = 1000
+  let batch_size = 5
 
   let populate_array () =
     Array.init (batch_size * nb_batch_writes) (fun _ ->
@@ -51,12 +63,8 @@ module WriteBatch = struct
     Fmt.epr "%b read %d from %d to %d\n%!" ro batch start_ end_;
     for i = start_ to end_ do
       let k, v = arr.(i) in
-      match Index.find t k with
-      | exception Not_found ->
-          Alcotest.failf "Wrong insertion: %s key is missing." k
-      | v' ->
-          if not (v = v') then
-            Alcotest.failf "Wrong insertion: %s value is missing." v
+      let v' = Index.find t k in
+      if not (v = v') then raise Not_found
     done
 
   let test_find_absent ~ro t arr batch =
@@ -102,16 +110,8 @@ module WriteBatch = struct
     let arr = populate_array () in
     match Unix.fork () with
     | 0 ->
-        for _ = 0 to nb_workers - 1 do
-          match Unix.fork () with
-          | 0 -> Log.debug (fun l -> l "I'm %d" (Unix.getpid ()))
-          | pid ->
-              Log.debug (fun l ->
-                  l "Child %d created by %d" pid (Unix.getpid ()));
-              worker input_write output_read root arr;
-              wait pid;
-              exit 0
-        done;
+        Log.debug (fun l -> l "I'm %d" (Unix.getpid ()));
+        worker input_write output_read root arr;
         exit 0
     | pid ->
         Log.debug (fun l ->
@@ -119,6 +119,7 @@ module WriteBatch = struct
         let rw = Index.v ~fresh:true ~log_size:4 root in
         for i = 1 to nb_batch_writes do
           Log.debug (fun l -> l "Starting batch nb %d" i);
+          if i mod 100 = 0 then lsof ();
           for _ = 0 to nb_workers - 1 do
             let pid = read output_write in
             Log.debug (fun l -> l "Ack from %d" pid)
@@ -149,5 +150,5 @@ module WriteBatch = struct
 end
 
 let () =
-  Common.report ();
+  (* Common.report (); *)
   Alcotest.run ~verbose:true "concurrent" [ ("write batch", WriteBatch.tests) ]
