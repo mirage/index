@@ -212,7 +212,7 @@ end
 
 module Bench = Bench_suite (Index)
 
-let main () nb_ops trace_data_file =
+let main nb_ops trace_data_file =
   Printexc.record_backtrace true;
   Random.self_init ();
   let root = "_bench_replay" in
@@ -237,7 +237,7 @@ let trace_data_file =
 
 let main_term =
   Term.(
-    const main
+    const (fun () -> main)
     $ Index_lib.Private.Logs.setup_term (module Mtime_clock)
     $ nb_ops
     $ trace_data_file)

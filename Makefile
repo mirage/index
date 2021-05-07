@@ -16,4 +16,4 @@ doc:
 	dune build @doc
 
 bench:
-	@dune exec -- ./bench/bench.exe --json --minimal --nb-exec 3
+	@dune exec -- ./bench/bench.exe --json --minimal --nb-exec 3 --verbosity quiet

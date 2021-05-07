@@ -709,15 +709,26 @@ struct
       Array.fast_sort Entry.compare b;
       b
     in
-    let fan_size =
+    let fan_size, old_fan_nb =
       match t.index with
-      | None -> Tbl.length log.mem
+      | None -> (Tbl.length log.mem, None)
       | Some index ->
-          Int63.(to_int_exn (IO.offset index.io / entry_sizeL))
-          + Array.length log_array
+          ( Int63.(to_int_exn (IO.offset index.io / entry_sizeL))
+            + Array.length log_array,
+            Some (Fan.nb_fans index.fan_out) )
     in
     let fan_out =
       Fan.v ~hash_size:K.hash_size ~entry_size:Entry.encoded_size fan_size
+    in
+    let () =
+      match old_fan_nb with
+      | Some on ->
+          let new_fan_nb = Fan.nb_fans fan_out in
+          if new_fan_nb <> on then
+            Log.info (fun m ->
+                m "the number of fan-out entries has changed: %d to %d" on
+                  new_fan_nb)
+      | _ -> ()
     in
     let merge =
       let merge_path = Layout.merge ~root:t.root in

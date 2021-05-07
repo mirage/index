@@ -34,6 +34,8 @@
 
 - Added benchmarks that replay a trace of index operations. (#300)
 
+- Log reporter for the benches
+
 # 1.3.0 (2021-01-05)
 
 ## Added
