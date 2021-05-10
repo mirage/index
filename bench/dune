@@ -10,7 +10,7 @@
  (preprocess
   (pps ppx_repr ppx_deriving_yojson))
  (libraries index index.unix cmdliner metrics metrics-unix yojson fmt re
-   stdlib-shims common mtime))
+   stdlib-shims common mtime mtime.clock.os))
 
 (alias
  (name bench)

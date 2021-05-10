@@ -149,6 +149,8 @@ let bindings_pool = ref [||]
 let absent_bindings_pool = ref [||]
 let sorted_bindings_pool = ref [||]
 
+module Index_lib = Index
+
 module Index = struct
   module Index =
     Index_unix.Private.Make (Context.Key) (Context.Value) (Index.Cache.Noop)
@@ -639,7 +641,8 @@ let minimal_flag =
 let cmd =
   let doc = "Run all the benchmarks." in
   ( Term.(
-      const run
+      const (fun () -> run)
+      $ Index_lib.Private.Logs.setup_term (module Mtime_clock)
       $ name_filter
       $ data_dir
       $ output
