@@ -172,6 +172,8 @@ module type Private = sig
   type 'a async
   (** The type of asynchronous computation. *)
 
+  val root : t -> string
+
   val replace' :
     ?hook:[ `Merge of merge_stages ] hook ->
     ?overcommit:bool ->

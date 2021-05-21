@@ -106,3 +106,5 @@ val check_completed :
 
 val check_equivalence : Index.t -> (Key.t, Value.t) Hashtbl.t -> unit
 val check_disjoint : Index.t -> (Key.t, Value.t) Hashtbl.t -> unit
+val get_open_fd : string -> string list
+val partition : string -> string list -> string list * string list

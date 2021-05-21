@@ -188,3 +188,48 @@ let check_disjoint index htbl =
           Alcotest.failf "Found value %a when checking for the absence of %a"
             (Repr.pp Value.t) v' pp_binding (k, v))
     htbl
+
+let get_open_fd root =
+  let ( >>? ) x f = match x with `Ok x -> f x | `Skip err -> `Skip err in
+  let pid = string_of_int (Unix.getpid ()) in
+  let fd_file = Filename.concat root "tmp" in
+  let lsof_command = "lsof -a -s -p " ^ pid ^ " > " ^ fd_file in
+  match
+    (match Sys.os_type with
+    | "Unix" -> `Ok ()
+    | _ -> `Skip "non-UNIX operating system")
+    >>? fun () ->
+    (match Unix.system lsof_command with
+    | Unix.WEXITED 0 -> `Ok ()
+    | Unix.WEXITED _ ->
+        `Skip "failing `lsof` command. Is `lsof` installed on your system?"
+    | Unix.WSIGNALED _ | Unix.WSTOPPED _ ->
+        `Skip "`lsof` command was interrupted")
+    >>? fun () ->
+    let lines = ref [] in
+    let extract_fd line =
+      try
+        let pos = Re.Str.search_forward (Re.Str.regexp root) line 0 in
+        let fd = Re.Str.string_after line pos in
+        lines := fd :: !lines
+      with Not_found -> ()
+    in
+    let ic = open_in fd_file in
+    (try
+       while true do
+         extract_fd (input_line ic)
+       done
+     with End_of_file -> close_in ic);
+    `Ok !lines
+  with
+  | `Ok l -> l
+  | `Skip e -> Alcotest.fail e
+
+let partition sub l =
+  List.partition
+    (fun line ->
+      try
+        ignore (Re.Str.search_forward (Re.Str.regexp sub) line 0);
+        true
+      with Not_found -> false)
+    l

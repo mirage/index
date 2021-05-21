@@ -714,6 +714,8 @@ module Close = struct
     let* Context.{ rw; _ } =
       Context.with_full_index ~throttle:`Block_writes ~size:100 ()
     in
+    let root = Index.root rw in
+
     let close_request, abort_signalled =
       (* Both semaphores are initially held.
          - [close_request] is dropped by the merge thread in the [`Before] hook
@@ -756,7 +758,11 @@ module Close = struct
         Alcotest.failf
           "Asynchronous exception occurred during try_merge ~force:true: %s"
           (Printexc.to_string exn)
-    | Ok `Aborted -> ()
+    | Ok `Aborted ->
+        let ofd = Common.get_open_fd root in
+        let merge, _ = Common.partition "merge" ofd in
+        if List.length merge > 0 then
+          Alcotest.fail "Too many file descriptors opened for merge files"
 
   let tests =
     [
@@ -900,7 +906,7 @@ module Throttle = struct
 end
 
 let () =
-  Common.report ();
+  (* Common.report (); *)
   Alcotest.run "index.unix"
     [
       ("io_array", Io_array.tests);
