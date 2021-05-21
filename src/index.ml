@@ -769,7 +769,7 @@ struct
     in
     match merge_result with
     | `Aborted ->
-        IO.close merge;
+        IO.clear ~generation ~reopen:false merge;
         (`Aborted, Mtime.Span.zero)
     | `Index_io io ->
         let fan_out = Fan.finalize fan_out in
