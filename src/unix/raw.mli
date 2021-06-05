@@ -16,7 +16,7 @@ type t
 val v : Unix.file_descr -> t
 (** Construct a [raw] value from a file descriptor. *)
 
-val unsafe_write : t -> off:int63 -> string -> unit
+val unsafe_write : t -> off:int63 -> string -> int -> int -> unit
 val unsafe_read : t -> off:int63 -> len:int -> bytes -> int
 val fsync : t -> unit
 val close : t -> unit

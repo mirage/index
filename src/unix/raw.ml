@@ -7,7 +7,7 @@ type t = { fd : Unix.file_descr } [@@unboxed]
 
 let v fd = { fd }
 
-let really_write fd fd_offset buffer =
+let really_write fd fd_offset buffer buffer_offset length =
   let rec aux fd_offset buffer_offset length =
     let w = Syscalls.pwrite ~fd ~fd_offset ~buffer ~buffer_offset ~length in
     if w = 0 || w = length then ()
@@ -16,7 +16,7 @@ let really_write fd fd_offset buffer =
         (fd_offset ++ Int63.of_int w)
         (buffer_offset + w) (length - w)
   in
-  aux fd_offset 0 (Bytes.length buffer)
+  aux fd_offset buffer_offset length
 
 let really_read fd fd_offset length buffer =
   let rec aux fd_offset buffer_offset length =
@@ -34,10 +34,10 @@ let fsync t = Unix.fsync t.fd
 let close t = Unix.close t.fd
 let fstat t = Unix.fstat t.fd
 
-let unsafe_write t ~off buf =
-  let buf = Bytes.unsafe_of_string buf in
-  really_write t.fd off buf;
-  Stats.add_write (Bytes.length buf)
+let unsafe_write t ~off buffer buffer_offset length =
+  let buffer = Bytes.unsafe_of_string buffer in
+  really_write t.fd off buffer buffer_offset length;
+  Stats.add_write (Bytes.length buffer)
 
 let unsafe_read t ~off ~len buf =
   let n = really_read t.fd off len buf in
@@ -65,7 +65,7 @@ let assert_read ~len n =
 
 module Offset = struct
   let off = Int63.zero
-  let set t n = unsafe_write t ~off (encode_int63 n)
+  let set t n = unsafe_write t ~off (encode_int63 n) 0 8
 
   let get t =
     let len = 8 in
@@ -85,7 +85,7 @@ module Version = struct
     assert_read ~len n;
     Bytes.unsafe_to_string buf
 
-  let set t v = unsafe_write t ~off v
+  let set t v = unsafe_write t ~off v 0 8
 end
 
 module Generation = struct
@@ -98,16 +98,17 @@ module Generation = struct
     assert_read ~len n;
     decode_int63 (Bytes.unsafe_to_string buf)
 
-  let set t gen = unsafe_write t ~off (encode_int63 gen)
+  let set t gen = unsafe_write t ~off (encode_int63 gen) 0 8
 end
 
 module Fan = struct
   let off = Int63.of_int 24
 
   let set t buf =
-    let size = encode_int63 (Int63.of_int (String.length buf)) in
-    unsafe_write t ~off size;
-    if buf <> "" then unsafe_write t ~off:(off ++ Int63.of_int 8) buf
+    let buf_len = String.length buf in
+    let size = encode_int63 (Int63.of_int buf_len) in
+    unsafe_write t ~off size 0 8;
+    if buf <> "" then unsafe_write t ~off:(off ++ Int63.of_int 8) buf 0 buf_len
 
   let get_size t =
     let len = 8 in
@@ -118,7 +119,7 @@ module Fan = struct
 
   let set_size t size =
     let buf = encode_int63 size in
-    unsafe_write t ~off buf
+    unsafe_write t ~off buf 0 8
 
   let get t =
     let size = Int63.to_int (get_size t) in
@@ -156,5 +157,6 @@ module Header = struct
     Bytes.blit_string (encode_int63 offset) 0 b 0 8;
     Bytes.blit_string version 0 b 8 8;
     Bytes.blit_string (encode_int63 generation) 0 b 16 8;
-    unsafe_write t ~off:Int63.zero (Bytes.unsafe_to_string b)
+    unsafe_write t ~off:Int63.zero (Bytes.unsafe_to_string b) 0
+      total_header_length
 end

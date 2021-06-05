@@ -18,8 +18,8 @@
 
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
 
-- Optimised the in-memory representation of index handles, resulting in a
-  significant reduction in memory use. (#273)
+- Optimised the in-memory representation of index handles and intermediate
+  buffers, resulting in a significant reduction in memory use. (#273, #279)
 
 - Benches are now executed 3 times and a new option `nb-exec` has been added (#292)
 
