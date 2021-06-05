@@ -16,6 +16,11 @@ open! Import
 
 type t = { mutable buffer : bytes; mutable position : int }
 
+external unsafe_blit_string : string -> int -> bytes -> int -> int -> unit
+  = "caml_blit_string"
+  [@@noalloc]
+(** Bytes.unsafe_blit_string not available in OCaml 4.08. *)
+
 let create n = { buffer = Bytes.create n; position = 0 }
 
 let write_with (write : string -> int -> int -> unit) b =
@@ -39,7 +44,7 @@ let resize b more =
 let add_substring b s offset len =
   let new_position = b.position + len in
   if new_position > Bytes.length b.buffer then resize b len;
-  Bytes.unsafe_blit_string s offset b.buffer b.position len;
+  unsafe_blit_string s offset b.buffer b.position len;
   b.position <- new_position
 
 let add_string b s = add_substring b s 0 (String.length s)
