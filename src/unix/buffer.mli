@@ -30,6 +30,10 @@ val clear : t -> unit
 (** [clear t] clears the data contained in [t]. It does not reset the buffer to
     its initial size. *)
 
+val add_substring : t -> string -> off:int -> len:int -> unit
+(** [add_substring t s ~off ~len] appends the substring
+    [s.(off) .. s.(off + len - 1)] at the end of [t], resizing [t] if necessary. *)
+
 val add_string : t -> string -> unit
 (** [add_string t s] appends [s] at the end of [t], resizing [t] if necessary. *)
 

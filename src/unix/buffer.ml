@@ -41,10 +41,10 @@ let resize b more =
   Bytes.blit b.buffer 0 new_buffer 0 b.position;
   b.buffer <- new_buffer
 
-let add_substring b s offset len =
+let add_substring b s ~off ~len =
   let new_position = b.position + len in
   if new_position > Bytes.length b.buffer then resize b len;
-  unsafe_blit_string s offset b.buffer b.position len;
+  unsafe_blit_string s off b.buffer b.position len;
   b.position <- new_position
 
-let add_string b s = add_substring b s 0 (String.length s)
+let add_string b s = add_substring b s ~off:0 ~len:(String.length s)

@@ -75,12 +75,14 @@ module IO : Index.IO = struct
 
   let auto_flush_limit = Int63.of_int 1_000_000
 
-  let append t buf =
+  let append_substring t buf ~off ~len =
     if t.readonly then raise RO_not_allowed;
-    Buffer.add_string t.buf buf;
-    let len = Int63.of_int (String.length buf) in
+    Buffer.add_substring t.buf buf ~off ~len;
+    let len = Int63.of_int len in
     t.offset <- t.offset ++ len;
     if t.offset -- t.flushed > auto_flush_limit then flush t
+
+  let append t buf = append_substring t buf ~off:0 ~len:(String.length buf)
 
   let read t ~off ~len buf =
     if not t.readonly then assert (t.header ++ off <= t.flushed);
