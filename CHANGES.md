@@ -26,6 +26,9 @@
 - Added fsync after `Index.clear` to signal more quickly to read-only instances
   than something has changed in the file (#308)
 
+- Attempt to recover from `log_async` invariant violations during an explicit
+  sync operation, rather than failing immediately. (#329)
+
 ## Changed
 
 - Specialise `IO.v` to create read-only or read-write instances. (#291)
