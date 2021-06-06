@@ -241,13 +241,14 @@ struct
         hook `Reload_log_async;
         t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
     | Some log ->
-        let offset = IO.offset log.io in
+        let old_generation = t.generation in
+        let old_offset = IO.offset log.io in
         let h = IO.Header.get log.io in
         if
           (* the generation has changed *)
-          h.generation > Int63.succ t.generation
+          h.generation > Int63.succ old_generation
           || (* the last sync was done between clear(log) and clear(log_async) *)
-          (h.generation = Int63.succ t.generation && h.offset = Int63.zero)
+          (h.generation = Int63.succ old_generation && h.offset = Int63.zero)
         then (
           (* close the file .*)
           IO.close log.io;
@@ -255,10 +256,21 @@ struct
           hook `Reload_log_async;
           t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
           (* else if the disk offset is greater, reload the newest data. *))
-        else if offset < h.offset then sync_log_entries ~min:offset log
+        else if old_offset < h.offset then sync_log_entries ~min:old_offset log
           (* else if the offset is lesser, that means the [log_async] was
              cleared, and the generation should have changed. *)
-        else if offset > h.offset then assert false
+        else if old_offset > h.offset then (
+          (* Should never occur, but we can recover by reloading the log from
+             scratch rather than just hard failing. *)
+          Log.err (fun l ->
+              l
+                "[%s] log_async IO header monotonicity violated during sync:@,\
+                \  offset: %a -> %a@,\
+                \  generation: %a -> %a@,\
+                 Reloading the log to compensate." (Filename.basename t.root)
+                Int63.pp old_offset Int63.pp h.offset Int63.pp old_generation
+                Int63.pp h.generation);
+          sync_log_entries log)
 
   (** Syncs the [index] of the instance by checking on-disk changes. *)
   let sync_index t =
