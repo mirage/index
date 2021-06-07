@@ -575,9 +575,9 @@ struct
 
   (** Appends the entry encoded in [buf] into [dst_io] and registers it in
       [fan_out] with hash [hash]. *)
-  let append_buf_fanout fan_out hash buf_str dst_io =
+  let append_substring_fanout fan_out hash dst_io buf ~off ~len =
     Fan.update fan_out hash (IO.offset dst_io);
-    IO.append dst_io buf_str
+    IO.append_substring dst_io buf ~off ~len
 
   (** Appends [entry] into [dst_io] and registers it in [fan_out]. *)
   let append_entry_fanout fan_out entry dst_io =
@@ -612,7 +612,6 @@ struct
     let len = 10_000 * Entry.encoded_size in
     let buf = Bytes.create len in
     let refill off = ignore (IO.read index_io ~off ~len buf) in
-    let buf_str = Bytes.create Entry.encoded_size in
     let index_end = IO.offset index_io in
     refill Int63.zero;
     let filter =
@@ -654,11 +653,10 @@ struct
               let log_key = log.(log_i).key in
               not K.(equal log_key index_key))
               && filter index_key buf_offset
-            then (
-              Bytes.blit buf buf_offset buf_str 0 Entry.encoded_size;
-              append_buf_fanout fan_out index_key_hash
-                (Bytes.unsafe_to_string buf_str)
-                dst_io);
+            then
+              append_substring_fanout fan_out index_key_hash dst_io
+                (Bytes.unsafe_to_string buf)
+                ~off:buf_offset ~len:Entry.encoded_size;
             if first_entry then hook `After_first_entry;
             let buf_offset =
               let n = buf_offset + Entry.encoded_size in

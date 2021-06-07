@@ -35,6 +35,7 @@ module type S = sig
   val get_fanout_size : t -> int63
   val rename : src:t -> dst:t -> unit
   val append : t -> string -> unit
+  val append_substring : t -> string -> off:int -> len:int -> unit
   val close : t -> unit
 
   val size_header : t -> int
