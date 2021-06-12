@@ -42,7 +42,7 @@ exception Closed
 module Make_private
     (K : Key)
     (V : Value)
-    (Platform : PLATFORM)
+    (Platform : Platform.S)
     (Cache : Cache.S) =
 struct
   open Platform
@@ -1028,6 +1028,7 @@ end
 module Cache = Cache
 module Checks = Checks
 module Make = Make_private
+module Platform = Platform
 module Stats = Stats
 
 module Private = struct

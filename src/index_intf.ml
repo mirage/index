@@ -27,63 +27,6 @@ module type Value = sig
   (** @inline *)
 end
 
-module type IO = Io.S
-
-module type SEMAPHORE = sig
-  (** Binary semaphores for mutual exclusion *)
-
-  type t
-  (** The type of binary semaphore. *)
-
-  val make : bool -> t
-  (** [make b] returns a new semaphore with the given initial state. If [b] is
-      [true], the semaphore is initially available for acquisition; otherwise,
-      the semaphore is initially unavailable. *)
-
-  val acquire : string -> t -> unit
-  (** Acquire the given semaphore. Acquisition is not re-entrant. *)
-
-  val release : t -> unit
-  (** Release the given semaphore. If any threads are attempting to acquire the
-      semaphore, exactly one of them will gain access to the semaphore. *)
-
-  val with_acquire : string -> t -> (unit -> 'a) -> 'a
-  (** [with_acquire t f] first obtains [t], then computes [f ()], and finally
-      release [t]. *)
-
-  val is_held : t -> bool
-  (** [is_held t] returns [true] if the semaphore is held, without acquiring
-      [t]. *)
-end
-
-module type THREAD = sig
-  (** Cooperative threads. *)
-
-  type 'a t
-  (** The type of thread handles. *)
-
-  val async : (unit -> 'a) -> 'a t
-  (** [async f] creates a new thread of control which executes [f ()] and
-      returns the corresponding thread handle. The thread terminates whenever
-      [f ()] returns a value or raises an exception. *)
-
-  val await : 'a t -> ('a, [ `Async_exn of exn ]) result
-  (** [await t] blocks on the termination of [t]. *)
-
-  val return : 'a -> 'a t
-  (** [return ()] is a pre-terminated thread handle. *)
-
-  val yield : unit -> unit
-  (** Re-schedule the calling thread without suspending it. *)
-end
-
-module type PLATFORM = sig
-  module IO : IO
-  module Semaphore : SEMAPHORE
-  module Thread : THREAD
-  module Clock : Platform.CLOCK
-end
-
 module type S = sig
   type t
   (** The type for indexes. *)
@@ -311,14 +254,7 @@ module type Index = sig
 
   (** Platform dependencies required by {!Make}. *)
 
-  module type IO = IO
-  module type SEMAPHORE = SEMAPHORE
-  module type THREAD = THREAD
-
-  module type PLATFORM = sig
-    include PLATFORM
-    (** @inline *)
-  end
+  module Platform = Platform
 
   (** Signatures and implementations of caches. {!Make} requires a cache in
       order to provide instance sharing. *)
@@ -345,7 +281,7 @@ module type Index = sig
   (** The exception raised when any operation is attempted on a closed index,
       except for [close], which is idempotent. *)
 
-  module Make (K : Key.S) (V : Value.S) (_ : PLATFORM) (C : Cache.S) :
+  module Make (K : Key.S) (V : Value.S) (_ : Platform.S) (C : Cache.S) :
     S with type key = K.t and type value = V.t
 
   (** Run-time metric tracking for index instances. *)
@@ -388,7 +324,7 @@ module type Index = sig
 
     module type S = Private with type 'a hook := 'a Hook.t
 
-    module Make (K : Key) (V : Value) (_ : PLATFORM) (C : Cache.S) :
+    module Make (K : Key) (V : Value) (_ : Platform.S) (C : Cache.S) :
       S with type key = K.t and type value = V.t
   end
 end
