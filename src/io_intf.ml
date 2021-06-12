@@ -1,15 +1,5 @@
 open! Import
 
-module type CLOCK = sig
-  (** A monotonic time source. See {!Mtime_clock} for an OS-dependent
-      implementation. *)
-
-  type counter
-
-  val counter : unit -> counter
-  val count : counter -> Mtime.Span.t
-end
-
 module type S = sig
   type t
 
@@ -71,7 +61,6 @@ module type S = sig
 end
 
 module type Io = sig
-  module type CLOCK = CLOCK
   module type S = S
 
   module Extend (S : S) : sig

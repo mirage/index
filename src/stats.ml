@@ -58,7 +58,7 @@ let add_write n =
   incr_bytes_written n;
   incr_nb_writes ()
 
-module Make (Clock : Io.CLOCK) = struct
+module Make (Clock : Platform.CLOCK) = struct
   let replace_timer = ref (Clock.counter ())
   let nb_replace = ref 0
 

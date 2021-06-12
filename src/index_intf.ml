@@ -81,7 +81,7 @@ module type PLATFORM = sig
   module IO : IO
   module Semaphore : SEMAPHORE
   module Thread : THREAD
-  module Clock : Io.CLOCK
+  module Clock : Platform.CLOCK
 end
 
 module type S = sig

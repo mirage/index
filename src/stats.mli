@@ -35,7 +35,7 @@ val incr_nb_merge : unit -> unit
 val incr_nb_replace : unit -> unit
 val incr_nb_sync : unit -> unit
 
-module Make (_ : Io.CLOCK) : sig
+module Make (_ : Platform.CLOCK) : sig
   val start_replace : unit -> unit
   val end_replace : sampling_interval:int -> unit
   val sync_with_timer : (unit -> unit) -> unit
