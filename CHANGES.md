@@ -29,8 +29,9 @@
 - `Index.Make` now requires an implementation of a monotonic time source.
   (#321)
 
-- The `Index.Make` functor now takes a single `Platform` argument containing all
-  system dependencies (i.e. `IO`, `Clock`, `Semaphore` and `Thread`).  (#321)
+- The `Index.Make` functor now takes a single `Platform` argument containing
+  all system dependencies (i.e. `IO`, `Clock`, `Semaphore` and `Thread`). The
+  `Platform` module holds the necessary types for these modules. (#321, #330)
 
 ## Added
 

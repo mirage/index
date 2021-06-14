@@ -27,7 +27,7 @@ let current_version = "00000001"
 
 module Stats = Index.Stats
 
-module IO : Index.IO = struct
+module IO : Index.Platform.IO = struct
   let ( ++ ) = Int63.add
   let ( -- ) = Int63.sub
 

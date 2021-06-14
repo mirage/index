@@ -178,10 +178,10 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
       Term.(
         eval_choice default
           [
-            ( Stat.term $ Logs.setup_term ~reporter (module Clock),
+            ( Stat.term $ Log.setup_term ~reporter (module Clock),
               Term.info ~doc:"Print high-level statistics about the store."
                 "stat" );
-            ( Integrity_check.term $ Logs.setup_term ~reporter (module Clock),
+            ( Integrity_check.term $ Log.setup_term ~reporter (module Clock),
               Term.info
                 ~doc:"Search the store for integrity faults and corruption."
                 "integrity-check" );

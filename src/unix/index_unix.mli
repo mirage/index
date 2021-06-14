@@ -26,7 +26,7 @@ module Syscalls = Syscalls
 (** These modules should not be used. They are exposed purely for testing
     purposes. *)
 module Private : sig
-  module IO : Index.IO
+  module IO : Index.Platform.IO
   module Raw = Raw
 
   module Make (K : Index.Key.S) (V : Index.Value.S) (C : Index.Cache.S) :

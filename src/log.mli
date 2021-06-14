@@ -16,3 +16,13 @@ The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software. *)
 
 include Logs.LOG
+
+val setup :
+  ?reporter:Logs.reporter ->
+  ?style_renderer:Fmt.style_renderer ->
+  ?level:Logs.level ->
+  (module Platform.CLOCK) ->
+  unit
+
+val setup_term :
+  ?reporter:Logs.reporter -> (module Platform.CLOCK) -> unit Cmdliner.Term.t
