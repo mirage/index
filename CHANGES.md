@@ -5,13 +5,6 @@
 - Fixed a crash-consistency bug due to a potential flush of an incomplete entry
   to disk. Entries are now flushed as complete strings. (#301)
 
-- Fixed a performance issue for `Index.sync` when there is a blocking merge in
-  progress: the `log_async` file was not cached properly and fully reloaded
-  from disk every time. (#310)
-
-- Added fsync after `Index.clear` to signal more quickly to read-only instances
-  than something has changed in the file (#308)
-
 - Attempt to recover from `log_async` invariant violations during an explicit
   sync operation, rather than failing immediately. (#329)
 
@@ -19,15 +12,10 @@
 
 - Release overly defensive warnings occuring when pre-fetching the disk. (#322)
 
-- Specialise `IO.v` to create read-only or read-write instances. (#291)
-
 - Optimised the in-memory representation of index handles and intermediate
   buffers, resulting in a significant reduction in memory use. (#273, #279)
 
 - Benches are now executed 3 times and a new option `nb-exec` has been added (#292)
-
-- `clear` removes the files on disks and opens new ones containing only the
-  header. (#288)
 
 - `Index.Make` now requires an implementation of a monotonic time source.
   (#321)
@@ -41,6 +29,30 @@
 - Added benchmarks that replay a trace of index operations. (#300)
 
 - Log reporter for the benches
+
+# 1.3.1 (2021-04-29)
+
+## Fixed
+
+- Reduce allocations during merge (#274, #277)
+
+- Protect concurrent syncs with a lock (#309)
+
+- Fixed a performance issue for `Index.sync` when there is a blocking merge in
+  progress: the `log_async` file was not cached properly and fully reloaded
+  from disk every time. (#310)
+
+- Release the merge lock if a merge raises an exception (#312)
+
+- Added fsync after `Index.clear` to signal more quickly to read-only instances
+  than something has changed in the file (#308)
+
+## Changed
+
+- Specialise `IO.v` to create read-only or read-write instances. (#291)
+
+- `clear` removes the files on disks and opens new ones containing only the
+  header. (#288, #307, #317)
 
 # 1.3.0 (2021-01-05)
 
