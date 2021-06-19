@@ -25,10 +25,10 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
       Entry.decode (Bytes.unsafe_to_string buf) 0
   end
 
-  type size = Bytes of int64 [@@deriving repr]
+  type size = Bytes of int63 [@@deriving repr]
 
   let size_t =
-    let pp = Fmt.using (fun (Bytes b) -> b) Progress.Units.Bytes.pp in
+    let pp = Fmt.using (fun (Bytes b) -> b) Progress.Units.Bytes.pp_int63 in
     Repr.like
       ~json:
         ( (fun e t ->
@@ -74,8 +74,8 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
     let io path =
       with_io path @@ fun io ->
       let IO.Header.{ offset; generation } = IO.Header.get io in
-      let fanout_size = Bytes (IO.get_fanout_size io |> Int63.to_int64) in
-      let size = Bytes (IO.size io |> Int64.of_int) in
+      let fanout_size = Bytes (IO.get_fanout_size io) in
+      let size = Bytes (IO.size io |> Int63.of_int) in
       let offset = Int63.to_int64 offset in
       let generation = Int63.to_int64 generation in
       { size; offset; generation; fanout_size }
@@ -92,7 +92,7 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
                f Format.str_formatter;
                Format.flush_str_formatter ())
       in
-      let entry_size = K.encoded_size + V.encoded_size |> Int64.of_int in
+      let entry_size = K.encoded_size + V.encoded_size |> Int63.of_int in
       {
         entry_size = Bytes entry_size;
         files = { data; log; log_async; merge; lock };
@@ -136,11 +136,10 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
             let first_entry = IO.read_entry io Int63.zero in
             let previous = ref first_entry in
             Format.eprintf "\n%!";
-            Progress_unix.(
-              counter ~total:(Int63.to_int64 io_offset) ~mode:`UTF8
-                ~message:"Scanning store for faults" ~pp:Progress.Units.bytes
-                ~sampling_interval:100_000 ()
-              |> with_reporters)
+            Progress.(
+              with_reporter
+                (counter ~style:`UTF8 ~message:"Scanning store for faults"
+                   ~pp:Progress.Units.Bytes.of_int64 (Int63.to_int64 io_offset)))
             @@ fun report ->
             io
             |> IO.iter ~min:encoded_sizeL (fun off e ->

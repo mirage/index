@@ -15,6 +15,12 @@ module Int63 = struct
 
   let to_int_trunc = to_int
   let to_int = `shadowed
+
+  let t : t Repr.t =
+    let open Repr in
+    (map int64) of_int64 to_int64
+    |> like ~pp:Optint.Int63.pp ~equal:(stage Optint.Int63.equal)
+         ~compare:(stage Optint.Int63.compare)
 end
 
-type int63 = Int63.t
+type int63 = Int63.t [@@deriving repr]

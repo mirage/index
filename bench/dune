@@ -1,7 +1,7 @@
 (library
  (name common)
  (modules common)
- (libraries progress progress.unix logs fmt mtime mtime.clock.os))
+ (libraries progress logs fmt mtime mtime.clock.os))
 
 (executable
  (public_name bench)
