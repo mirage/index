@@ -714,8 +714,6 @@ module Close = struct
     let* Context.{ rw; _ } =
       Context.with_full_index ~throttle:`Block_writes ~size:100 ()
     in
-    let root = Index.root rw in
-
     let close_request, abort_signalled =
       (* Both semaphores are initially held.
          - [close_request] is dropped by the merge thread in the [`Before] hook

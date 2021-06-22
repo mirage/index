@@ -192,7 +192,8 @@ let check_disjoint index htbl =
 let get_open_fd root =
   let ( >>? ) x f = match x with `Ok x -> f x | `Skip err -> `Skip err in
   let pid = string_of_int (Unix.getpid ()) in
-  let fd_file = Filename.concat root "tmp" in
+  let name = Filename.concat root "empty" in
+  let fd_file = "index_fd_tmp" in
   let lsof_command = "lsof -a -s -p " ^ pid ^ " > " ^ fd_file in
   match
     (match Sys.os_type with
@@ -209,7 +210,7 @@ let get_open_fd root =
     let lines = ref [] in
     let extract_fd line =
       try
-        let pos = Re.Str.search_forward (Re.Str.regexp root) line 0 in
+        let pos = Re.Str.search_forward (Re.Str.regexp name) line 0 in
         let fd = Re.Str.string_after line pos in
         lines := fd :: !lines
       with Not_found -> ()
