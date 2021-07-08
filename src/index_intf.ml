@@ -54,21 +54,23 @@ module type S = sig
     t
   (** The constructor for indexes.
 
-      @param flush_callback A function to be called before any new bindings are
-      persisted to disk (including both automatic flushing and explicit calls to
-      {!flush} or {!close}).
+      @param flush_callback
+        A function to be called before any new bindings are persisted to disk
+        (including both automatic flushing and explicit calls to {!flush} or
+        {!close}).
 
-      This can be used to ensure certain pre-conditions are met before bindings
-      are persisted to disk. (For instance, if the index bindings are pointers
-      into another data-structure [d], it may be necessary to flush [d] first to
-      avoid creating dangling pointers.)
+        This can be used to ensure certain pre-conditions are met before
+        bindings are persisted to disk. (For instance, if the index bindings are
+        pointers into another data-structure [d], it may be necessary to flush
+        [d] first to avoid creating dangling pointers.)
       @param cache used for instance sharing.
       @param fresh whether an existing index should be overwritten.
       @param read_only whether read-only mode is enabled for this index.
-      @param throttle the strategy to use when the cache are full and and async
-      in already in progress. [Block_writes] (the default) blocks any new writes
-      until the merge is completed. [Overcommit_memory] does not block but
-      continues to fill the (already full) cache.
+      @param throttle
+        the strategy to use when the cache are full and and async in already in
+        progress. [Block_writes] (the default) blocks any new writes until the
+        merge is completed. [Overcommit_memory] does not block but continues to
+        fill the (already full) cache.
       @param log_size the maximum number of bindings in the `log` IO. *)
 
   val clear : t -> unit
