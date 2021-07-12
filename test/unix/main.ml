@@ -623,11 +623,87 @@ end
 
 (* Tests of {Index.close} *)
 module Close = struct
+  exception Stop
+
   let close_reopen_rw () =
-    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
-    Index.close rw;
-    let w = clone ~readonly:false () in
-    check_equivalence w tbl
+    let merge = Semaphore.make false in
+    let merge_hook =
+      I.Private.Hook.v @@ function
+      | `After_clear ->
+          Semaphore.release merge;
+          raise Stop
+      | _ -> ()
+    in
+    let* Context.{ rw; clone; tbl; _ } =
+      Context.with_full_index ~log_size:2 ()
+    in
+    let k1, v1 = (Key.v (), Value.v ()) in
+    let k2, v2 = (Key.v (), Value.v ()) in
+    let k3, v3 = (Key.v (), Value.v ()) in
+
+    let check_logs msg rw n_log n_log_async =
+      let log = Index.log rw in
+      let log_async = Index.log_async rw in
+      let len = Option.map Hashtbl.length in
+      Alcotest.(check (option int)) (msg ^ ": log entries") n_log (len log);
+      Alcotest.(check (option int))
+        (msg ^ ": log_async entries")
+        n_log_async (len log_async)
+    in
+
+    (* close and kill the merge thread *)
+    let close rw t n_log n_log_async =
+      Semaphore.acquire merge;
+      check_logs "close" rw n_log n_log_async;
+      Index.close ~immediately:() rw;
+      match Index.await t with
+      | Error (`Async_exn Stop) -> ()
+      | _ -> Alcotest.fail "the merge thread should have been killed"
+    in
+
+    let force_merge rw =
+      let thread = Index.try_merge_aux ~force:true rw in
+      Index.await thread |> check_completed;
+      check_logs "force_merge" rw (Some 0) None
+    in
+
+    (* empty log and log_async *)
+    force_merge rw;
+
+    (* Add k1, start a merge and crash just after the index is
+       renamed *)
+    Index.replace rw k1 v1;
+    Index.flush rw;
+    check_logs __LOC__ rw (Some 1) None;
+    let t = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
+    (* Check that the log entries have been merged with index *)
+    close rw t (Some 0) (Some 0);
+
+    (* k1 should be there (thx to the log file) *)
+    let rw = clone ~readonly:false ~fresh:false () in
+    Hashtbl.add tbl k1 v1;
+    check_equivalence rw tbl;
+
+    (* Add k2 in log and k3 in log_async and crash just after the
+       index is renamed. Log is merged but log_async should still be
+       present. *)
+    Index.replace rw k2 v2;
+    Index.flush rw;
+    check_logs __LOC__ rw (Some 1) None;
+    let t = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
+    Index.replace rw k3 v3;
+    Index.flush rw;
+    close rw t (Some 0) (Some 1);
+
+    (* Reopen, k2 and k3 should be there. *)
+    let rw = clone ~readonly:false ~fresh:false () in
+    Hashtbl.add tbl k2 v2;
+    Hashtbl.add tbl k3 v3;
+    check_equivalence rw tbl;
+
+    (* empty log and log_async again *)
+    check_equivalence rw tbl;
+    Index.close rw
 
   let find_absent () =
     let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
