@@ -159,6 +159,16 @@ struct
   let check_open t =
     match !t with Some instance -> instance | None -> raise Closed
 
+  let to_list t = List.of_seq (Tbl.to_seq t)
+
+  let log t =
+    let t = check_open t in
+    Option.map (fun l -> to_list l.mem) t.log
+
+  let log_async t =
+    let t = check_open t in
+    Option.map (fun l -> to_list l.mem) t.log_async
+
   (** {1 Clear} *)
 
   let clear' ~hook t =

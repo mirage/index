@@ -218,6 +218,9 @@ module type Private = sig
       - [`Before_offset_read]: before reading the generation number and the
         offset.
       - [`After_offset_read]: after reading the generation number and offset. *)
+
+  val log : t -> (key * value) list option
+  val log_async : t -> (key * value) list option
 end
 
 module type Index = sig

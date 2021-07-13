@@ -625,6 +625,20 @@ end
 module Close = struct
   exception Stop
 
+  let check_logs msg rw n_log n_log_async =
+    let log = Index.log rw in
+    let log_async = Index.log_async rw in
+    let len = Option.map List.length in
+    Alcotest.(check (option int)) (msg ^ ": log entries") n_log (len log);
+    Alcotest.(check (option int))
+      (msg ^ ": log_async entries")
+      n_log_async (len log_async)
+
+  let force_merge rw =
+    let thread = Index.try_merge_aux ~force:true rw in
+    Index.await thread |> check_completed;
+    check_logs "force_merge" rw (Some 0) None
+
   let close_reopen_rw () =
     let merge = Semaphore.make false in
     let merge_hook =
@@ -641,16 +655,6 @@ module Close = struct
     let k2, v2 = (Key.v (), Value.v ()) in
     let k3, v3 = (Key.v (), Value.v ()) in
 
-    let check_logs msg rw n_log n_log_async =
-      let log = Index.log rw in
-      let log_async = Index.log_async rw in
-      let len = Option.map Hashtbl.length in
-      Alcotest.(check (option int)) (msg ^ ": log entries") n_log (len log);
-      Alcotest.(check (option int))
-        (msg ^ ": log_async entries")
-        n_log_async (len log_async)
-    in
-
     (* close and kill the merge thread *)
     let close rw t n_log n_log_async =
       Semaphore.acquire merge;
@@ -659,12 +663,6 @@ module Close = struct
       match Index.await t with
       | Error (`Async_exn Stop) -> ()
       | _ -> Alcotest.fail "the merge thread should have been killed"
-    in
-
-    let force_merge rw =
-      let thread = Index.try_merge_aux ~force:true rw in
-      Index.await thread |> check_completed;
-      check_logs "force_merge" rw (Some 0) None
     in
 
     (* empty log and log_async *)
@@ -702,6 +700,72 @@ module Close = struct
     check_equivalence rw tbl;
 
     (* empty log and log_async again *)
+    check_equivalence rw tbl;
+    Index.close rw
+
+  let crash_and_continue () =
+    let merge = Semaphore.make false in
+    let merge_hook =
+      I.Private.Hook.v @@ function
+      | `After_clear ->
+          Semaphore.release merge;
+          raise Stop
+      | _ -> ()
+    in
+    let* Context.{ rw; tbl; _ } = Context.with_full_index ~log_size:2 () in
+    let k1, v1 = (Key.v (), Value.v ()) in
+    let k2, v2 = (Key.v (), Value.v ()) in
+    let k3, v3 = (Key.v (), Value.v ()) in
+
+    let wait t =
+      Semaphore.acquire merge;
+      match Index.await t with
+      | Error (`Async_exn Stop) -> ()
+      | _ -> Alcotest.fail "the merge thread should have been killed"
+    in
+
+    (* empty log and log_async *)
+    force_merge rw;
+
+    (* Add k1, start a merge and crash just after the index is
+       renamed *)
+    Index.replace rw k1 v1;
+    Index.flush rw;
+    check_logs __LOC__ rw (Some 1) None;
+    Index.try_merge_aux ~force:true ~hook:merge_hook rw |> wait;
+    (* Check that the log entries have been merged with index *)
+    check_logs __LOC__ rw (Some 0) (Some 0);
+
+    (* k1 should be in data *)
+    Hashtbl.add tbl k1 v1;
+    check_equivalence rw tbl;
+
+    (* Add k2 in log_async, as the file is present from the previous
+       crash. *)
+    Index.replace rw k2 v2;
+    Index.flush rw;
+    check_logs __LOC__ rw (Some 0) (Some 1);
+
+    (* k3 should be there. *)
+    Hashtbl.add tbl k2 v2;
+    check_equivalence rw tbl;
+
+    (* merge should merge pre-existing log_async entries  *)
+    Index.try_merge_aux ~force:true ~hook:merge_hook rw |> wait;
+    check_logs __LOC__ rw (Some 0) (Some 0);
+    check_equivalence rw tbl;
+
+    (* Add k3 in log_async as it already exists *)
+    Index.replace ~overcommit:true rw k3 v3;
+    Index.flush rw;
+    check_logs __LOC__ rw (Some 0) (Some 1);
+
+    (* k3 should be there. *)
+    Hashtbl.add tbl k3 v3;
+    check_equivalence rw tbl;
+
+    (* full merge and check *)
+    force_merge rw;
     check_equivalence rw tbl;
     Index.close rw
 
@@ -837,6 +901,7 @@ module Close = struct
   let tests =
     [
       ("close and reopen", `Quick, close_reopen_rw);
+      ("crash and continue", `Quick, crash_and_continue);
       ("find (absent)", `Quick, find_absent);
       ("replace", `Quick, replace);
       ("open two instances, close one", `Quick, open_readonly_close_rw);
