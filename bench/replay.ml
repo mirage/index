@@ -155,9 +155,7 @@ struct
     | Error (`Msg m) -> Fmt.failwith "error decoding hash %s" m
 
   let add_operation store op_seq nb_ops () =
-    let sampling_interval = nb_ops / 1000 in
-    with_progress_bar ~sampling_interval ~message:"Replaying trace" ~n:nb_ops
-      ~unit:"operations"
+    with_progress_bar ~message:"Replaying trace" ~n:nb_ops ~unit:"operations"
     @@ fun progress ->
     let rec aux op_seq i =
       if i >= nb_ops then i

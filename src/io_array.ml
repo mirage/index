@@ -71,7 +71,7 @@ module Make (IO : Io.S) (Elt : ELT) :
         try get_entry_from_buffer b off with _ -> assert false)
     | _ -> get_entry_from_io t.io off
 
-  let length t = Int63.(IO.offset t.io / Elt.encoded_sizeL)
+  let length t = Int63.div (IO.offset t.io) Elt.encoded_sizeL
 
   let max_buffer_size =
     (* The prefetched area should not exceed 4096 in most cases, thanks to the
