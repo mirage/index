@@ -195,36 +195,31 @@ let get_open_fd root =
   let name = Filename.concat root "empty" in
   let fd_file = "index_fd_tmp" in
   let lsof_command = "lsof -a -s -p " ^ pid ^ " > " ^ fd_file in
-  match
-    (match Sys.os_type with
-    | "Unix" -> `Ok ()
-    | _ -> `Skip "non-UNIX operating system")
-    >>? fun () ->
-    (match Unix.system lsof_command with
-    | Unix.WEXITED 0 -> `Ok ()
-    | Unix.WEXITED _ ->
-        `Skip "failing `lsof` command. Is `lsof` installed on your system?"
-    | Unix.WSIGNALED _ | Unix.WSTOPPED _ ->
-        `Skip "`lsof` command was interrupted")
-    >>? fun () ->
-    let lines = ref [] in
-    let extract_fd line =
-      try
-        let pos = Re.Str.search_forward (Re.Str.regexp name) line 0 in
-        let fd = Re.Str.string_after line pos in
-        lines := fd :: !lines
-      with Not_found -> ()
-    in
-    let ic = open_in fd_file in
-    (try
-       while true do
-         extract_fd (input_line ic)
-       done
-     with End_of_file -> close_in ic);
-    `Ok !lines
-  with
-  | `Ok l -> l
-  | `Skip e -> Alcotest.fail e
+  (match Sys.os_type with
+  | "Unix" -> `Ok ()
+  | _ -> `Skip "non-UNIX operating system")
+  >>? fun () ->
+  (match Unix.system lsof_command with
+  | Unix.WEXITED 0 -> `Ok ()
+  | Unix.WEXITED _ ->
+      `Skip "failing `lsof` command. Is `lsof` installed on your system?"
+  | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> `Skip "`lsof` command was interrupted")
+  >>? fun () ->
+  let lines = ref [] in
+  let extract_fd line =
+    try
+      let pos = Re.Str.search_forward (Re.Str.regexp name) line 0 in
+      let fd = Re.Str.string_after line pos in
+      lines := fd :: !lines
+    with Not_found -> ()
+  in
+  let ic = open_in fd_file in
+  (try
+     while true do
+       extract_fd (input_line ic)
+     done
+   with End_of_file -> close_in ic);
+  `Ok !lines
 
 let partition sub l =
   List.partition

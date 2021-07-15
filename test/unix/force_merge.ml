@@ -33,28 +33,31 @@ let test_one_entry r k v =
       Alcotest.failf "Inserted value is not present anymore: %s." k
 
 let test_fd () =
-  let lines = Common.get_open_fd root in
-  let contains sub s =
-    try
-      ignore (Re.Str.search_forward (Re.Str.regexp sub) s 0);
-      true
-    with Not_found -> false
-  in
-  let result =
-    let data, rs = List.partition (contains "data") lines in
-    if List.length data > 2 then
-      Alcotest.fail "Too many file descriptors opened for data files";
-    let log, rs = List.partition (contains "log") rs in
-    if List.length log > 2 then
-      Alcotest.fail "Too many file descriptors opened for log files";
-    let lock, rs = List.partition (contains "lock") rs in
-    if List.length lock > 2 then
-      Alcotest.fail "Too many file descriptors opened for lock files";
-    if List.length rs > 0 then Alcotest.fail "Unknown file descriptors opened";
-    `Ok ()
-  in
-  match result with
-  | `Ok () -> ()
+  match Common.get_open_fd root with
+  | `Ok lines -> (
+      let contains sub s =
+        try
+          ignore (Re.Str.search_forward (Re.Str.regexp sub) s 0);
+          true
+        with Not_found -> false
+      in
+      let result =
+        let data, rs = List.partition (contains "data") lines in
+        if List.length data > 2 then
+          Alcotest.fail "Too many file descriptors opened for data files";
+        let log, rs = List.partition (contains "log") rs in
+        if List.length log > 2 then
+          Alcotest.fail "Too many file descriptors opened for log files";
+        let lock, rs = List.partition (contains "lock") rs in
+        if List.length lock > 2 then
+          Alcotest.fail "Too many file descriptors opened for lock files";
+        if List.length rs > 0 then
+          Alcotest.fail "Unknown file descriptors opened";
+        `Ok ()
+      in
+      match result with
+      | `Ok () -> ()
+      | `Skip err -> Log.warn (fun m -> m "`test_fd` was skipped: %s" err))
   | `Skip err -> Log.warn (fun m -> m "`test_fd` was skipped: %s" err)
 
 let readonly_s () =
