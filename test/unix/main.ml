@@ -904,7 +904,7 @@ module Throttle = struct
 end
 
 let () =
-  (* Common.report (); *)
+  Common.report ();
   Alcotest.run "index.unix"
     [
       ("io_array", Io_array.tests);
