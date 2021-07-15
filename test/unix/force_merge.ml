@@ -34,8 +34,6 @@ let test_one_entry r k v =
 
 let test_fd () =
   let lines = Common.get_open_fd root in
-  (* Not sure that looking in /tmp is correct since all the writes
-   * are done in root *)
   let contains sub s =
     try
       ignore (Re.Str.search_forward (Re.Str.regexp sub) s 0);

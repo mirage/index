@@ -8,6 +8,8 @@
 - Attempt to recover from `log_async` invariant violations during an explicit
   sync operation, rather than failing immediately. (#329)
 
+- Proper cleaning of merge file descriptors when aborting a merge (#326)
+
 ## Changed
 
 - Release overly defensive warnings occuring when pre-fetching the disk. (#322)
