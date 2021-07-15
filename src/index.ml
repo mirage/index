@@ -768,7 +768,9 @@ struct
           | `Aborted -> `Aborted)
     in
     match merge_result with
-    | `Aborted -> (`Aborted, Mtime.Span.zero)
+    | `Aborted ->
+        IO.clear ~generation ~reopen:false merge;
+        (`Aborted, Mtime.Span.zero)
     | `Index_io io ->
         let fan_out = Fan.finalize fan_out in
         let index = { io; fan_out } in

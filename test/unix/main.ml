@@ -756,7 +756,13 @@ module Close = struct
         Alcotest.failf
           "Asynchronous exception occurred during try_merge ~force:true: %s"
           (Printexc.to_string exn)
-    | Ok `Aborted -> ()
+    | Ok `Aborted -> (
+        match Common.get_open_fd root with
+        | `Ok ofd ->
+            let merge, _ = Common.partition "merge" ofd in
+            if List.length merge > 0 then
+              Alcotest.fail "Too many file descriptors opened for merge files"
+        | `Skip err -> Log.warn (fun m -> m "`aborted_fd` was skipped: %s" err))
 
   let tests =
     [
