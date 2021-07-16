@@ -1,3 +1,9 @@
+## Unreleased
+
+## Fixed
+
+- Proper cleaning of merge file descriptors when aborting a merge (#326)
+
 # 1.4.0 (2021-06-16)
 
 ## Fixed
@@ -7,8 +13,6 @@
 
 - Attempt to recover from `log_async` invariant violations during an explicit
   sync operation, rather than failing immediately. (#329)
-
-- Proper cleaning of merge file descriptors when aborting a merge (#326)
 
 ## Changed
 
