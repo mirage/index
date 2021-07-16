@@ -4,6 +4,10 @@
 
 - Proper cleaning of merge file descriptors when aborting a merge (#326)
 
+- Recover from crash of the merge thread. When this happen, the main thread can
+  continue to run and will need to recover from the crash before doing a new
+  merge. This fixes a critical issue which might cause data loss (#339)
+
 # 1.4.0 (2021-06-16)
 
 ## Fixed

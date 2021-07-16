@@ -212,6 +212,31 @@ struct
     Semaphore.with_acquire "flush" t.rename_lock (fun () ->
         flush_instance ?no_callback ~with_fsync t)
 
+  (** Extract [log] and [log_async] for (private) tests. *)
+
+  let to_list t = List.of_seq (Tbl.to_seq t)
+
+  let io_to_list msg io =
+    let x = to_list io.mem in
+    let y = ref [] in
+    iter_io (fun (e : Entry.t) -> y := (e.key, e.value) :: !y) io.io;
+    if List.length x <> List.length !y then (
+      let pp_entry ppf (k, _) = pp_key ppf k in
+      let pp = Fmt.Dump.list pp_entry in
+      Fmt.epr "consistency error in %s:\nmem : %a\ndisk: %a\n%!" msg pp x pp !y;
+      assert false);
+    x
+
+  let log t =
+    flush t;
+    let t = check_open t in
+    Option.map (io_to_list "log") t.log
+
+  let log_async t =
+    flush t;
+    let t = check_open t in
+    Option.map (io_to_list "log_async") t.log_async
+
   (** {1 RO instances syncing} *)
 
   (** Loads the log file at [path], if it exists. Used by RO instances to load
@@ -438,6 +463,24 @@ struct
 
   (** {1 Index creation} *)
 
+  let transfer_log_async_to_log ~root ~generation ~log ~log_async =
+    let entries = Int63.div (IO.offset log_async) entry_sizeL in
+    Log.debug (fun l ->
+        l "[%s] log_async file detected. Loading %a entries"
+          (Filename.basename root) Int63.pp entries);
+    (* Can only happen in RW mode where t.log is always [Some _] *)
+    match log with
+    | None -> assert false
+    | Some log ->
+        let append_io = IO.append log.io in
+        iter_io
+          (fun e ->
+            Tbl.replace log.mem e.key e.value;
+            Entry.encode e append_io)
+          log_async;
+        IO.flush log.io;
+        IO.clear ~generation ~reopen:false log_async
+
   let v_no_cache ?(flush_callback = fun () -> ()) ~throttle ~fresh ~readonly
       ~log_size root =
     Log.debug (fun l ->
@@ -455,8 +498,9 @@ struct
         flush_callback;
       }
     in
-    let log_path = Layout.log ~root in
+    (* load the [log] file *)
     let log =
+      let log_path = Layout.log ~root in
       if readonly then if fresh then raise RO_not_allowed else None
       else
         let io =
@@ -474,32 +518,24 @@ struct
     let generation =
       match log with None -> Int63.zero | Some log -> IO.get_generation log.io
     in
-    let log_async_path = Layout.log_async ~root in
-    (* If we are in readonly mode, the log_async will be read during sync_log so
-       there is no need to do it here. *)
-    if (not readonly) && IO.exists log_async_path then (
-      let io =
-        IO.v ~flush_callback ~fresh ~generation:Int63.zero ~fan_size:Int63.zero
-          log_async_path
-      in
-      let entries = Int63.div (IO.offset io) entry_sizeL in
-      Log.debug (fun l ->
-          l "[%s] log_async file detected. Loading %a entries"
-            (Filename.basename root) Int63.pp entries);
-      (* If we are not in fresh mode, we move the contents of log_async to
-         log. *)
-      if not fresh then
-        Option.iter
-          (fun log ->
-            let append_io = IO.append log.io in
-            iter_io
-              (fun e ->
-                Tbl.replace log.mem e.key e.value;
-                Entry.encode e append_io)
-              io;
-            IO.flush log.io;
-            IO.clear ~generation ~reopen:false io)
-          log);
+    (* load the [log_async] file *)
+    let () =
+      let log_async_path = Layout.log_async ~root in
+      (* - If we are in readonly mode, the log_async will be read
+           during sync_log so there is no need to do it here. *)
+      if (not readonly) && IO.exists log_async_path then
+        let io =
+          IO.v ~flush_callback ~fresh ~generation ~fan_size:Int63.zero
+            log_async_path
+        in
+        (* in fresh mode, we need to wipe the existing [log_async] file. *)
+        if fresh then IO.clear ~generation ~reopen:false io
+        else
+          (* If we are not in fresh mode, we move the contents
+             of log_async to log. *)
+          transfer_log_async_to_log ~root ~generation ~log ~log_async:io
+    in
+    (* load the [data] file *)
     let index =
       if readonly then None
       else
@@ -811,6 +847,17 @@ struct
         hook `After;
         (`Completed, rename_lock_duration)
 
+  let reset_log_async t =
+    let io =
+      let log_async_path = Layout.log_async ~root:t.root in
+      IO.v ~flush_callback:t.config.flush_callback ~fresh:true
+        ~generation:(Int63.succ t.generation) ~fan_size:Int63.zero
+        log_async_path
+    in
+    let mem = Tbl.create 0 in
+    let log_async = { io; mem } in
+    t.log_async <- Some log_async
+
   let merge' ?(blocking = false) ?filter ?(hook = fun _ -> ()) ~witness
       ?(force = false) t =
     let merge_started = Clock.counter () in
@@ -823,17 +870,15 @@ struct
         l "[%s] merge started { id=%d%a }" (Filename.basename t.root) merge_id
           pp_forced ());
     Stats.incr_nb_merge ();
-    let log_async =
-      let io =
-        let log_async_path = Layout.log_async ~root:t.root in
-        IO.v ~flush_callback:t.config.flush_callback ~fresh:true
-          ~generation:(Int63.succ t.generation) ~fan_size:Int63.zero
-          log_async_path
-      in
-      let mem = Tbl.create 0 in
-      { io; mem }
-    in
-    t.log_async <- Some log_async;
+
+    (* Cleanup previous crashes of the merge thread. *)
+    Option.iter
+      (fun l ->
+        transfer_log_async_to_log ~root:t.root ~generation:t.generation
+          ~log:t.log ~log_async:l.io)
+      t.log_async;
+    reset_log_async t;
+
     (* NOTE: We flush [log] {i after} enabling [log_async] to ensure that no
        unflushed bindings make it into [log] before being merged into the index.
        This satisfies the invariant that all bindings are {i first} persisted in
