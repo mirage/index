@@ -12,19 +12,15 @@ module Entry = struct
   type t = Key.t * Value.t
 
   let to_key = fst
-
   let to_value = snd
 end
 
 module EltArray = struct
   type t = Entry.t array
-
   type elt = Entry.t
 
   let get t i = t.(Int64.to_int i)
-
   let length t = Array.length t |> Int64.of_int
-
   let pre_fetch _ ~low:_ ~high:_ = ()
 end
 
@@ -35,9 +31,7 @@ module Metric_key = struct
   type t = Entry.Key.t
 
   let compare : t -> t -> int = compare
-
   let of_entry = Entry.to_key
-
   let of_key k = k
 
   let linear_interpolate ~low:(low_out, low_in) ~high:(high_out, high_in) m =
@@ -74,9 +68,7 @@ module Metric_constant = struct
   type t = unit
 
   let compare () () = 0
-
   let of_entry _ = ()
-
   let of_key _ = ()
 
   let linear_interpolate ~low:(low_out, _) ~high:(high_out, _) _ =

@@ -33,13 +33,10 @@ module Value = struct
 end
 
 let may f = function None -> () | Some bf -> f bf
-
 let assert_and_get = function None -> assert false | Some e -> e
 
 exception RO_not_allowed
-
 exception RW_not_allowed
-
 exception Closed
 
 module Make_private
@@ -55,11 +52,9 @@ struct
   let await = Thread.await
 
   type key = K.t
-
   type value = V.t
 
   let pp_key = Repr.pp K.t
-
   let pp_value = Repr.pp V.t
 
   module Entry = struct
@@ -68,7 +63,6 @@ struct
     module Value = V
 
     let to_key { key; _ } = key
-
     let to_value { value; _ } = value
   end
 
@@ -101,7 +95,6 @@ struct
   }
 
   type index = { io : IO.t; fan_out : [ `Read ] Fan.t }
-
   type log = { io : IO.t; mem : value Tbl.t }
 
   type instance = {
@@ -190,9 +183,7 @@ struct
         module Entry = Entry
 
         let compare : int -> int -> int = compare
-
         let of_entry e = e.Entry.key_hash
-
         let of_key = K.hash
 
         let linear_interpolate ~low:(low_index, low_metric)
@@ -837,7 +828,6 @@ struct
             else Thread.return `Completed)
 
   let merge t = ignore (try_merge_aux ?hook:None ~force:true t : _ async)
-
   let try_merge t = ignore (try_merge_aux ?hook:None ~force:false t : _ async)
 
   (** [t.merge_lock] is used to detect an ongoing merge. Other operations can

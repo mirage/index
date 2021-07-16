@@ -3,9 +3,7 @@ let ( ++ ) = Int64.add
 module Stats = Index.Stats
 
 external set_64 : Bytes.t -> int -> int64 -> unit = "%caml_string_set64u"
-
 external get_64 : string -> int -> int64 = "%caml_string_get64"
-
 external swap64 : int64 -> int64 = "%bswap_int64"
 
 let encode_int64 i =
@@ -50,9 +48,7 @@ let really_read fd fd_offset length buffer =
   aux fd_offset 0 length
 
 let fsync t = Unix.fsync t.fd
-
 let close t = Unix.close t.fd
-
 let fstat t = Unix.fstat t.fd
 
 let unsafe_write t ~off buf =

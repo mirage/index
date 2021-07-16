@@ -25,13 +25,9 @@ let src =
   Src.v "bench" ~tags ~data
 
 let key_size = 32
-
 let value_size = 13
-
 let entry_size = key_size + value_size
-
 let ( // ) = Filename.concat
-
 let random_char () = char_of_int (33 + Random.int 94)
 
 let random_string string_size =
@@ -44,17 +40,11 @@ module Context = struct
     type t = string [@@deriving repr]
 
     let v () = random_string key_size
-
     let hash = Hashtbl.hash
-
     let hash_size = 30
-
     let encode s = s
-
     let decode s off = String.sub s off key_size
-
     let encoded_size = key_size
-
     let equal = String.equal
   end
 
@@ -62,11 +52,8 @@ module Context = struct
     type t = string [@@deriving repr]
 
     let v () = random_string value_size
-
     let encode s = s
-
     let decode s off = String.sub s off value_size
-
     let encoded_size = value_size
   end
 end
@@ -152,9 +139,7 @@ let make_bindings_pool nb_entries =
       (k, v))
 
 let bindings_pool = ref [||]
-
 let absent_bindings_pool = ref [||]
-
 let sorted_bindings_pool = ref [||]
 
 module Index = struct
