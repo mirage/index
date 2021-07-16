@@ -6,6 +6,9 @@
   continue to run and will need to recover from the crash before doing a new
   merge. This fixes a critical issue which might cause data loss (#339)
 
+- Make sure that no entries can disappear for read-only instances during
+  log_async recovery (#338)
+
 # 1.3.1 (2021-04-29)
 
 ## Fixed

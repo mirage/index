@@ -349,7 +349,9 @@ struct
             Tbl.replace log.mem e.key e.value;
             Entry.encode e append_io)
           log_async;
-        IO.flush log.io;
+        (* Force fsync here so that persisted entries in log_async
+           continue to persist in log. *)
+        IO.flush ~with_fsync:true log.io;
         IO.clear ~generation ~reopen:false log_async
 
   let v_no_cache ?(flush_callback = fun () -> ()) ~throttle ~fresh ~readonly
