@@ -14,7 +14,7 @@ depends: [
   "metrics"
   "metrics-unix"
   "ppx_deriving_yojson"
-  "re"
+  "re" {>= "1.9.0"}
   "stdlib-shims"
   "yojson"
   "ppx_repr"
@@ -27,7 +27,7 @@ depends: [
   "rusage" {>= "1.0.0" & with-test}
 ]
 build: [
-  ["dune" "subst"] {pinned}
+  ["dune" "subst"] {dev}
   ["dune" "build" "-p" name "-j" jobs]
   ["dune" "runtest" "-p" name] {with-test}
 ]
