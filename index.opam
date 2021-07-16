@@ -27,8 +27,8 @@ depends: [
   "logs"
   "mtime"   {>= "1.0.0"}
   "cmdliner"
-  "progress"
-  "semaphore-compat"
+  "progress" {>= "0.1.1" & < "0.2.0"}
+  "semaphore-compat"  {>= "1.0.1"}
   "jsonm"
   "stdlib-shims"
   "alcotest" {with-test}

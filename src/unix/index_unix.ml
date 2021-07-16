@@ -136,9 +136,9 @@ module IO : Index.IO = struct
       if Sys.file_exists dir && Sys.is_directory dir then k ()
       else (
         if Sys.file_exists dir then safe Unix.unlink dir;
-        (aux [@tailcall]) (Filename.dirname dir) @@ fun () ->
-        protect (Unix.mkdir dir) 0o755;
-        k ())
+        (aux [@tailcall]) (Filename.dirname dir) (fun () ->
+            protect (Unix.mkdir dir) 0o755;
+            k ()))
     in
     (aux [@tailcall]) dirname (fun () -> ())
 
