@@ -18,7 +18,7 @@ depends: [
   "stdlib-shims"
   "yojson"
   "ppx_repr"
-  "tezos-context-hash"
+  "tezos-context-hash" {>= "1.0.0"}
   "mtime"
   "logs" {>= "0.7.0"}
   "optint" {>= "0.1.0" & with-test}
