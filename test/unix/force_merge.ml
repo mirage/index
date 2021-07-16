@@ -9,9 +9,7 @@ module Context = Common.Make_context (struct
 end)
 
 let after f = Hook.v (function `After -> f () | _ -> ())
-
 let after_clear f = Hook.v (function `After_clear -> f () | _ -> ())
-
 let before f = Hook.v (function `Before -> f () | _ -> ())
 
 let before_offset_read f =

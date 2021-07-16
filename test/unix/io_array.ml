@@ -1,7 +1,6 @@
 module IO = Index_unix.Private.IO
 
 let ( // ) = Filename.concat
-
 let root = "_tests" // "unix.io_array"
 
 module Entry = struct
@@ -27,7 +26,6 @@ end
 module IOArray = Index.Private.Io_array.Make (IO) (Entry)
 
 let entry = Alcotest.(pair string string)
-
 let fresh_io name = IO.v ~fresh:true ~generation:0L ~fan_size:0L (root // name)
 
 (* Append a random sequence of [size] keys to an IO instance and return

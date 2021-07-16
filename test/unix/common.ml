@@ -33,14 +33,11 @@ module String_size = struct
 end
 
 let () = Random.self_init ()
-
 let random_char () = char_of_int (33 + Random.int 94)
-
 let random_string () = String.init String_size.length (fun _i -> random_char ())
 
 module Default = struct
   let log_size = 4
-
   let size = 103
 end
 
@@ -54,7 +51,6 @@ module Value = struct
   include Index.Value.String_fixed (String_size)
 
   let v = random_string
-
   let equal = String.equal
 end
 
@@ -193,13 +189,9 @@ struct
 end
 
 let ( let* ) f k = f k
-
 let uncurry f (x, y) = f x y
-
 let ignore_value (_ : Value.t) = ()
-
 let ignore_bool (_ : bool) = ()
-
 let ignore_index (_ : Index.t) = ()
 
 let check_equivalence index htbl =

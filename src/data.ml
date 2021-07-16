@@ -36,35 +36,25 @@ module type Value = sig
   type t [@@deriving repr]
 
   val encode : t -> string
-
   val encoded_size : int
-
   val decode : string -> int -> t
 end
 
 module Entry = struct
   module type S = sig
     type key
-
     type value
 
     type t = private { key : key; key_hash : int; value : value }
     [@@deriving repr]
 
     val v : key -> value -> t
-
     val encoded_size : int
-
     val decode : string -> int -> t
-
     val decode_key : string -> int -> key * int
-
     val decode_value : string -> int -> value
-
     val encode : t -> (string -> unit) -> unit
-
     val encode' : key -> value -> (string -> unit) -> unit
-
     val compare : t -> t -> int
     (* Compare entries by their key hash. *)
   end
@@ -74,7 +64,6 @@ module Entry = struct
     type t = { key : K.t; key_hash : int; value : V.t } [@@deriving repr]
 
     let v key value = { key; key_hash = K.hash key; value }
-
     let encoded_size = K.encoded_size + V.encoded_size
 
     let decode string off =
@@ -98,7 +87,6 @@ module Entry = struct
       f (encoded_key ^ encoded_value)
 
     let encode { key; value; _ } f = encode' key value f
-
     let compare a b = Int.compare a.key_hash b.key_hash
   end
 end
@@ -109,20 +97,14 @@ end) : sig
   type t = string
 
   include Key with type t := string
-
   include Value with type t := string
 end = struct
   type t = string [@@deriving repr]
 
   let hash = Hashtbl.hash
-
   let hash_size = 30
-
   let encode s = s
-
   let decode s off = String.sub s off L.length
-
   let encoded_size = L.length
-
   let equal = String.equal
 end

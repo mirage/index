@@ -39,9 +39,7 @@ module Make
     include Metric
 
     let ( < ) a b = compare a b < 0
-
     let ( = ) a b = compare a b = 0
-
     let ( > ) a b = compare a b > 0
   end
 

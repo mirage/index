@@ -10,26 +10,18 @@ module type S = sig
     t
 
   val v_readonly : string -> (t, [ `No_file_on_disk ]) result
-
   val offset : t -> int64
-
   val read : t -> off:int64 -> len:int -> bytes -> int
 
   val clear :
     generation:int64 -> ?hook:(unit -> unit) -> reopen:bool -> t -> unit
 
   val flush : ?no_callback:unit -> ?with_fsync:bool -> t -> unit
-
   val get_generation : t -> int64
-
   val set_fanout : t -> string -> unit
-
   val get_fanout : t -> string
-
   val rename : src:t -> dst:t -> unit
-
   val append : t -> string -> unit
-
   val close : t -> unit
 
   val size_header : t -> int
@@ -39,7 +31,6 @@ module type S = sig
     type t
 
     val lock : string -> t
-
     val unlock : t -> unit
 
     val pp_dump : string -> (Format.formatter -> unit) option
@@ -50,7 +41,6 @@ module type S = sig
     type header = { offset : int64; generation : int64 }
 
     val set : t -> header -> unit
-
     val get : t -> header
   end
 

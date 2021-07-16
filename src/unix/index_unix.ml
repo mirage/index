@@ -27,7 +27,6 @@ module Stats = Index.Stats
 
 module IO : Index.IO = struct
   external ( ++ ) : int64 -> int64 -> int64 = "%int64_add"
-
   external ( -- ) : int64 -> int64 -> int64 = "%int64_sub"
 
   type t = {
@@ -128,7 +127,6 @@ module IO : Index.IO = struct
     | e -> raise e
 
   let protect f x = try f x with e -> protect_unix_exn e
-
   let safe f x = try f x with e -> ignore_enoent e
 
   let mkdir dirname =
@@ -246,9 +244,7 @@ module IO : Index.IO = struct
     | e -> raise e
 
   let exists = Sys.file_exists
-
   let size { raw; _ } = (Raw.fstat raw).st_size
-
   let size_header t = t.header |> Int64.to_int
 
   module Lock = struct
@@ -352,7 +348,6 @@ module Thread = struct
     Async { thread; result }
 
   let yield = Thread.yield
-
   let return a = Value a
 
   let await t =
@@ -368,11 +363,13 @@ end
 
 module Make (K : Index.Key.S) (V : Index.Value.S) =
   Index.Make (K) (V) (IO) (Semaphore) (Thread)
+
 module Syscalls = Syscalls
 
 module Private = struct
   module IO = IO
   module Raw = Raw
+
   module Make (K : Index.Key.S) (V : Index.Value.S) =
     Index.Private.Make (K) (V) (IO) (Semaphore) (Thread)
 end

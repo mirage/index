@@ -20,11 +20,8 @@ module type S = sig
   (** A cache of values of type ['v], indexed by keys of type ['k]. *)
 
   val create : unit -> (_, _) t
-
   val add : ('k, 'v) t -> 'k -> 'v -> unit
-
   val find : ('k, 'v) t -> 'k -> 'v option
-
   val remove : ('k, _) t -> 'k -> unit
 end
 
@@ -33,11 +30,8 @@ module Noop : S = struct
   type (_, _) t = unit
 
   let create () = ()
-
   let add () _ _ = ()
-
   let find () _ = None
-
   let remove () _ = ()
 end
 
@@ -47,6 +41,5 @@ module Unbounded : S = struct
   include Hashtbl
 
   let create () = create 0
-
   let find = find_opt
 end

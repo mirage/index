@@ -1,5 +1,4 @@
 let check_none msg = Alcotest.(check (option reject)) msg None
-
 let check_some msg x = Alcotest.(check (option int)) msg (Some x)
 
 let test_noop () =
