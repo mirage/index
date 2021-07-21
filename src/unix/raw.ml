@@ -37,7 +37,7 @@ let fstat t = Unix.fstat t.fd
 let unsafe_write t ~off buffer buffer_offset length =
   let buffer = Bytes.unsafe_of_string buffer in
   really_write t.fd off buffer buffer_offset length;
-  Stats.add_write (Bytes.length buffer)
+  Stats.add_write length
 
 let unsafe_read t ~off ~len buf =
   let n = really_read t.fd off len buf in

@@ -1,3 +1,9 @@
+# Unreleased
+
+## Fixed
+
+- Fix stats recording in `Raw.unsafe_write` (#351)
+
 # 1.4.1 (2021-07-16)
 
 ## Fixed
