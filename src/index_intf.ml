@@ -1,19 +1,19 @@
 (* The MIT License
 
-Copyright (c) 2019 Craig Ferguson <craig@tarides.com>
-                   Thomas Gazagnaire <thomas@tarides.com>
-                   Ioana Cristescu <ioana@tarides.com>
-                   Clément Pascutto <clement@tarides.com>
+   Copyright (c) 2019 Craig Ferguson <craig@tarides.com>
+                      Thomas Gazagnaire <thomas@tarides.com>
+                      Ioana Cristescu <ioana@tarides.com>
+                      Clément Pascutto <clement@tarides.com>
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software. *)
+   The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software. *)
 
 open! Import
 
@@ -54,21 +54,23 @@ module type S = sig
     t
   (** The constructor for indexes.
 
-      @param flush_callback A function to be called before any new bindings are
-      persisted to disk (including both automatic flushing and explicit calls to
-      {!flush} or {!close}).
+      @param flush_callback
+        A function to be called before any new bindings are persisted to disk
+        (including both automatic flushing and explicit calls to {!flush} or
+        {!close}).
 
-      This can be used to ensure certain pre-conditions are met before bindings
-      are persisted to disk. (For instance, if the index bindings are pointers
-      into another data-structure [d], it may be necessary to flush [d] first to
-      avoid creating dangling pointers.)
+        This can be used to ensure certain pre-conditions are met before
+        bindings are persisted to disk. (For instance, if the index bindings are
+        pointers into another data-structure [d], it may be necessary to flush
+        [d] first to avoid creating dangling pointers.)
       @param cache used for instance sharing.
       @param fresh whether an existing index should be overwritten.
       @param read_only whether read-only mode is enabled for this index.
-      @param throttle the strategy to use when the cache are full and and async
-      in already in progress. [Block_writes] (the default) blocks any new writes
-      until the merge is completed. [Overcommit_memory] does not block but
-      continues to fill the (already full) cache.
+      @param throttle
+        the strategy to use when the cache are full and and async in already in
+        progress. [Block_writes] (the default) blocks any new writes until the
+        merge is completed. [Overcommit_memory] does not block but continues to
+        fill the (already full) cache.
       @param log_size the maximum number of bindings in the `log` IO. *)
 
   val clear : t -> unit
