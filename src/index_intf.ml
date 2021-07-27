@@ -218,6 +218,8 @@ module type Private = sig
       - [`Before_offset_read]: before reading the generation number and the
         offset.
       - [`After_offset_read]: after reading the generation number and offset. *)
+
+  val generation : t -> int64
 end
 
 module type Index = sig

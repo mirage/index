@@ -925,6 +925,10 @@ struct
     if t.config.readonly then raise RO_not_allowed;
     instance_is_merging t
 
+  let generation t =
+    let t = check_open t in
+    Int63.to_int64 t.generation
+
   (** {1 Replace} *)
 
   let replace' ?hook ?(overcommit = false) t key value =

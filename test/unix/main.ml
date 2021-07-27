@@ -900,7 +900,26 @@ module Throttle = struct
 end
 
 module Try_merge = struct
-  let test_during_async_merge () =
+  (* ... triggers a successful merge on a dirty index. *)
+  let test_merges_dirty_index () =
+    let* Context.{ rw; _ } = Context.with_full_index () in
+    let gen_init = Index.generation rw in
+    ignore (add_binding rw : binding);
+    Log.app (fun m -> m "Triggering a merge via hint.");
+    Index.try_merge rw;
+    let gen_final = Index.generation rw in
+    Alcotest.(check ~pos:__POS__ int64) "" 1L (Int64.sub gen_final gen_init)
+
+  (* ... is a no-op when the log is empty. *)
+  let test_noop_on_clean_index () =
+    let* Context.{ rw; _ } = Context.with_full_index () in
+    let gen_init = Index.generation rw in
+    Index.try_merge rw;
+    let gen_final = Index.generation rw in
+    Alcotest.(check ~pos:__POS__ int64) "" 0L (Int64.sub gen_final gen_init)
+
+  (* ... is no-op when there is already an ongoing merge. *)
+  let test_noop_during_async_merge () =
     let log_size = 4 in
     let* Context.{ rw; _ } = Context.with_empty_index ~log_size () in
     let m = Semaphore.make false in
@@ -923,7 +942,12 @@ module Try_merge = struct
     Index.await merge_result |> check_completed;
     ()
 
-  let tests = [ ("during_async_merge", `Quick, test_during_async_merge) ]
+  let tests =
+    [
+      ("merges_dirty_index", `Quick, test_merges_dirty_index);
+      ("noop_on_clean_index", `Quick, test_noop_on_clean_index);
+      ("noop_during_async_merge", `Quick, test_noop_during_async_merge);
+    ]
 end
 
 let () =
