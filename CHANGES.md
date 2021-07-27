@@ -1,3 +1,10 @@
+# 1.3.3 (2021-07-27)
+
+## Fixed
+
+- Attempt to recover from `log_async` invariant violations during an explicit
+  sync operation, rather than failing immediately. (#329)
+
 # 1.3.2 (2021-06-16)
 
 ## Fixed
@@ -25,9 +32,6 @@
 
 - Added fsync after `Index.clear` to signal more quickly to read-only instances
   than something has changed in the file (#308)
-
-- Attempt to recover from `log_async` invariant violations during an explicit
-  sync operation, rather than failing immediately. (#329)
 
 ## Changed
 
