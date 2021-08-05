@@ -1053,4 +1053,5 @@ let () =
       ("filter", Filter.tests);
       ("flush_callback", Flush_callback.tests);
       ("throttle", Throttle.tests);
+      ("stats", Stats.tests);
     ]

@@ -22,7 +22,7 @@ let fresh_stats () =
 let stats = fresh_stats ()
 let get () = stats
 
-let reset_stats () =
+let reset () =
   stats.nb_merge <- 0;
   stats.merge_durations <- [];
   stats.nb_replace <- 0;
@@ -61,4 +61,45 @@ module Make (Clock : Platform.CLOCK) = struct
   let add_merge_duration span =
     let span = Mtime.Span.to_us span in
     stats.merge_durations <- drop_head stats.merge_durations @ [ span ]
+end
+
+module Io_stats (R : Platform.RAW_STATS) = struct
+  include R
+
+  let tbl : (string, t) Hashtbl.t = Hashtbl.create 13
+
+  let get_by_file file =
+    try Hashtbl.find tbl file
+    with Not_found ->
+      let stats = R.fresh_stats () in
+      Hashtbl.add tbl file stats;
+      stats
+
+  let get_all () =
+    Hashtbl.fold (fun file stats acc -> (file, stats) :: acc) tbl []
+
+  let bytes_read () =
+    Hashtbl.fold (fun _file stats acc -> stats.R.bytes_read + acc) tbl 0
+
+  let bytes_written () =
+    Hashtbl.fold (fun _file stats acc -> stats.R.bytes_written + acc) tbl 0
+
+  let nb_reads () =
+    Hashtbl.fold (fun _file stats acc -> stats.R.nb_reads + acc) tbl 0
+
+  let nb_writes () =
+    Hashtbl.fold (fun _file stats acc -> stats.R.nb_writes + acc) tbl 0
+
+  let get () =
+    let acc = R.fresh_stats () in
+    Hashtbl.iter
+      (fun _file stats ->
+        acc.bytes_read <- stats.bytes_read + acc.bytes_read;
+        acc.R.nb_reads <- stats.R.nb_reads + acc.R.nb_reads;
+        acc.R.bytes_written <- stats.R.bytes_written + acc.R.bytes_written;
+        acc.R.nb_writes <- stats.R.nb_writes + acc.R.nb_writes)
+      tbl;
+    acc
+
+  let reset_all () = Hashtbl.iter (fun _file stats -> R.reset stats) tbl
 end

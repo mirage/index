@@ -3,9 +3,15 @@ module Stats = Raw_stats
 
 let ( ++ ) = Int63.add
 
-type t = { fd : Unix.file_descr } [@@unboxed]
+type t = { fd : Unix.file_descr; stats : Raw_stats.t }
 
-let v fd = { fd }
+let v ?stats fd =
+  let stats =
+    match stats with None -> Raw_stats.fresh_stats () | Some stats -> stats
+  in
+  { fd; stats }
+
+let get_stats { stats; _ } = stats
 
 let really_write fd fd_offset buffer buffer_offset length =
   let rec aux fd_offset buffer_offset length =
@@ -37,11 +43,11 @@ let fstat t = Unix.fstat t.fd
 let unsafe_write t ~off buffer buffer_offset length =
   let buffer = Bytes.unsafe_of_string buffer in
   really_write t.fd off buffer buffer_offset length;
-  Stats.add_write length
+  Stats.add_write t.stats length
 
 let unsafe_read t ~off ~len buf =
   let n = really_read t.fd off len buf in
-  Stats.add_read n;
+  Stats.add_read t.stats n;
   n
 
 let encode_int63 n =

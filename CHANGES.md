@@ -9,6 +9,8 @@
 - Changed the implementation of the write-ahead log to significantly reduce its
   memory usage (at the cost of some additional disk IO). (#355)
 
+- Separate the IO stats recorded in the Raw module, from the index ones. (#353)
+
 # 1.4.1 (2021-07-16)
 
 ## Fixed

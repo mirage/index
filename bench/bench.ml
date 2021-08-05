@@ -1,4 +1,3 @@
-module Raw_stats = Index_unix.Private.Raw_stats
 module Stats = Index.Stats
 
 let src =
@@ -13,11 +12,11 @@ let src =
   in
   let open Stats in
   let tags = Tags.[] in
-  let data (t, (raw : Raw_stats.t)) =
+  let data (t, bytes_read, bytes_written) =
     Data.v
       [
-        int "bytes_read" raw.bytes_read;
-        int "bytes_written" raw.bytes_written;
+        int "bytes_read" bytes_read;
+        int "bytes_written" bytes_written;
         int "merge" t.nb_merge;
         int "replace" t.nb_replace;
         head "replace_durations" t.replace_durations;
@@ -59,14 +58,6 @@ module Context = struct
   end
 end
 
-let with_stats f =
-  Stats.reset_stats ();
-  Raw_stats.reset_stats ();
-  let _, duration = Common.with_timer f in
-  let stats = Stats.get () in
-  let raw = Raw_stats.get () in
-  (duration, stats, raw)
-
 module Mtime = struct
   include Mtime
 
@@ -78,7 +69,7 @@ module Mtime = struct
   end
 end
 
-module Benchmark = struct
+module Make_benchmark (Io_stats : Index.Platform.IO_STATS) = struct
   type result = {
     time : Mtime.Span.t;
     ops_per_sec : float;
@@ -93,8 +84,16 @@ module Benchmark = struct
   }
   [@@deriving to_yojson]
 
+  let with_stats f =
+    Stats.reset ();
+    Io_stats.reset_all ();
+    let _, duration = Common.with_timer f in
+    let stats = Stats.get () in
+    let raw = Io_stats.get () in
+    (duration, stats, raw)
+
   let run ~nb_entries f =
-    let time, stats, raw = with_stats (fun () -> f ()) in
+    let time, stats, (raw : Io_stats.t) = with_stats (fun () -> f ()) in
     let time_sec = Mtime.Span.to_s time in
     let nb_entriesf = float_of_int nb_entries in
     let entry_sizef = float_of_int entry_size in
@@ -152,14 +151,18 @@ let sorted_bindings_pool = ref [||]
 
 module Index_lib = Index
 
-module Index = struct
-  module Index =
-    Index_unix.Private.Make (Context.Key) (Context.Value) (Index.Cache.Noop)
+module Index =
+  Index_unix.Private.Make (Context.Key) (Context.Value) (Index.Cache.Noop)
 
+module Io_stats = Index.Io_stats
+module Benchmark = Make_benchmark (Io_stats)
+
+module Index_bench = struct
   let add_metrics =
     let no_tags x = x in
     fun () ->
-      Metrics.add src no_tags (fun m -> m (Stats.get (), Raw_stats.get ()))
+      Metrics.add src no_tags (fun m ->
+          m (Stats.get (), Io_stats.bytes_read (), Io_stats.bytes_written ()))
 
   let write ~with_metrics ?(with_flush = false) ?sampling_interval bindings rw =
     Array.iter
@@ -338,23 +341,27 @@ module Index = struct
 end
 
 let list_benches () =
-  let pp_bench ppf b = Fmt.pf ppf "%s\t-- %s" b.Index.name b.synopsis in
-  Index.suite |> Fmt.(pr "%a" (list ~sep:Fmt.(const string "\n") pp_bench))
+  let pp_bench ppf b = Fmt.pf ppf "%s\t-- %s" b.Index_bench.name b.synopsis in
+  Index_bench.suite
+  |> Fmt.(pr "%a" (list ~sep:Fmt.(const string "\n") pp_bench))
 
 let schedule p s =
   let todos = List.map fst in
-  let init = ref (s |> List.map (fun b -> (p b.Index.name, b))) in
+  let init = ref (s |> List.map (fun b -> (p b.Index_bench.name, b))) in
   let apply_dep s =
     let deps =
       s
       |> List.fold_left
            (fun acc (todo, b) ->
              if todo then
-               match b.Index.dependency with Some s -> s :: acc | None -> acc
+               match b.Index_bench.dependency with
+               | Some s -> s :: acc
+               | None -> acc
              else acc)
            []
     in
-    s |> List.map (fun (todo, b) -> (todo || List.mem b.Index.name deps, b))
+    s
+    |> List.map (fun (todo, b) -> (todo || List.mem b.Index_bench.name deps, b))
   in
   let next = ref (apply_dep !init) in
   while todos !init <> todos !next do
@@ -391,14 +398,14 @@ let pp_config fmt config =
 let cleanup root =
   let files = [ "data"; "log"; "lock"; "log_async"; "merge" ] in
   List.iter
-    (fun (b : Index.suite_elt) ->
+    (fun (b : Index_bench.suite_elt) ->
       let dir = root // b.name // "index" in
       List.iter
         (fun file ->
           let file = dir // file in
           if Sys.file_exists file then Unix.unlink file)
         files)
-    Index.suite
+    Index_bench.suite
 
 let init config =
   Printexc.record_backtrace true;
@@ -415,8 +422,8 @@ let init config =
 
 let print fmt (config, results) =
   let pp_bench fmt (b, result) =
-    Format.fprintf fmt "@[<v 4>%s@,%a@]" b.Index.synopsis Benchmark.pp_result
-      result
+    Format.fprintf fmt "@[<v 4>%s@,%a@]" b.Index_bench.synopsis
+      Benchmark.pp_result result
   in
   Format.fprintf fmt "@[<v 4>Configuration:@,%a@,@]@,@[<v 4>Results:@,%a@]@."
     pp_config config
@@ -435,7 +442,7 @@ let print_json fmt (config, results) =
                (fun (b, result) ->
                  `Assoc
                    [
-                     ("name", `String b.Index.name);
+                     ("name", `String b.Index_bench.name);
                      ("metrics", Benchmark.result_to_yojson result);
                    ])
                results) );
@@ -445,8 +452,10 @@ let print_json fmt (config, results) =
 
 let get_suite_list minimal_flag =
   if minimal_flag then
-    List.filter (fun bench -> bench.Index.speed = `Quick) Index.suite
-  else Index.suite
+    List.filter
+      (fun bench -> bench.Index_bench.speed = `Quick)
+      Index_bench.suite
+  else Index_bench.suite
 
 let repeat n f l =
   let rec aux i acc = if i = n then acc else aux (i + 1) (f l :: acc) in
@@ -462,7 +471,7 @@ let mean l =
         (fun acc bresult ->
           List.fold_left2
             (fun acc (tsm, resultm) (ts, result) ->
-              assert (Index.(tsm.name = ts.name));
+              assert (Index_bench.(tsm.name = ts.name));
               ( tsm,
                 Benchmark.
                   {
@@ -536,12 +545,12 @@ let run filter root output seed with_metrics log_size nb_entries nb_exec json
   current_suite
   |> schedule name_filter
   |> repeat nb_exec
-       (List.map (fun (b : Index.suite_elt) ->
+       (List.map (fun (b : Index_bench.suite_elt) ->
             let name =
               match b.dependency with None -> b.name | Some name -> name
             in
             let result =
-              Index.run ~with_metrics ~nb_entries ~log_size ~root ~name
+              Index_bench.run ~with_metrics ~nb_entries ~log_size ~root ~name
                 ~fresh:b.fresh ~readonly:b.readonly b.benchmark
             in
             (b, result)))

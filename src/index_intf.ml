@@ -146,6 +146,11 @@ module type S = sig
     include Checks.S
     (** @inline *)
   end
+
+  module Io_stats : sig
+    include Platform.IO_STATS
+    (** @inline *)
+  end
 end
 
 module Private_types = struct

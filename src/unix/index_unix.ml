@@ -25,6 +25,9 @@ exception RO_not_allowed
 
 let current_version = "00000001"
 
+module Stats : Index.Platform.IO_STATS with type t = Raw_stats.t =
+  Index.Stats.Io_stats (Raw_stats)
+
 module IO : Index.Platform.IO = struct
   let ( ++ ) = Int63.add
   let ( -- ) = Int63.sub
@@ -179,10 +182,16 @@ module IO : Index.Platform.IO = struct
     in
     (aux [@tailcall]) dirname (fun () -> ())
 
+  let raw_with_stats file fd =
+    (* if the file is reopened then reuse the previous stats. *)
+    let stats = Stats.get_by_file file in
+    let raw = Raw.v ~stats fd in
+    raw
+
   let raw_file ~flags ~version ~offset ~generation file =
     let x = Unix.openfile file flags 0o644 in
-    let raw = Raw.v x in
     let header = { Raw.Header.offset; version; generation } in
+    let raw = raw_with_stats file x in
     Log.debug (fun m ->
         m "[%s] raw set_header %a" file Header.pp { offset; generation });
     Raw.Header.set raw header;
@@ -244,13 +253,13 @@ module IO : Index.Platform.IO = struct
     match Sys.file_exists file with
     | false ->
         let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; O_RDWR ] 0o644 in
-        let raw = Raw.v x in
+        let raw = raw_with_stats file x in
         Raw.Header.set raw header;
         Raw.Fan.set_size raw fan_size;
         v ~fan_size ~offset:Int63.zero raw
     | true ->
         let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDWR ] 0o644 in
-        let raw = Raw.v x in
+        let raw = raw_with_stats file x in
         if fresh then (
           Raw.Header.set raw header;
           Raw.Fan.set_size raw fan_size;
@@ -271,7 +280,7 @@ module IO : Index.Platform.IO = struct
     mkdir (Filename.dirname file);
     try
       let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDONLY ] 0o644 in
-      let raw = Raw.v x in
+      let raw = raw_with_stats file x in
       try
         let version = Raw.Version.get raw in
         if version <> current_version then
@@ -414,6 +423,7 @@ module Platform = struct
   module Semaphore = Semaphore
   module Thread = Thread
   module Clock = Mtime_clock
+  module Io_stats : Index.Platform.IO_STATS with type t = Raw_stats.t = Stats
 end
 
 module Make (K : Index.Key.S) (V : Index.Value.S) =
