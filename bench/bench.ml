@@ -1,3 +1,4 @@
+module Raw_stats = Index_unix.Private.Raw_stats
 module Stats = Index.Stats
 
 let src =
@@ -12,11 +13,11 @@ let src =
   in
   let open Stats in
   let tags = Tags.[] in
-  let data t =
+  let data (t, (raw : Raw_stats.t)) =
     Data.v
       [
-        int "bytes_read" t.bytes_read;
-        int "bytes_written" t.bytes_written;
+        int "bytes_read" raw.bytes_read;
+        int "bytes_written" raw.bytes_written;
         int "merge" t.nb_merge;
         int "replace" t.nb_replace;
         head "replace_durations" t.replace_durations;
@@ -60,9 +61,11 @@ end
 
 let with_stats f =
   Stats.reset_stats ();
+  Raw_stats.reset_stats ();
   let _, duration = Common.with_timer f in
   let stats = Stats.get () in
-  (duration, stats)
+  let raw = Raw_stats.get () in
+  (duration, stats, raw)
 
 module Mtime = struct
   include Mtime
@@ -91,20 +94,18 @@ module Benchmark = struct
   [@@deriving to_yojson]
 
   let run ~nb_entries f =
-    let time, stats = with_stats (fun () -> f ()) in
+    let time, stats, raw = with_stats (fun () -> f ()) in
     let time_sec = Mtime.Span.to_s time in
     let nb_entriesf = float_of_int nb_entries in
     let entry_sizef = float_of_int entry_size in
     let read_amplification_size =
-      float_of_int stats.bytes_read /. (entry_sizef *. nb_entriesf)
+      float_of_int raw.bytes_read /. (entry_sizef *. nb_entriesf)
     in
-    let read_amplification_calls = float_of_int stats.nb_reads /. nb_entriesf in
+    let read_amplification_calls = float_of_int raw.nb_reads /. nb_entriesf in
     let write_amplification_size =
-      float_of_int stats.bytes_written /. (entry_sizef *. nb_entriesf)
+      float_of_int raw.bytes_written /. (entry_sizef *. nb_entriesf)
     in
-    let write_amplification_calls =
-      float_of_int stats.nb_writes /. nb_entriesf
-    in
+    let write_amplification_calls = float_of_int raw.nb_writes /. nb_entriesf in
     let ops_per_sec = nb_entriesf /. time_sec in
     let mbs_per_sec = entry_sizef *. nb_entriesf /. 1_048_576. /. time_sec in
     let replace_durations = stats.replace_durations in
@@ -157,7 +158,8 @@ module Index = struct
 
   let add_metrics =
     let no_tags x = x in
-    fun () -> Metrics.add src no_tags (fun m -> m (Stats.get ()))
+    fun () ->
+      Metrics.add src no_tags (fun m -> m (Stats.get (), Raw_stats.get ()))
 
   let write ~with_metrics ?(with_flush = false) ?sampling_interval bindings rw =
     Array.iter

@@ -25,8 +25,6 @@ exception RO_not_allowed
 
 let current_version = "00000001"
 
-module Stats = Index.Stats
-
 module IO : Index.Platform.IO = struct
   let ( ++ ) = Int63.add
   let ( -- ) = Int63.sub
@@ -426,6 +424,7 @@ module Syscalls = Syscalls
 module Private = struct
   module IO = IO
   module Raw = Raw
+  module Raw_stats = Raw_stats
 
   module Make (K : Index.Key.S) (V : Index.Value.S) =
     Index.Private.Make (K) (V) (Platform)

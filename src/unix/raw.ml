@@ -1,5 +1,5 @@
 open! Import
-module Stats = Index.Stats
+module Stats = Raw_stats
 
 let ( ++ ) = Int63.add
 

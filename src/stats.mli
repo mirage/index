@@ -1,10 +1,6 @@
 open! Import
 
 type t = {
-  mutable bytes_read : int;
-  mutable nb_reads : int;
-  mutable bytes_written : int;
-  mutable nb_writes : int;
   mutable nb_merge : int;
   mutable merge_durations : float list;
   mutable nb_replace : int;
@@ -29,8 +25,6 @@ type t = {
 
 val get : unit -> t
 val reset_stats : unit -> unit
-val add_read : int -> unit
-val add_write : int -> unit
 val incr_nb_merge : unit -> unit
 val incr_nb_replace : unit -> unit
 val incr_nb_sync : unit -> unit
