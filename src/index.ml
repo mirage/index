@@ -345,7 +345,7 @@ struct
         hook `Before_offset_read;
         let h = IO.Header.get log.io in
         hook `After_offset_read;
-        if t.generation <> h.generation then (
+        if t.generation < h.generation then (
           (* If the generation has changed, then we need to reload both the
              [index] and the [log]. The new generation is the one on disk. *)
           Log.debug (fun l ->
@@ -365,13 +365,14 @@ struct
               l "[%s] new entries detected, reading log from disk"
                 (Filename.basename t.root));
           sync_log_entries ~min:log_offset log)
-        else
+        else if log_offset = h.offset then
           (* Here the disk offset should be equal to the known one. A smaller
              offset should not be possible, because that would mean a [clear] or
              [merge] occurred, which should have changed the generation. *)
           (* TODO: Handle the "impossible" case differently? *)
           Log.debug (fun l ->
               l "[%s] no changes detected" (Filename.basename t.root))
+        else assert false
 
   (** {1 Find and Mem}*)
 
