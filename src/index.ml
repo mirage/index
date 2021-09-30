@@ -713,7 +713,7 @@ struct
       - [t.log_async] has been created;
       - [t.merge_lock] is acquired before entry, and released immediately after
         this function returns or raises an exception. *)
-  let unsafe_perform_merge ~witness:_ ~filter ~hook t =
+  let unsafe_perform_merge ~filter ~hook t =
     hook `Before;
     let log = Option.get t.log in
     let generation = Int63.succ t.generation in
@@ -818,8 +818,8 @@ struct
     in
     t.log_async <- Some (Log_file.create io)
 
-  let merge' ?(blocking = false) ?filter ?(hook = fun _ -> ()) ~witness
-      ?(force = false) t =
+  let merge' ?(blocking = false) ?filter ?(hook = fun _ -> ()) ?(force = false)
+      t =
     let merge_started = Clock.counter () in
     let merge_id = merge_counter () in
     let msg = Fmt.str "merge { id=%d }" merge_id in
@@ -848,7 +848,7 @@ struct
     let go () =
       let merge_result, rename_lock_wait =
         Fun.protect
-          (fun () -> unsafe_perform_merge ~filter ~hook ~witness t)
+          (fun () -> unsafe_perform_merge ~filter ~hook t)
           ~finally:(fun () -> Semaphore.release t.merge_lock)
       in
       let total_duration = Clock.count merge_started in
@@ -870,38 +870,20 @@ struct
     in
     if blocking then go () |> Thread.return else Thread.async go
 
-  let get_witness t =
+  let is_empty t =
     match t.log with
-    | None -> None
-    | Some log -> (
-        let exception Found of Entry.t in
-        (* Gets an arbitrary element in [log]. *)
-        match Log_file.iter log ~f:(fun entry -> raise (Found entry)) with
-        | exception Found e -> Some e
-        | () -> (
-            (* If [log] is empty, get an entry in [index]. *)
-            match t.index with
-            | None -> None
-            | Some index ->
-                let buf = Bytes.create Entry.encoded_size in
-                let n =
-                  IO.read index.io ~off:Int63.zero ~len:Entry.encoded_size buf
-                in
-                assert (n = Entry.encoded_size);
-                Some (Entry.decode (Bytes.unsafe_to_string buf) 0)))
+    | None -> true
+    | Some log -> Option.is_none t.index && Log_file.cardinal log = 0
 
   (** This triggers a merge if the [log] exceeds [log_size], or if the [log]
       contains entries and [force] is true *)
   let try_merge_aux ?hook ?(force = false) t =
     let t = check_open t in
-    let witness =
-      Semaphore.with_acquire "witness" t.rename_lock (fun () -> get_witness t)
-    in
-    match witness with
-    | None ->
+    match is_empty t with
+    | true ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root));
         Thread.return `Completed
-    | Some witness -> (
+    | false -> (
         match t.log with
         | None ->
             Log.debug (fun l ->
@@ -914,7 +896,7 @@ struct
                    (IO.offset (Log_file.io log))
                    (Int63.of_int t.config.log_size)
                  > 0
-            then merge' ~force ?hook ~witness t
+            then merge' ~force ?hook t
             else Thread.return `Completed)
 
   let merge t = ignore (try_merge_aux ?hook:None ~force:true t : _ async)
@@ -958,7 +940,7 @@ struct
       | `Overcommit_memory, false | `Block_writes, _ ->
           (* Start a merge, blocking if one is already running. *)
           let hook = hook |> Option.map (fun f stage -> f (`Merge stage)) in
-          Some (merge' ?hook ~witness:(Entry.v key value) t)
+          Some (merge' ?hook t)
     else None
 
   let replace ?overcommit t key value =
@@ -980,14 +962,11 @@ struct
     let t = check_open t in
     Log.debug (fun l -> l "[%s] filter" (Filename.basename t.root));
     if t.config.readonly then raise RO_not_allowed;
-    let witness =
-      Semaphore.with_acquire "witness" t.rename_lock (fun () -> get_witness t)
-    in
-    match witness with
-    | None ->
+    match is_empty t with
+    | true ->
         Log.debug (fun l -> l "[%s] index is empty" (Filename.basename t.root))
-    | Some witness -> (
-        match Thread.await (merge' ~blocking:true ~filter:f ~witness t) with
+    | false -> (
+        match Thread.await (merge' ~blocking:true ~filter:f t) with
         | Ok (`Aborted | `Completed) -> ()
         | Error (`Async_exn exn) ->
             Fmt.failwith "filter: asynchronous exception during merge (%s)"
