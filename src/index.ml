@@ -57,16 +57,16 @@ struct
   let pp_key = Repr.pp K.t
   let pp_value = Repr.pp V.t
 
+  module Log_file = Log_file.Make (IO) (K) (V)
+
   module Entry = struct
-    include Data.Entry.Make (K) (V)
+    include Log_file.Entry
     module Key = K
     module Value = V
 
     let to_key { key; _ } = key
     let to_value { value; _ } = value
   end
-
-  let entry_sizeL = Int63.of_int Entry.encoded_size
 
   module Stats = struct
     include Stats.Make (Clock)
@@ -76,152 +76,13 @@ struct
   module IO = struct
     include Io.Extend (IO)
 
-    let iter_keys ?min f =
-      let page_size = Int63.(mul entry_sizeL (of_int 1_000)) in
-      iter ~page_size ?min (fun ~off ~buf ~buf_off ->
-          let key, _ = Entry.decode_key buf buf_off in
-          f off key;
-          Entry.encoded_size)
-
     let iter ?min ?max f =
-      let page_size = Int63.(mul entry_sizeL (of_int 1_000)) in
+      let page_size = Int63.(mul Entry.encoded_sizeL (of_int 1_000)) in
       iter ~page_size ?min ?max (fun ~off ~buf ~buf_off ->
           let entry = Entry.decode buf buf_off in
           f off entry;
           Entry.encoded_size)
   end
-
-  module Tbl = struct
-    type t = {
-      io : IO.t;
-      mutable hashset : int63 Small_list.t Array.t;
-      mutable scratch_buf : bytes;
-      mutable cardinal : int;
-    }
-
-    let length t = t.cardinal
-
-    let clear t =
-      t.hashset <- [| Small_list.empty |];
-      t.cardinal <- 0
-
-    let to_seq t =
-      Array.to_seq t.hashset
-      |> Seq.flat_map (fun bucket ->
-             Small_list.to_list bucket
-             |> List.to_seq
-             |> Seq.map (fun off ->
-                    let n =
-                      IO.read t.io ~off ~len:Entry.encoded_size t.scratch_buf
-                    in
-                    assert (n = Entry.encoded_size);
-                    let entry =
-                      Entry.decode (Bytes.unsafe_to_string t.scratch_buf) 0
-                    in
-                    (entry.key, entry.value)))
-
-    let key_of_offset t off =
-      let r = IO.read t.io ~off ~len:K.encoded_size t.scratch_buf in
-      assert (r = K.encoded_size);
-      fst (Entry.decode_key (Bytes.unsafe_to_string t.scratch_buf) 0)
-
-    let entry_of_offset t off =
-      let r = IO.read t.io ~off ~len:Entry.encoded_size t.scratch_buf in
-      assert (r = Entry.encoded_size);
-      Entry.decode (Bytes.unsafe_to_string t.scratch_buf) 0
-
-    let iter_hashset t ~f =
-      ArrayLabels.iter t.hashset ~f:(fun bucket -> Small_list.iter bucket ~f)
-
-    let resize t =
-      (* Scale the number of hashset buckets. *)
-      let new_bucket_count = Array.length t.hashset * 2 in
-      let new_hashset = Array.make new_bucket_count Small_list.empty in
-      iter_hashset t ~f:(fun offset ->
-          let key = key_of_offset t offset in
-          let new_index = K.hash key mod new_bucket_count in
-          new_hashset.(new_index) <-
-            Small_list.cons offset new_hashset.(new_index));
-      t.hashset <- new_hashset
-
-    let replace t key offset =
-      if t.cardinal / 2 > Array.length t.hashset then resize t;
-      let elt_idx = K.hash key mod Array.length t.hashset in
-      let bucket = t.hashset.(elt_idx) in
-      let bucket =
-        let key_found = ref false in
-        let bucket' =
-          Small_list.map bucket ~f:(fun offset' ->
-              if !key_found then
-                (* We ensure there's at most one binding for a given key *)
-                offset'
-              else
-                let key' = key_of_offset t offset' in
-                match K.equal key key' with
-                | false -> offset'
-                | true ->
-                    (* New binding for this key *)
-                    key_found := true;
-                    offset)
-        in
-        match !key_found with
-        | true ->
-            (* We're replacing an existing value. No need to change [cardinal]. *)
-            bucket'
-        | false ->
-            (* The existing bucket doesn't contain this key. *)
-            t.cardinal <- t.cardinal + 1;
-            Small_list.cons offset bucket
-      in
-      t.hashset.(elt_idx) <- bucket
-
-    let create io =
-      let cardinal = Int63.(to_int_exn (IO.offset io / entry_sizeL)) in
-      let bucket_count = max 1 (cardinal / 2) in
-      let hashset = Array.make bucket_count Small_list.empty in
-      let t =
-        {
-          io;
-          hashset;
-          scratch_buf = Bytes.create Entry.encoded_size;
-          cardinal = 0;
-        }
-      in
-      IO.iter_keys (fun offset key -> replace t key offset) io;
-      t
-
-    let filteri_inplace t ~f =
-      ArrayLabels.iteri t.hashset ~f:(fun i bucket ->
-          t.hashset.(i) <-
-            Small_list.filter bucket ~f:(fun offset ->
-                let entry = entry_of_offset t offset in
-                let keep = f entry.key entry.value in
-                if not keep then t.cardinal <- t.cardinal - 1;
-                keep))
-
-    let find t key =
-      let elt_idx = K.hash key mod Array.length t.hashset in
-      let bucket = t.hashset.(elt_idx) in
-      Small_list.find_map bucket ~f:(fun offset ->
-          (* We expect the keys to match most of the time, so we decode the
-             value at the same time. *)
-          let entry = entry_of_offset t offset in
-          match K.equal key entry.key with
-          | false -> None
-          | true -> Some entry.value)
-      |> function
-      | None -> raise Not_found
-      | Some x -> x
-
-    let fold t ~f ~init =
-      ArrayLabels.fold_left t.hashset ~init ~f:(fun acc bucket ->
-          Small_list.fold_left bucket ~init:acc ~f)
-
-    let iter t ~f =
-      ArrayLabels.iter t.hashset ~f:(fun bucket -> Small_list.iter bucket ~f)
-  end
-
-  let iter_io ?min ?max f = IO.iter ?min ?max (fun _ -> f)
 
   type throttle = [ `Overcommit_memory | `Block_writes ]
 
@@ -245,11 +106,6 @@ struct
             header of [io]. *)
   }
 
-  type log = {
-    io : IO.t;  (** The disk file handler. *)
-    mem : Tbl.t;  (** The in-memory counterpart of [io]. *)
-  }
-
   type instance = {
     config : config;
     root : string;  (** The root location of the index *)
@@ -260,11 +116,11 @@ struct
         (** The main index file contains old sorted bindings. It is [None] when
             no [merge] occurred yet. On RO instances, this is also [None] when
             the file is empty, e.g. after a [clear]. *)
-    mutable log : log option;
+    mutable log : Log_file.t option;
         (** The log file contains the most recent bindings. It can be [None]
             when a read-only instance is created before its RW counterpart; in
             that case the [log] creation is pending. *)
-    mutable log_async : log option;
+    mutable log_async : Log_file.t option;
         (** The log_async file contains bindings added concurrently to a [merge]
             operation. It is only present when a merge is ongoing. *)
     mutable open_instances : int;
@@ -307,11 +163,9 @@ struct
         t.generation <- Int63.succ t.generation;
         let log = Option.get t.log in
         let hook () = hook `IO_clear in
-        IO.clear ~generation:t.generation ~hook ~reopen:true log.io;
-        Tbl.clear log.mem;
+        Log_file.clear ~generation:t.generation ~reopen:true ~hook log;
         Option.iter
-          (fun (l : log) ->
-            IO.clear ~generation:t.generation ~reopen:false l.io)
+          (fun l -> Log_file.clear ~generation:t.generation ~reopen:false l)
           t.log_async;
         Option.iter
           (fun (i : index) ->
@@ -332,14 +186,14 @@ struct
     |> Option.iter (fun log ->
            Log.debug (fun l ->
                l "[%s] flushing log" (Filename.basename instance.root));
-           IO.flush ?no_callback ~with_fsync log.io);
+           Log_file.flush ?no_callback ~with_fsync log);
 
     match (no_async, instance.log_async) with
     | Some (), _ | None, None -> ()
     | None, Some log ->
         Log.debug (fun l ->
             l "[%s] flushing log_async" (Filename.basename instance.root));
-        IO.flush ?no_callback ~with_fsync log.io
+        Log_file.flush ?no_callback ~with_fsync log
 
   let flush ?no_callback ?(with_fsync = false) t =
     let t = check_open t in
@@ -349,12 +203,14 @@ struct
 
   (** Extract [log] and [log_async] for (private) tests. *)
 
-  let to_list t = List.of_seq (Tbl.to_seq t)
+  let to_list t = List.of_seq (Log_file.to_seq t)
 
-  let io_to_list msg io =
-    let x = to_list io.mem in
+  let log_file_to_list msg log =
+    let x = to_list log in
     let y = ref [] in
-    iter_io (fun (e : Entry.t) -> y := (e.key, e.value) :: !y) io.io;
+    IO.iter
+      (fun _ (e : Entry.t) -> y := (e.key, e.value) :: !y)
+      (Log_file.io log);
     if List.length x <> List.length !y then (
       let pp_entry ppf (k, _) = pp_key ppf k in
       let pp = Fmt.Dump.list pp_entry in
@@ -365,12 +221,12 @@ struct
   let log t =
     flush t;
     let t = check_open t in
-    Option.map (io_to_list "log") t.log
+    Option.map (log_file_to_list "log") t.log
 
   let log_async t =
     flush t;
     let t = check_open t in
-    Option.map (io_to_list "log_async") t.log_async
+    Option.map (log_file_to_list "log_async") t.log_async
 
   (** {1 RO instances syncing} *)
 
@@ -381,17 +237,11 @@ struct
     match IO.v_readonly path with
     | Error `No_file_on_disk -> None
     | Ok io ->
-        let mem = Tbl.create io in
+        let log = Log_file.create io in
         Log.debug (fun l ->
             l "[%s] loaded %d entries from %s" (Filename.basename t.root)
-              (Tbl.length mem) (Filename.basename path));
-        Some { io; mem }
-
-  (** Loads the entries from [log]'s IO into memory, starting from offset [min]. *)
-  let sync_log_entries ?min log =
-    let add_log_entry offset (e : Entry.t) = Tbl.replace log.mem e.key offset in
-    if min = None then Tbl.clear log.mem;
-    IO.iter ?min add_log_entry log.io
+              (Log_file.cardinal log) (Filename.basename path));
+        Some log
 
   (** Syncs the [log_async] of the instance by checking on-disk changes. *)
   let sync_log_async ~hook t =
@@ -401,8 +251,8 @@ struct
         t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
     | Some log ->
         let old_generation = t.generation in
-        let old_offset = IO.offset log.io in
-        let h = IO.Header.get log.io in
+        let old_offset = IO.offset (Log_file.io log) in
+        let h = IO.Header.get (Log_file.io log) in
         if
           (* the generation has changed *)
           h.generation > Int63.succ old_generation
@@ -410,12 +260,13 @@ struct
           (h.generation = Int63.succ old_generation && h.offset = Int63.zero)
         then (
           (* close the file .*)
-          IO.close log.io;
+          Log_file.close log;
           (* check that file is on disk, reopen and reload everything. *)
           hook `Reload_log_async;
           t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
           (* else if the disk offset is greater, reload the newest data. *))
-        else if old_offset < h.offset then sync_log_entries ~min:old_offset log
+        else if old_offset < h.offset then
+          Log_file.sync_entries ~min:old_offset log
           (* else if the offset is lesser, that means the [log_async] was
              cleared, and the generation should have changed. *)
         else if old_offset > h.offset then (
@@ -429,7 +280,7 @@ struct
                  Reloading the log to compensate." (Filename.basename t.root)
                 Int63.pp old_offset Int63.pp h.offset Int63.pp old_generation
                 Int63.pp h.generation);
-          sync_log_entries log)
+          Log_file.reload log)
 
   (** Syncs the [index] of the instance by checking on-disk changes. *)
   let sync_index t =
@@ -475,9 +326,9 @@ struct
     | None -> ()
     | Some log ->
         (* This one is the cached offset, from the previous sync. *)
-        let log_offset = IO.offset log.io in
+        let log_offset = IO.offset (Log_file.io log) in
         hook `Before_offset_read;
-        let h = IO.Header.get log.io in
+        let h = IO.Header.get (Log_file.io log) in
         hook `After_offset_read;
         if t.generation <> h.generation then (
           (* If the generation has changed, then we need to reload both the
@@ -488,7 +339,7 @@ struct
                 h.generation);
           hook `Reload_log;
           t.generation <- h.generation;
-          IO.close log.io;
+          Log_file.close log;
           t.log <- try_load_log t (Layout.log ~root:t.root);
           (* The log file is never removed (even by clear). *)
           assert (t.log <> None);
@@ -498,7 +349,7 @@ struct
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
                 (Filename.basename t.root));
-          sync_log_entries ~min:log_offset log)
+          Log_file.sync_entries ~min:log_offset log)
         else
           (* Here the disk offset should be equal to the known one. A smaller
              offset should not be possible, because that would mean a [clear] or
@@ -541,7 +392,8 @@ struct
     let hashed_key = K.hash key in
     let low_bytes, high_bytes = Fan.search index.fan_out hashed_key in
     let low, high =
-      Int63.(div low_bytes entry_sizeL, div high_bytes entry_sizeL)
+      Int63.
+        (div low_bytes Entry.encoded_sizeL, div high_bytes Entry.encoded_sizeL)
     in
     Search.interpolation_search (IOArray.v index.io) key ~low ~high
 
@@ -558,13 +410,9 @@ struct
           ans
     in
     let find_log_async () =
-      find_if_exists ~name:"log_async"
-        ~find:(fun log -> Tbl.find log.mem)
-        t.log_async
+      find_if_exists ~name:"log_async" ~find:Log_file.find t.log_async
     in
-    let find_log () =
-      find_if_exists ~name:"log" ~find:(fun log -> Tbl.find log.mem) t.log
-    in
+    let find_log () = find_if_exists ~name:"log" ~find:Log_file.find t.log in
     let find_index () =
       find_if_exists ~name:"index" ~find:interpolation_search t.index
     in
@@ -598,7 +446,7 @@ struct
   (** {1 Index creation} *)
 
   let transfer_log_async_to_log ~root ~generation ~log ~log_async =
-    let entries = Int63.div (IO.offset log_async) entry_sizeL in
+    let entries = Int63.div (IO.offset log_async) Entry.encoded_sizeL in
     Log.debug (fun l ->
         l "[%s] log_async file detected. Loading %a entries"
           (Filename.basename root) Int63.pp entries);
@@ -606,15 +454,10 @@ struct
     match log with
     | None -> assert false
     | Some log ->
-        let append_io = IO.append log.io in
-        IO.iter
-          (fun off e ->
-            Tbl.replace log.mem e.key off;
-            Entry.encode e append_io)
-          log_async;
+        IO.iter (fun _ e -> Log_file.replace log e.key e.value) log_async;
         (* Force fsync here so that persisted entries in log_async
            continue to persist in log. *)
-        IO.flush ~with_fsync:true log.io;
+        Log_file.flush ~with_fsync:true log;
         IO.clear ~generation ~reopen:false log_async
 
   let v_no_cache ?(flush_callback = fun () -> ()) ~throttle ~fresh ~readonly
@@ -643,15 +486,16 @@ struct
           IO.v ~flush_callback ~fresh ~generation:Int63.zero
             ~fan_size:Int63.zero log_path
         in
-        let entries = Int63.(to_int_exn (IO.offset io / entry_sizeL)) in
+        let entries = Int63.(to_int_exn (IO.offset io / Entry.encoded_sizeL)) in
         Log.debug (fun l ->
             l "[%s] log file detected. Loading %d entries"
               (Filename.basename root) entries);
-        let mem = Tbl.create io in
-        Some { io; mem }
+        Some (Log_file.create io)
     in
     let generation =
-      match log with None -> Int63.zero | Some log -> IO.get_generation log.io
+      match log with
+      | None -> Int63.zero
+      | Some log -> IO.get_generation (Log_file.io log)
     in
     (* load the [log_async] file *)
     let () =
@@ -683,7 +527,7 @@ struct
             IO.v ?flush_callback:None ~fresh ~generation ~fan_size:Int63.zero
               index_path
           in
-          let entries = Int63.div (IO.offset io) entry_sizeL in
+          let entries = Int63.div (IO.offset io) Entry.encoded_sizeL in
           if entries = Int63.zero then None
           else (
             Log.debug (fun l ->
@@ -817,7 +661,7 @@ struct
         append_remaining_log fan_out log log_i dst_io;
         `Completed)
       else
-        let index_offset = Int63.add index_offset entry_sizeL in
+        let index_offset = Int63.add index_offset Entry.encoded_sizeL in
         let index_key, index_key_hash =
           Entry.decode_key (Bytes.unsafe_to_string buf) buf_offset
         in
@@ -876,11 +720,10 @@ struct
     let log_array =
       Option.iter
         (fun f ->
-          Tbl.filteri_inplace ~f:(fun key value -> f (key, value)) log.mem)
+          Log_file.filteri_inplace ~f:(fun key value -> f (key, value)) log)
         filter;
-      let b = Array.make (Tbl.length log.mem) witness in
-      Tbl.fold log.mem ~init:0 ~f:(fun i offset ->
-          let entry = Tbl.entry_of_offset log.mem offset in
+      let b = Array.make (Log_file.cardinal log) witness in
+      Log_file.fold log ~init:0 ~f:(fun i entry ->
           b.(i) <- entry;
           i + 1)
       |> ignore;
@@ -889,10 +732,10 @@ struct
     in
     let fan_size, old_fan_nb =
       match t.index with
-      | None -> (Tbl.length log.mem, None)
+      | None -> (Log_file.cardinal log, None)
       | Some index ->
-          ( Int63.(to_int_exn (IO.offset index.io / entry_sizeL))
-            + Tbl.length log.mem,
+          ( Int63.(to_int_exn (IO.offset index.io / Entry.encoded_sizeL))
+            + Log_file.cardinal log,
             Some (Fan.nb_fans index.fan_out) )
     in
     let fan_out =
@@ -950,21 +793,11 @@ struct
               IO.rename ~src:merge ~dst:index.io;
               t.index <- Some index;
               t.generation <- generation;
-              IO.clear ~generation ~reopen:true log.io;
-              Tbl.clear log.mem;
+              Log_file.clear ~generation ~reopen:true log;
               hook `After_clear;
               let log_async = Option.get t.log_async in
-              let append_io = IO.append log.io in
-              let (_ : int63) =
-                Tbl.fold log_async.mem ~init:(IO.offset log.io)
-                  ~f:(fun log_offset log_async_offset ->
-                    let entry =
-                      Tbl.entry_of_offset log_async.mem log_async_offset
-                    in
-                    Entry.encode entry append_io;
-                    Tbl.replace log.mem entry.key log_offset;
-                    Int63.add log_offset entry_sizeL)
-              in
+              Log_file.iter log_async ~f:(fun entry ->
+                  Log_file.replace log entry.key entry.value);
               (* NOTE: It {i may} not be necessary to trigger the
                  [flush_callback] here. If the instance has been recently
                  flushed (or [log_async] just reached the [auto_flush_limit]),
@@ -973,9 +806,9 @@ struct
               (* `fsync` is necessary, since bindings in `log_async` may have
                  been explicitely `fsync`ed during the merge, so we need to
                  maintain their durability. *)
-              IO.flush ~with_fsync:true log.io;
-              IO.clear ~generation:(Int63.succ generation) ~reopen:false
-                log_async.io;
+              Log_file.flush ~with_fsync:true log;
+              Log_file.clear ~generation:(Int63.succ generation) ~reopen:false
+                log_async;
               (* log_async.mem does not need to be cleared as we are discarding
                  it. *)
               t.log_async <- None;
@@ -991,9 +824,7 @@ struct
         ~generation:(Int63.succ t.generation) ~fan_size:Int63.zero
         log_async_path
     in
-    let mem = Tbl.create io in
-    let log_async = { io; mem } in
-    t.log_async <- Some log_async
+    t.log_async <- Some (Log_file.create io)
 
   let merge' ?(blocking = false) ?filter ?(hook = fun _ -> ()) ~witness
       ?(force = false) t =
@@ -1012,7 +843,7 @@ struct
     Option.iter
       (fun l ->
         transfer_log_async_to_log ~root:t.root ~generation:t.generation
-          ~log:t.log ~log_async:l.io)
+          ~log:t.log ~log_async:(Log_file.io l))
       t.log_async;
     reset_log_async t;
 
@@ -1053,11 +884,7 @@ struct
     | Some log -> (
         let exception Found of Entry.t in
         (* Gets an arbitrary element in [log]. *)
-        match
-          Tbl.iter log.mem ~f:(fun offset ->
-              let entry = Tbl.entry_of_offset log.mem offset in
-              raise (Found entry))
-        with
+        match Log_file.iter log ~f:(fun entry -> raise (Found entry)) with
         | exception Found e -> Some e
         | () -> (
             (* If [log] is empty, get an entry in [index]. *)
@@ -1091,7 +918,8 @@ struct
         | Some log ->
             if
               force
-              || Int63.compare (IO.offset log.io)
+              || Int63.compare
+                   (IO.offset (Log_file.io log))
                    (Int63.of_int t.config.log_size)
                  > 0
             then merge' ~force ?hook ~witness t
@@ -1125,13 +953,9 @@ struct
           let log =
             match t.log_async with Some log -> log | None -> Option.get t.log
           in
-          let offset = IO.offset log.io in
-          Entry.encode' key value (IO.append log.io);
-          Tbl.replace log.mem key offset;
-          Int63.compare
-            (Int63.add offset entry_sizeL)
-            (Int63.of_int t.config.log_size)
-          > 0)
+          Log_file.replace log key value;
+          let offset = IO.offset (Log_file.io log) in
+          Int63.compare offset (Int63.of_int t.config.log_size) > 0)
     in
     if log_limit_reached && not overcommit then
       let is_merging = instance_is_merging t in
@@ -1185,19 +1009,15 @@ struct
     match t.log with
     | None -> ()
     | Some log ->
-        Tbl.iter log.mem ~f:(fun offset ->
-            let entry = Tbl.entry_of_offset log.mem offset in
-            f entry.key entry.value);
+        Log_file.iter log ~f:(fun entry -> f entry.key entry.value);
         Option.iter
-          (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io)
+          (fun (i : index) -> IO.iter (fun _ e -> f e.key e.value) i.io)
           t.index;
         Semaphore.with_acquire "iter" t.rename_lock (fun () ->
             match t.log_async with
             | None -> ()
             | Some log ->
-                Tbl.iter log.mem ~f:(fun offset ->
-                    let entry = Tbl.entry_of_offset log.mem offset in
-                    f entry.key entry.value))
+                Log_file.iter log ~f:(fun entry -> f entry.key entry.value))
 
   (** {1 Close} *)
 
@@ -1221,11 +1041,7 @@ struct
                   l "[%s] last open instance: closing the file descriptor"
                     (Filename.basename t.root));
               if not t.config.readonly then flush_instance ~with_fsync:true t;
-              Option.iter
-                (fun l ->
-                  Tbl.clear l.mem;
-                  IO.close l.io)
-                t.log;
+              Option.iter Log_file.close t.log;
               Option.iter (fun (i : index) -> IO.close i.io) t.index;
               Option.iter (fun lock -> IO.Lock.unlock lock) t.writer_lock))
 
