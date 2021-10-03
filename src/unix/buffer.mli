@@ -40,3 +40,7 @@ val add_string : t -> string -> unit
 val write_with : (string -> int -> int -> unit) -> t -> unit
 (** [write_with writer t] uses [writer] to write the contents of [t]. [writer]
     takes a string to write, an offset and a length. *)
+
+val blit : src:t -> src_off:int -> dst:bytes -> dst_off:int -> len:int -> unit
+(** [blit] copies [len] bytes from the buffer [src], starting at offset
+    [src_off], into the supplied bytes [dst], starting at offset [dst_off]. *)

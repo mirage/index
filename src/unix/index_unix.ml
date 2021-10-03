@@ -85,8 +85,31 @@ module IO : Index.Platform.IO = struct
   let append t buf = append_substring t buf ~off:0 ~len:(String.length buf)
 
   let read t ~off ~len buf =
-    if not t.readonly then assert (t.header ++ off <= t.flushed);
-    Raw.unsafe_read t.raw ~off:(t.header ++ off) ~len buf
+    let off = t.header ++ off in
+    let end_of_value = off ++ Int63.of_int len in
+    if not t.readonly then
+      assert (
+        let total_length = t.flushed ++ Int63.of_int (Buffer.length t.buf) in
+        off <= total_length);
+
+    if t.readonly || end_of_value <= t.flushed then
+      (* Value is entirely on disk *)
+      Raw.unsafe_read t.raw ~off ~len buf
+    else
+      (* Must read some data not yet flushed to disk *)
+      let bytes_from_disk = max 0 (Int63.to_int (t.flushed -- off)) in
+      let bytes_from_buffer = len - bytes_from_disk in
+      let () =
+        if bytes_from_disk > 0 then
+          let read = Raw.unsafe_read t.raw ~off ~len:bytes_from_disk buf in
+          assert (read = bytes_from_disk)
+      in
+      let () =
+        let src_off = max 0 (Int63.to_int (off -- t.flushed)) in
+        let len = min (Buffer.length t.buf - src_off) bytes_from_buffer in
+        Buffer.blit ~src:t.buf ~src_off ~dst:buf ~dst_off:bytes_from_disk ~len
+      in
+      bytes_from_disk + bytes_from_buffer
 
   let offset t = t.offset
 
@@ -196,7 +219,7 @@ module IO : Index.Platform.IO = struct
       raw;
       readonly;
       fan_size;
-      buf = Buffer.create (4 * 1024);
+      buf = Buffer.create (if readonly then 0 else 4 * 1024);
       flushed = header ++ offset;
       flush_callback;
     }

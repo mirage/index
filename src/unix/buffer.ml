@@ -47,4 +47,8 @@ let add_substring b s ~off ~len =
   unsafe_blit_string s off b.buffer b.position len;
   b.position <- new_position
 
+let blit ~src ~src_off ~dst ~dst_off ~len =
+  assert (src_off + len <= src.position);
+  Bytes.blit src.buffer src_off dst dst_off len
+
 let add_string b s = add_substring b s ~off:0 ~len:(String.length s)

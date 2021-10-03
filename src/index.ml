@@ -73,10 +73,15 @@ struct
     include Stats
   end
 
-  module Tbl = Hashtbl.Make (K)
-
   module IO = struct
     include Io.Extend (IO)
+
+    let iter_keys ?min f =
+      let page_size = Int63.(mul entry_sizeL (of_int 1_000)) in
+      iter ~page_size ?min (fun ~off ~buf ~buf_off ->
+          let key, _ = Entry.decode_key buf buf_off in
+          f off key;
+          Entry.encoded_size)
 
     let iter ?min ?max f =
       let page_size = Int63.(mul entry_sizeL (of_int 1_000)) in
@@ -84,6 +89,136 @@ struct
           let entry = Entry.decode buf buf_off in
           f off entry;
           Entry.encoded_size)
+  end
+
+  module Tbl = struct
+    type t = {
+      io : IO.t;
+      mutable hashset : int63 Small_list.t Array.t;
+      mutable scratch_buf : bytes;
+      mutable cardinal : int;
+    }
+
+    let length t = t.cardinal
+
+    let clear t =
+      t.hashset <- [| Small_list.empty |];
+      t.cardinal <- 0
+
+    let to_seq t =
+      Array.to_seq t.hashset
+      |> Seq.flat_map (fun bucket ->
+             Small_list.to_list bucket
+             |> List.to_seq
+             |> Seq.map (fun off ->
+                    let n =
+                      IO.read t.io ~off ~len:Entry.encoded_size t.scratch_buf
+                    in
+                    assert (n = Entry.encoded_size);
+                    let entry =
+                      Entry.decode (Bytes.unsafe_to_string t.scratch_buf) 0
+                    in
+                    (entry.key, entry.value)))
+
+    let key_of_offset t off =
+      let r = IO.read t.io ~off ~len:K.encoded_size t.scratch_buf in
+      assert (r = K.encoded_size);
+      fst (Entry.decode_key (Bytes.unsafe_to_string t.scratch_buf) 0)
+
+    let entry_of_offset t off =
+      let r = IO.read t.io ~off ~len:Entry.encoded_size t.scratch_buf in
+      assert (r = Entry.encoded_size);
+      Entry.decode (Bytes.unsafe_to_string t.scratch_buf) 0
+
+    let iter_hashset t ~f =
+      ArrayLabels.iter t.hashset ~f:(fun bucket -> Small_list.iter bucket ~f)
+
+    let resize t =
+      (* Scale the number of hashset buckets. *)
+      let new_bucket_count = Array.length t.hashset * 2 in
+      let new_hashset = Array.make new_bucket_count Small_list.empty in
+      iter_hashset t ~f:(fun offset ->
+          let key = key_of_offset t offset in
+          let new_index = K.hash key mod new_bucket_count in
+          new_hashset.(new_index) <-
+            Small_list.cons offset new_hashset.(new_index));
+      t.hashset <- new_hashset
+
+    let replace t key offset =
+      if t.cardinal / 2 > Array.length t.hashset then resize t;
+      let elt_idx = K.hash key mod Array.length t.hashset in
+      let bucket = t.hashset.(elt_idx) in
+      let bucket =
+        let key_found = ref false in
+        let bucket' =
+          Small_list.map bucket ~f:(fun offset' ->
+              if !key_found then
+                (* We ensure there's at most one binding for a given key *)
+                offset'
+              else
+                let key' = key_of_offset t offset' in
+                match K.equal key key' with
+                | false -> offset'
+                | true ->
+                    (* New binding for this key *)
+                    key_found := true;
+                    offset)
+        in
+        match !key_found with
+        | true ->
+            (* We're replacing an existing value. No need to change [cardinal]. *)
+            bucket'
+        | false ->
+            (* The existing bucket doesn't contain this key. *)
+            t.cardinal <- t.cardinal + 1;
+            Small_list.cons offset bucket
+      in
+      t.hashset.(elt_idx) <- bucket
+
+    let create io =
+      let cardinal = Int63.(to_int_exn (IO.offset io / entry_sizeL)) in
+      let bucket_count = max 1 (cardinal / 2) in
+      let hashset = Array.make bucket_count Small_list.empty in
+      let t =
+        {
+          io;
+          hashset;
+          scratch_buf = Bytes.create Entry.encoded_size;
+          cardinal = 0;
+        }
+      in
+      IO.iter_keys (fun offset key -> replace t key offset) io;
+      t
+
+    let filteri_inplace t ~f =
+      ArrayLabels.iteri t.hashset ~f:(fun i bucket ->
+          t.hashset.(i) <-
+            Small_list.filter bucket ~f:(fun offset ->
+                let entry = entry_of_offset t offset in
+                let keep = f entry.key entry.value in
+                if not keep then t.cardinal <- t.cardinal - 1;
+                keep))
+
+    let find t key =
+      let elt_idx = K.hash key mod Array.length t.hashset in
+      let bucket = t.hashset.(elt_idx) in
+      Small_list.find_map bucket ~f:(fun offset ->
+          (* We expect the keys to match most of the time, so we decode the
+             value at the same time. *)
+          let entry = entry_of_offset t offset in
+          match K.equal key entry.key with
+          | false -> None
+          | true -> Some entry.value)
+      |> function
+      | None -> raise Not_found
+      | Some x -> x
+
+    let fold t ~f ~init =
+      ArrayLabels.fold_left t.hashset ~init ~f:(fun acc bucket ->
+          Small_list.fold_left bucket ~init:acc ~f)
+
+    let iter t ~f =
+      ArrayLabels.iter t.hashset ~f:(fun bucket -> Small_list.iter bucket ~f)
   end
 
   let iter_io ?min ?max f = IO.iter ?min ?max (fun _ -> f)
@@ -112,7 +247,7 @@ struct
 
   type log = {
     io : IO.t;  (** The disk file handler. *)
-    mem : value Tbl.t;  (** The in-memory counterpart of [io]. *)
+    mem : Tbl.t;  (** The in-memory counterpart of [io]. *)
   }
 
   type instance = {
@@ -246,8 +381,7 @@ struct
     match IO.v_readonly path with
     | Error `No_file_on_disk -> None
     | Ok io ->
-        let mem = Tbl.create 0 in
-        iter_io (fun e -> Tbl.replace mem e.key e.value) io;
+        let mem = Tbl.create io in
         Log.debug (fun l ->
             l "[%s] loaded %d entries from %s" (Filename.basename t.root)
               (Tbl.length mem) (Filename.basename path));
@@ -255,9 +389,9 @@ struct
 
   (** Loads the entries from [log]'s IO into memory, starting from offset [min]. *)
   let sync_log_entries ?min log =
-    let add_log_entry (e : Entry.t) = Tbl.replace log.mem e.key e.value in
+    let add_log_entry offset (e : Entry.t) = Tbl.replace log.mem e.key offset in
     if min = None then Tbl.clear log.mem;
-    iter_io ?min add_log_entry log.io
+    IO.iter ?min add_log_entry log.io
 
   (** Syncs the [log_async] of the instance by checking on-disk changes. *)
   let sync_log_async ~hook t =
@@ -473,9 +607,9 @@ struct
     | None -> assert false
     | Some log ->
         let append_io = IO.append log.io in
-        iter_io
-          (fun e ->
-            Tbl.replace log.mem e.key e.value;
+        IO.iter
+          (fun off e ->
+            Tbl.replace log.mem e.key off;
             Entry.encode e append_io)
           log_async;
         (* Force fsync here so that persisted entries in log_async
@@ -513,8 +647,7 @@ struct
         Log.debug (fun l ->
             l "[%s] log file detected. Loading %d entries"
               (Filename.basename root) entries);
-        let mem = Tbl.create entries in
-        iter_io (fun e -> Tbl.replace mem e.key e.value) io;
+        let mem = Tbl.create io in
         Some { io; mem }
     in
     let generation =
@@ -743,16 +876,13 @@ struct
     let log_array =
       Option.iter
         (fun f ->
-          Tbl.filter_map_inplace
-            (fun key value -> if f (key, value) then Some value else None)
-            log.mem)
+          Tbl.filteri_inplace ~f:(fun key value -> f (key, value)) log.mem)
         filter;
       let b = Array.make (Tbl.length log.mem) witness in
-      Tbl.fold
-        (fun key value i ->
-          b.(i) <- Entry.v key value;
+      Tbl.fold log.mem ~init:0 ~f:(fun i offset ->
+          let entry = Tbl.entry_of_offset log.mem offset in
+          b.(i) <- entry;
           i + 1)
-        log.mem 0
       |> ignore;
       Array.fast_sort Entry.compare b;
       b
@@ -762,7 +892,7 @@ struct
       | None -> (Tbl.length log.mem, None)
       | Some index ->
           ( Int63.(to_int_exn (IO.offset index.io / entry_sizeL))
-            + Array.length log_array,
+            + Tbl.length log.mem,
             Some (Fan.nb_fans index.fan_out) )
     in
     let fan_out =
@@ -825,11 +955,16 @@ struct
               hook `After_clear;
               let log_async = Option.get t.log_async in
               let append_io = IO.append log.io in
-              Tbl.iter
-                (fun key value ->
-                  Tbl.replace log.mem key value;
-                  Entry.encode' key value append_io)
-                log_async.mem;
+              let (_ : int63) =
+                Tbl.fold log_async.mem ~init:(IO.offset log.io)
+                  ~f:(fun log_offset log_async_offset ->
+                    let entry =
+                      Tbl.entry_of_offset log_async.mem log_async_offset
+                    in
+                    Entry.encode entry append_io;
+                    Tbl.replace log.mem entry.key log_offset;
+                    Int63.add log_offset entry_sizeL)
+              in
               (* NOTE: It {i may} not be necessary to trigger the
                  [flush_callback] here. If the instance has been recently
                  flushed (or [log_async] just reached the [auto_flush_limit]),
@@ -856,7 +991,7 @@ struct
         ~generation:(Int63.succ t.generation) ~fan_size:Int63.zero
         log_async_path
     in
-    let mem = Tbl.create 0 in
+    let mem = Tbl.create io in
     let log_async = { io; mem } in
     t.log_async <- Some log_async
 
@@ -919,7 +1054,9 @@ struct
         let exception Found of Entry.t in
         (* Gets an arbitrary element in [log]. *)
         match
-          Tbl.iter (fun key value -> raise (Found (Entry.v key value))) log.mem
+          Tbl.iter log.mem ~f:(fun offset ->
+              let entry = Tbl.entry_of_offset log.mem offset in
+              raise (Found entry))
         with
         | exception Found e -> Some e
         | () -> (
@@ -988,9 +1125,13 @@ struct
           let log =
             match t.log_async with Some log -> log | None -> Option.get t.log
           in
+          let offset = IO.offset log.io in
           Entry.encode' key value (IO.append log.io);
-          Tbl.replace log.mem key value;
-          Int63.compare (IO.offset log.io) (Int63.of_int t.config.log_size) > 0)
+          Tbl.replace log.mem key offset;
+          Int63.compare
+            (Int63.add offset entry_sizeL)
+            (Int63.of_int t.config.log_size)
+          > 0)
     in
     if log_limit_reached && not overcommit then
       let is_merging = instance_is_merging t in
@@ -1044,12 +1185,19 @@ struct
     match t.log with
     | None -> ()
     | Some log ->
-        Tbl.iter f log.mem;
+        Tbl.iter log.mem ~f:(fun offset ->
+            let entry = Tbl.entry_of_offset log.mem offset in
+            f entry.key entry.value);
         Option.iter
           (fun (i : index) -> iter_io (fun e -> f e.key e.value) i.io)
           t.index;
         Semaphore.with_acquire "iter" t.rename_lock (fun () ->
-            match t.log_async with None -> () | Some log -> Tbl.iter f log.mem)
+            match t.log_async with
+            | None -> ()
+            | Some log ->
+                Tbl.iter log.mem ~f:(fun offset ->
+                    let entry = Tbl.entry_of_offset log.mem offset in
+                    f entry.key entry.value))
 
   (** {1 Close} *)
 
