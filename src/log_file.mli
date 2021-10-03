@@ -33,8 +33,11 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) : sig
   val replace : t -> key -> value -> unit
   val iter : t -> f:(Entry.t -> unit) -> unit
   val fold : t -> f:('acc -> Entry.t -> 'acc) -> init:'acc -> 'acc
-  val to_seq : t -> (key * value) Seq.t
-  val filteri_inplace : t -> f:(key -> value -> bool) -> unit
+
+  val to_sorted_seq : t -> Entry.t Seq.t
+  (** [to_sorted_seq t] is the sequence of all entries in [t], sorted by
+      [Entry.compare]. Modifying [t] while consuming the sequence results in
+      undefined behaviour. *)
 
   (** {2 Low-level API} *)
 

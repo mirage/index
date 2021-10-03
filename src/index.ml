@@ -203,7 +203,10 @@ struct
 
   (** Extract [log] and [log_async] for (private) tests. *)
 
-  let to_list t = List.of_seq (Log_file.to_seq t)
+  let to_list t =
+    Log_file.to_sorted_seq t
+    |> Seq.map (fun (e : Entry.t) -> (e.key, e.value))
+    |> List.of_seq
 
   let log_file_to_list msg log =
     let x = to_list log in
@@ -615,21 +618,18 @@ struct
       which hash is higher than or equal to [hash_e] (the current value in
       [data]), excluded, and returns its index. Also registers the appended
       values to [fan_out]. *)
-  let rec merge_from_log fan_out log log_i hash_e dst_io =
-    if log_i >= Array.length log then log_i
-    else
-      let v = log.(log_i) in
-      if v.Entry.key_hash >= hash_e then log_i
-      else (
+  let rec merge_from_log fan_out log hash_e dst_io =
+    match log with
+    | Seq.Nil -> Seq.Nil
+    | Seq.Cons (v, _) when v.Entry.key_hash >= hash_e -> log
+    | Seq.Cons (v, log) ->
         append_entry_fanout fan_out v dst_io;
-        (merge_from_log [@tailcall]) fan_out log (log_i + 1) hash_e dst_io)
+        (merge_from_log [@tailcall]) fan_out (log ()) hash_e dst_io
 
   (** Appends the [log] values into [dst_io], from [log_i] to the end, and
       registers them in [fan_out]. *)
-  let append_remaining_log fan_out log log_i dst_io =
-    for log_i = log_i to Array.length log - 1 do
-      append_entry_fanout fan_out log.(log_i) dst_io
-    done
+  let append_remaining_log fan_out log dst_io =
+    Seq.iter (fun entry -> append_entry_fanout fan_out entry dst_io) log
 
   (** Merges [log] with [index] into [dst_io], ignoring bindings that do not
       satisfy [filter (k, v)]. [log] must be sorted by key hashes. *)
@@ -655,17 +655,17 @@ struct
     (* This performs the merge. [index_offset] is the offset of the next entry
        to process in [index], [buf_offset] is its counterpart in the page
        buffer. [log_i] is the index of the next entry to process in [log]. *)
-    let rec go first_entry index_offset buf_offset log_i =
+    let rec go first_entry index_offset buf_offset log =
       (* If the index is fully read, we append the rest of the [log]. *)
       if index_offset >= index_end then (
-        append_remaining_log fan_out log log_i dst_io;
+        append_remaining_log fan_out (fun () -> log) dst_io;
         `Completed)
       else
         let index_offset = Int63.add index_offset Entry.encoded_sizeL in
         let index_key, index_key_hash =
           Entry.decode_key (Bytes.unsafe_to_string buf) buf_offset
         in
-        let log_i = merge_from_log fan_out log log_i index_key_hash dst_io in
+        let log = merge_from_log fan_out log index_key_hash dst_io in
         match yield () with
         | `Abort -> `Aborted
         | `Continue ->
@@ -674,12 +674,12 @@ struct
             Thread.yield ();
             (* If the log entry has the same key as the index entry, we do not
                add the index one, respecting the [replace] semantics. *)
-            if
-              (log_i >= Array.length log
-              ||
-              let log_key = log.(log_i).key in
-              not K.(equal log_key index_key))
-              && filter index_key buf_offset
+            let log_overwrites_index_entry =
+              match log with
+              | Seq.Nil -> false
+              | Seq.Cons (entry, _) -> K.(equal entry.key index_key)
+            in
+            if (not log_overwrites_index_entry) && filter index_key buf_offset
             then
               append_substring_fanout fan_out index_key_hash dst_io
                 (Bytes.unsafe_to_string buf)
@@ -693,9 +693,9 @@ struct
                 0)
               else n
             in
-            (go [@tailcall]) false index_offset buf_offset log_i
+            (go [@tailcall]) false index_offset buf_offset log
     in
-    (go [@tailcall]) true Int63.zero 0 0
+    (go [@tailcall]) true Int63.zero 0 (log ())
 
   (** Increases and returns the merge counter. *)
   let merge_counter =
@@ -713,22 +713,14 @@ struct
       - [t.log_async] has been created;
       - [t.merge_lock] is acquired before entry, and released immediately after
         this function returns or raises an exception. *)
-  let unsafe_perform_merge ~witness ~filter ~hook t =
+  let unsafe_perform_merge ~witness:_ ~filter ~hook t =
     hook `Before;
     let log = Option.get t.log in
     let generation = Int63.succ t.generation in
-    let log_array =
-      Option.iter
-        (fun f ->
-          Log_file.filteri_inplace ~f:(fun key value -> f (key, value)) log)
-        filter;
-      let b = Array.make (Log_file.cardinal log) witness in
-      Log_file.fold log ~init:0 ~f:(fun i entry ->
-          b.(i) <- entry;
-          i + 1)
-      |> ignore;
-      Array.fast_sort Entry.compare b;
-      b
+    let sorted_log_bindings =
+      Log_file.to_sorted_seq log
+      |> Option.fold filter ~none:Fun.id ~some:(fun f ->
+             Seq.filter (fun (e : Entry.t) -> f (e.key, e.value)))
     in
     let fan_size, old_fan_nb =
       match t.index with
@@ -767,13 +759,13 @@ struct
                 IO.v ~fresh:true ~generation ~fan_size:Int63.zero
                   (Layout.data ~root:t.root)
               in
-              append_remaining_log fan_out log_array 0 merge;
+              append_remaining_log fan_out sorted_log_bindings merge;
               `Index_io io)
       | Some index -> (
           match
             merge_with ~hook
               ~yield:(fun () -> check_pending_cancel t)
-              ~filter log_array index.io fan_out merge
+              ~filter sorted_log_bindings index.io fan_out merge
           with
           | `Completed -> `Index_io index.io
           | `Aborted -> `Aborted)

@@ -150,6 +150,26 @@ let to_list = function
   | Tuple6 (a, b, c, d, e, f) -> [ a; b; c; d; e; f ]
   | Many (a, b, c, d, e, f, g, l) -> a :: b :: c :: d :: e :: f :: g :: l
 
+let to_array = function
+  | Tuple0 -> [||]
+  | Tuple1 a -> [| a |]
+  | Tuple2 (a, b) -> [| a; b |]
+  | Tuple3 (a, b, c) -> [| a; b; c |]
+  | Tuple4 (a, b, c, d) -> [| a; b; c; d |]
+  | Tuple5 (a, b, c, d, e) -> [| a; b; c; d; e |]
+  | Tuple6 (a, b, c, d, e, f) -> [| a; b; c; d; e; f |]
+  | Many (a, b, c, d, e, f, g, l) ->
+      let len = 7 + List.length l in
+      let arr = Array.make len a in
+      arr.(1) <- b;
+      arr.(2) <- c;
+      arr.(3) <- d;
+      arr.(4) <- e;
+      arr.(5) <- f;
+      arr.(6) <- g;
+      List.iteri (fun i elt -> arr.(i + 7) <- elt) l;
+      arr
+
 let of_list = function
   | [] -> Tuple0
   | [ a ] -> Tuple1 a

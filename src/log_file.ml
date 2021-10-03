@@ -35,7 +35,9 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     append_io : string -> unit;  (** Pre-allocated [IO.append io] closure *)
     mutable hashset : int63 Small_list.t Array.t;
         (** Hashset of offsets of entries in [io], keyed by the hash of the key
-            stored at each offset. *)
+            stored at each offset. Length is always a power of two. *)
+    mutable bucket_count_log2 : int;
+        (** Invariant: equal to [log_2 (Array.length hashset)] *)
     mutable scratch_buf : bytes;
     mutable cardinal : int;
   }
@@ -45,6 +47,7 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
 
   let clear_memory t =
     t.hashset <- [| Small_list.empty |];
+    t.bucket_count_log2 <- 0;
     t.cardinal <- 0
 
   let clear ~generation ?hook ~reopen t =
@@ -57,20 +60,20 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
 
   let flush ?no_callback ~with_fsync t = IO.flush ?no_callback ~with_fsync t.io
 
-  let to_seq t =
+  let to_sorted_seq t =
     Array.to_seq t.hashset
     |> Seq.flat_map (fun bucket ->
-           Small_list.to_list bucket
-           |> List.to_seq
-           |> Seq.map (fun off ->
-                  let n =
-                    IO.read t.io ~off ~len:Entry.encoded_size t.scratch_buf
-                  in
-                  assert (n = Entry.encoded_size);
-                  let entry =
-                    Entry.decode (Bytes.unsafe_to_string t.scratch_buf) 0
-                  in
-                  (entry.key, entry.value)))
+           let arr =
+             Small_list.to_array bucket
+             |> Array.map (fun off ->
+                    let n =
+                      IO.read t.io ~off ~len:Entry.encoded_size t.scratch_buf
+                    in
+                    assert (n = Entry.encoded_size);
+                    Entry.decode (Bytes.unsafe_to_string t.scratch_buf) 0)
+           in
+           Array.sort Entry.compare arr;
+           Array.to_seq arr)
 
   let key_of_offset t off =
     let r = IO.read t.io ~off ~len:Key.encoded_size t.scratch_buf in
@@ -85,13 +88,21 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
   let iter_hashset t ~f =
     ArrayLabels.iter t.hashset ~f:(fun bucket -> Small_list.iter bucket ~f)
 
+  let elt_index t key =
+    (* NOTE: we use the _uppermost_ bits of the key hash to index the bucket
+       array, so that the hashset is approximately sorted by key hash (with only
+       the entries within each bucket being relatively out of order). *)
+    let unneeded_bits = Key.hash_size - t.bucket_count_log2 in
+    (Key.hash key lsr unneeded_bits) land ((1 lsl t.bucket_count_log2) - 1)
+
   let resize t =
     (* Scale the number of hashset buckets. *)
-    let new_bucket_count = (2 * Array.length t.hashset) + 1 in
+    t.bucket_count_log2 <- t.bucket_count_log2 + 1;
+    let new_bucket_count = 1 lsl t.bucket_count_log2 in
     let new_hashset = Array.make new_bucket_count Small_list.empty in
     iter_hashset t ~f:(fun offset ->
         let key = key_of_offset t offset in
-        let new_index = Key.hash key mod new_bucket_count in
+        let new_index = elt_index t key in
         new_hashset.(new_index) <-
           Small_list.cons offset new_hashset.(new_index));
     t.hashset <- new_hashset
@@ -100,7 +111,7 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
       write the binding to disk). *)
   let replace_memory t key offset =
     if t.cardinal / 2 > Array.length t.hashset then resize t;
-    let elt_idx = Key.hash key mod Array.length t.hashset in
+    let elt_idx = elt_index t key in
     let bucket = t.hashset.(elt_idx) in
     let bucket =
       let key_found = ref false in
@@ -143,13 +154,21 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
 
   let create io =
     let cardinal = Int63.(to_int_exn (IO.offset io / Entry.encoded_sizeL)) in
-    let bucket_count = max 1 (cardinal / 2) in
+    let bucket_count_log2, bucket_count =
+      let rec aux n_log2 n =
+        if n >= cardinal then (n_log2, n)
+        else if n * 2 > Sys.max_array_length then (n_log2, n)
+        else aux (n_log2 + 1) (n * 2)
+      in
+      aux 4 16
+    in
     let hashset = Array.make bucket_count Small_list.empty in
     let t =
       {
         io;
         append_io = IO.append io;
         hashset;
+        bucket_count_log2;
         scratch_buf = Bytes.create Entry.encoded_size;
         cardinal = 0;
       }
@@ -158,7 +177,7 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     t
 
   let find t key =
-    let elt_idx = Key.hash key mod Array.length t.hashset in
+    let elt_idx = elt_index t key in
     let bucket = t.hashset.(elt_idx) in
     Small_list.find_map bucket ~f:(fun offset ->
         (* We expect the keys to match most of the time, so we decode the
