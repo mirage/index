@@ -24,6 +24,7 @@ val map : f:('a -> 'b) -> 'a t -> 'b t
 val iter : f:('a -> unit) -> 'a t -> unit
 val exists : f:('a -> bool) -> 'a t -> bool
 val to_list : 'a t -> 'a list
+val of_list : 'a list -> 'a t
 val to_array : 'a t -> 'a array
 val find_map : f:('a -> 'b option) -> 'a t -> 'b option
 val fold_left : f:('acc -> 'a -> 'acc) -> init:'acc -> 'a t -> 'acc

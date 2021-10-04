@@ -85,9 +85,6 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     assert (r = Entry.encoded_size);
     Entry.decode (Bytes.unsafe_to_string t.scratch_buf) 0
 
-  let iter_hashset t ~f =
-    ArrayLabels.iter t.hashset ~f:(fun bucket -> Small_list.iter bucket ~f)
-
   let elt_index t key =
     (* NOTE: we use the _uppermost_ bits of the key hash to index the bucket
        array, so that the hashset is approximately sorted by key hash (with only
@@ -100,17 +97,25 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     t.bucket_count_log2 <- t.bucket_count_log2 + 1;
     let new_bucket_count = 1 lsl t.bucket_count_log2 in
     let new_hashset = Array.make new_bucket_count Small_list.empty in
-    iter_hashset t ~f:(fun offset ->
-        let key = key_of_offset t offset in
-        let new_index = elt_index t key in
-        new_hashset.(new_index) <-
-          Small_list.cons offset new_hashset.(new_index));
+    ArrayLabels.iteri t.hashset ~f:(fun i bucket ->
+        (* The bindings in this bucket will be split into two new buckets, using
+           the next bit of [Key.hash] as a discriminator. *)
+        let bucket_2i, bucket_2i_plus_1 =
+          Small_list.to_list bucket
+          |> List.partition (fun offset ->
+                 let key = key_of_offset t offset in
+                 let new_index = elt_index t key in
+                 assert (new_index lsr 1 = i);
+                 new_index land 1 = 0)
+        in
+        new_hashset.(2 * i) <- Small_list.of_list bucket_2i;
+        new_hashset.((2 * i) + 1) <- Small_list.of_list bucket_2i_plus_1);
     t.hashset <- new_hashset
 
   (** Replace implementation that only updates in-memory state (and doesn't
       write the binding to disk). *)
   let replace_memory t key offset =
-    if t.cardinal / 2 > Array.length t.hashset then resize t;
+    if t.cardinal > 2 * Array.length t.hashset then resize t;
     let elt_idx = elt_index t key in
     let bucket = t.hashset.(elt_idx) in
     let bucket =
@@ -196,5 +201,7 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
             let entry = entry_of_offset t offset in
             f acc entry))
 
-  let iter t ~f = iter_hashset t ~f:(fun offset -> f (entry_of_offset t offset))
+  let iter t ~f =
+    ArrayLabels.iter t.hashset ~f:(fun bucket ->
+        Small_list.iter bucket ~f:(fun offset -> f (entry_of_offset t offset)))
 end
