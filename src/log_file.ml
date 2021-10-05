@@ -60,21 +60,6 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
 
   let flush ?no_callback ~with_fsync t = IO.flush ?no_callback ~with_fsync t.io
 
-  let to_sorted_seq t =
-    Array.to_seq t.hashset
-    |> Seq.flat_map (fun bucket ->
-           let arr =
-             Small_list.to_array bucket
-             |> Array.map (fun off ->
-                    let n =
-                      IO.read t.io ~off ~len:Entry.encoded_size t.scratch_buf
-                    in
-                    assert (n = Entry.encoded_size);
-                    Entry.decode (Bytes.unsafe_to_string t.scratch_buf) 0)
-           in
-           Array.sort Entry.compare arr;
-           Array.to_seq arr)
-
   let key_of_offset t off =
     let r = IO.read t.io ~off ~len:Key.encoded_size t.scratch_buf in
     assert (r = Key.encoded_size);
@@ -209,4 +194,14 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
   let iter t ~f =
     ArrayLabels.iter t.hashset ~f:(fun bucket ->
         Small_list.iter bucket ~f:(fun offset -> f (entry_of_offset t offset)))
+
+  let to_sorted_seq t =
+    Array.to_seq t.hashset
+    |> Seq.flat_map (fun bucket ->
+           let arr =
+             Small_list.to_array bucket
+             |> Array.map (fun off -> entry_of_offset t off)
+           in
+           Array.sort Entry.compare arr;
+           Array.to_seq arr)
 end
