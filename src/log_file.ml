@@ -180,7 +180,7 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
         hashset;
         bucket_count_log2;
         scratch_buf = Bytes.create Entry.encoded_size;
-        cardinal = 0;
+        cardinal;
       }
     in
     IO.iter_keys (fun offset key -> replace_memory t key offset) io;
