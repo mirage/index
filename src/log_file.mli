@@ -24,6 +24,11 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) : sig
   type value := Value.t
 
   val create : IO.t -> t
+  (** [create io] constructs a write-ahead log from an IO handle referencing an
+      unordered sequence of (binary encoded) [key * value] bindings. The
+      bindings are read into memory, and any subsequent {!replace} operations
+      are reflected on disk. *)
+
   val close : t -> unit
 
   (** {2 Hashtable API} *)

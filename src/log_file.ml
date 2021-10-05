@@ -96,6 +96,11 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     (* Scale the number of hashset buckets. *)
     t.bucket_count_log2 <- t.bucket_count_log2 + 1;
     let new_bucket_count = 1 lsl t.bucket_count_log2 in
+    if new_bucket_count > Sys.max_array_length then
+      Fmt.failwith
+        "Log_file.resize: can't construct a hashset with %d buckets \
+         (Sys.max_array_length = %d)"
+        new_bucket_count Sys.max_array_length;
     let new_hashset = Array.make new_bucket_count Small_list.empty in
     ArrayLabels.iteri t.hashset ~f:(fun i bucket ->
         (* The bindings in this bucket will be split into two new buckets, using
