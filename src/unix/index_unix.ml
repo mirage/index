@@ -97,19 +97,29 @@ module IO : Index.Platform.IO = struct
       Raw.unsafe_read t.raw ~off ~len buf
     else
       (* Must read some data not yet flushed to disk *)
-      let bytes_from_disk = max 0 (Int63.to_int (t.flushed -- off)) in
-      let bytes_from_buffer = len - bytes_from_disk in
-      let () =
-        if bytes_from_disk > 0 then
-          let read = Raw.unsafe_read t.raw ~off ~len:bytes_from_disk buf in
-          assert (read = bytes_from_disk)
+      let requested_from_disk = max 0 (Int63.to_int (t.flushed -- off)) in
+      let requested_from_buffer = len - requested_from_disk in
+      let read_from_disk =
+        if requested_from_disk > 0 then (
+          let read = Raw.unsafe_read t.raw ~off ~len:requested_from_disk buf in
+          assert (read = requested_from_disk);
+          read)
+        else 0
       in
-      let () =
+      let read_from_buffer =
         let src_off = max 0 (Int63.to_int (off -- t.flushed)) in
-        let len = min (Buffer.length t.buf - src_off) bytes_from_buffer in
-        Buffer.blit ~src:t.buf ~src_off ~dst:buf ~dst_off:bytes_from_disk ~len
+        let len =
+          (* The user may request more bytes than actually exist, in which case
+             we read to the end of the write buffer and return a size less than
+             [len]. *)
+          let available_length = Buffer.length t.buf - src_off in
+          min available_length requested_from_buffer
+        in
+        Buffer.blit ~src:t.buf ~src_off ~dst:buf ~dst_off:requested_from_disk
+          ~len;
+        len
       in
-      bytes_from_disk + bytes_from_buffer
+      read_from_disk + read_from_buffer
 
   let offset t = t.offset
 
