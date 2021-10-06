@@ -871,6 +871,11 @@ struct
     if blocking then go () |> Thread.return else Thread.async go
 
   let is_empty t =
+    (* A read-only instance may have not yet loaded the [log], if no explicit
+       [sync] has yet occurred, leaving some ambiguity as to whether the index
+       is strictly "empty". For now, we only need this internal function for
+       read-write instances, so we dodge the question .*)
+    assert (not t.config.readonly);
     match t.log with
     | None -> true
     | Some log -> Option.is_none t.index && Log_file.cardinal log = 0
