@@ -33,11 +33,12 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
   type t = {
     io : IO.t;  (** The disk file handler *)
     append_io : string -> unit;  (** Pre-allocated [IO.append io] closure *)
-    mutable hashset : int63 Small_list.t Array.t;
-        (** Hashset of offsets of entries in [io], keyed by the hash of the key
-            stored at each offset. Length is always a power of two. *)
+    mutable hashtbl : int63 Small_list.t Array.t;
+        (** Hashtable of (key, value) pairs in [io], stored using just their
+            file offsets for memory compactness. Length is always a power of
+            two. *)
     mutable bucket_count_log2 : int;
-        (** Invariant: equal to [log_2 (Array.length hashset)] *)
+        (** Invariant: equal to [log_2 (Array.length hashtbl)] *)
     mutable scratch_buf : bytes;
     mutable cardinal : int;
   }
@@ -46,7 +47,7 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
   let cardinal t = t.cardinal
 
   let clear_memory t =
-    t.hashset <- [| Small_list.empty |];
+    t.hashtbl <- [| Small_list.empty |];
     t.bucket_count_log2 <- 0;
     t.cardinal <- 0
 
@@ -72,22 +73,22 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
 
   let elt_index t key =
     (* NOTE: we use the _uppermost_ bits of the key hash to index the bucket
-       array, so that the hashset is approximately sorted by key hash (with only
+       array, so that the hashtbl is approximately sorted by key hash (with only
        the entries within each bucket being relatively out of order). *)
     let unneeded_bits = Key.hash_size - t.bucket_count_log2 in
     (Key.hash key lsr unneeded_bits) land ((1 lsl t.bucket_count_log2) - 1)
 
   let resize t =
-    (* Scale the number of hashset buckets. *)
+    (* Scale the number of hashtbl buckets. *)
     t.bucket_count_log2 <- t.bucket_count_log2 + 1;
     let new_bucket_count = 1 lsl t.bucket_count_log2 in
     if new_bucket_count > Sys.max_array_length then
       Fmt.failwith
-        "Log_file.resize: can't construct a hashset with %d buckets \
+        "Log_file.resize: can't construct a hashtbl with %d buckets \
          (Sys.max_array_length = %d)"
         new_bucket_count Sys.max_array_length;
-    let new_hashset = Array.make new_bucket_count Small_list.empty in
-    ArrayLabels.iteri t.hashset ~f:(fun i bucket ->
+    let new_hashtbl = Array.make new_bucket_count Small_list.empty in
+    ArrayLabels.iteri t.hashtbl ~f:(fun i bucket ->
         (* The bindings in this bucket will be split into two new buckets, using
            the next bit of [Key.hash] as a discriminator. *)
         let bucket_2i, bucket_2i_plus_1 =
@@ -98,16 +99,16 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
                  assert (new_index lsr 1 = i);
                  new_index land 1 = 0)
         in
-        new_hashset.(2 * i) <- Small_list.of_list bucket_2i;
-        new_hashset.((2 * i) + 1) <- Small_list.of_list bucket_2i_plus_1);
-    t.hashset <- new_hashset
+        new_hashtbl.(2 * i) <- Small_list.of_list bucket_2i;
+        new_hashtbl.((2 * i) + 1) <- Small_list.of_list bucket_2i_plus_1);
+    t.hashtbl <- new_hashtbl
 
   (** Replace implementation that only updates in-memory state (and doesn't
       write the binding to disk). *)
   let replace_memory t key offset =
-    if t.cardinal > 2 * Array.length t.hashset then resize t;
+    if t.cardinal > 2 * Array.length t.hashtbl then resize t;
     let elt_idx = elt_index t key in
-    let bucket = t.hashset.(elt_idx) in
+    let bucket = t.hashtbl.(elt_idx) in
     let bucket =
       let key_found = ref false in
       let bucket' =
@@ -133,7 +134,7 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
           t.cardinal <- t.cardinal + 1;
           Small_list.cons offset bucket
     in
-    t.hashset.(elt_idx) <- bucket
+    t.hashtbl.(elt_idx) <- bucket
 
   let replace t key value =
     let offset = IO.offset t.io in
@@ -157,12 +158,12 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
       in
       aux 4 16
     in
-    let hashset = Array.make bucket_count Small_list.empty in
+    let hashtbl = Array.make bucket_count Small_list.empty in
     let t =
       {
         io;
         append_io = IO.append io;
-        hashset;
+        hashtbl;
         bucket_count_log2;
         scratch_buf = Bytes.create Entry.encoded_size;
         cardinal;
@@ -173,7 +174,7 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
 
   let find t key =
     let elt_idx = elt_index t key in
-    let bucket = t.hashset.(elt_idx) in
+    let bucket = t.hashtbl.(elt_idx) in
     Small_list.find_map bucket ~f:(fun offset ->
         (* We expect the keys to match most of the time, so we decode the
            value at the same time. *)
@@ -186,17 +187,17 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     | Some x -> x
 
   let fold t ~f ~init =
-    ArrayLabels.fold_left t.hashset ~init ~f:(fun acc bucket ->
+    ArrayLabels.fold_left t.hashtbl ~init ~f:(fun acc bucket ->
         Small_list.fold_left bucket ~init:acc ~f:(fun acc offset ->
             let entry = entry_of_offset t offset in
             f acc entry))
 
   let iter t ~f =
-    ArrayLabels.iter t.hashset ~f:(fun bucket ->
+    ArrayLabels.iter t.hashtbl ~f:(fun bucket ->
         Small_list.iter bucket ~f:(fun offset -> f (entry_of_offset t offset)))
 
   let to_sorted_seq t =
-    Array.to_seq t.hashset
+    Array.to_seq t.hashtbl
     |> Seq.flat_map (fun bucket ->
            let arr =
              Small_list.to_array bucket
