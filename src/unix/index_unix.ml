@@ -90,6 +90,9 @@ module IO : Index.Platform.IO = struct
     if not t.readonly then
       assert (
         let total_length = t.flushed ++ Int63.of_int (Buffer.length t.buf) in
+        (* NOTE: we don't require that [end_of_value <= total_length] in order
+           to support short reads on read-write handles (see comment about this
+           case below). *)
         off <= total_length);
 
     if t.readonly || end_of_value <= t.flushed then
