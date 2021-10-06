@@ -273,7 +273,7 @@ module Readonly = struct
 
   let readonly_clear () =
     let check_no_index_entry index k =
-      Alcotest.check_raises (Fmt.strf "Find %s key after clearing." k) Not_found
+      Alcotest.check_raises (Fmt.str "Find %s key after clearing." k) Not_found
         (fun () -> ignore_value (Index.find index k))
     in
     let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
