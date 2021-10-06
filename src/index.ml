@@ -203,13 +203,12 @@ struct
 
   (** Extract [log] and [log_async] for (private) tests. *)
 
-  let to_list t =
-    Log_file.to_sorted_seq t
-    |> Seq.map (fun (e : Entry.t) -> (e.key, e.value))
-    |> List.of_seq
-
   let log_file_to_list msg log =
-    let x = to_list log in
+    let x =
+      Log_file.to_sorted_seq log
+      |> Seq.map (fun (e : Entry.t) -> (e.key, e.value))
+      |> List.of_seq
+    in
     let y = ref [] in
     IO.iter
       (fun _ (e : Entry.t) -> y := (e.key, e.value) :: !y)
