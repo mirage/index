@@ -864,7 +864,7 @@ struct
       ?(force = false) t =
     let merge_started = Clock.counter () in
     let merge_id = merge_counter () in
-    let msg = Fmt.strf "merge { id=%d }" merge_id in
+    let msg = Fmt.str "merge { id=%d }" merge_id in
     Semaphore.acquire msg t.merge_lock;
     let merge_lock_wait = Clock.count merge_started in
     Log.info (fun l ->
