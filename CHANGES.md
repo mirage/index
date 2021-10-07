@@ -4,6 +4,11 @@
 
 - Fix stats recording in `Raw.unsafe_write` (#351)
 
+## Changed
+
+- Changed the implementation of the write-ahead log to significantly reduce its
+  memory usage (at the cost of some additional disk IO). (#355)
+
 # 1.4.1 (2021-07-16)
 
 ## Fixed

@@ -85,8 +85,44 @@ module IO : Index.Platform.IO = struct
   let append t buf = append_substring t buf ~off:0 ~len:(String.length buf)
 
   let read t ~off ~len buf =
-    if not t.readonly then assert (t.header ++ off <= t.flushed);
-    Raw.unsafe_read t.raw ~off:(t.header ++ off) ~len buf
+    let off = t.header ++ off in
+    let end_of_value = off ++ Int63.of_int len in
+    if not t.readonly then
+      assert (
+        let total_length = t.flushed ++ Int63.of_int (Buffer.length t.buf) in
+        (* NOTE: we don't require that [end_of_value <= total_length] in order
+           to support short reads on read-write handles (see comment about this
+           case below). *)
+        off <= total_length);
+
+    if t.readonly || end_of_value <= t.flushed then
+      (* Value is entirely on disk *)
+      Raw.unsafe_read t.raw ~off ~len buf
+    else
+      (* Must read some data not yet flushed to disk *)
+      let requested_from_disk = max 0 (Int63.to_int (t.flushed -- off)) in
+      let requested_from_buffer = len - requested_from_disk in
+      let read_from_disk =
+        if requested_from_disk > 0 then (
+          let read = Raw.unsafe_read t.raw ~off ~len:requested_from_disk buf in
+          assert (read = requested_from_disk);
+          read)
+        else 0
+      in
+      let read_from_buffer =
+        let src_off = max 0 (Int63.to_int (off -- t.flushed)) in
+        let len =
+          (* The user may request more bytes than actually exist, in which case
+             we read to the end of the write buffer and return a size less than
+             [len]. *)
+          let available_length = Buffer.length t.buf - src_off in
+          min available_length requested_from_buffer
+        in
+        Buffer.blit ~src:t.buf ~src_off ~dst:buf ~dst_off:requested_from_disk
+          ~len;
+        len
+      in
+      read_from_disk + read_from_buffer
 
   let offset t = t.offset
 
@@ -196,7 +232,7 @@ module IO : Index.Platform.IO = struct
       raw;
       readonly;
       fan_size;
-      buf = Buffer.create (4 * 1024);
+      buf = Buffer.create (if readonly then 0 else 4 * 1024);
       flushed = header ++ offset;
       flush_callback;
     }

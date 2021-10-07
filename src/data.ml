@@ -52,6 +52,7 @@ module Entry = struct
 
     val v : key -> value -> t
     val encoded_size : int
+    val encoded_sizeL : int63
     val decode : string -> int -> t
     val decode_key : string -> int -> key * int
     val decode_value : string -> int -> value
@@ -67,6 +68,7 @@ module Entry = struct
 
     let v key value = { key; key_hash = K.hash key; value }
     let encoded_size = K.encoded_size + V.encoded_size
+    let encoded_sizeL = Int63.of_int encoded_size
 
     let decode string off =
       let key = K.decode string off in
