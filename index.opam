@@ -47,3 +47,8 @@ run-time can share a common singleton instance.
 
 Index supports multiple-reader/single-writer access. Concurrent access
 is safely managed using lock files."""
+
+pin-depends: [
+  [ "repr.dev" "git+https://github.com/mirage/repr#17623decc3d499b83da1f5d71b298681100539a3" ]
+  [ "ppx_repr.dev" "git+https://github.com/mirage/repr#17623decc3d499b83da1f5d71b298681100539a3" ]
+]
