@@ -15,6 +15,7 @@
  *)
 
 open Common
+module Int63 = Optint.Int63
 
 module Encoding = struct
   module Hash = Tezos_context_hash.Hash
@@ -34,27 +35,12 @@ module Encoding = struct
       v
   end
 
-  module Int63 = struct
-    include Optint.Int63
-
-    (* TODO: upstream this to Repr *)
-    let t : t Repr.t =
-      let open Repr in
-      (map int64) of_int64 to_int64
-      |> like ~pp:Optint.Int63.pp ~equal:(stage Optint.Int63.equal)
-           ~compare:(stage Optint.Int63.compare)
-  end
-
-  type int63 = Int63.t [@@deriving repr]
-
   module Val = struct
-    type t = int63 * int * char [@@deriving repr]
+    type t = Int63.t * int * char [@@deriving repr]
 
-    let to_bin_string =
-      Repr.(unstage (to_bin_string (triple int63_t int32 char)))
-
+    let to_bin_string = Repr.(unstage (to_bin_string (triple int63 int32 char)))
     let encode (off, len, kind) = to_bin_string (off, Int32.of_int len, kind)
-    let decode_bin = Repr.(unstage (decode_bin (triple int63_t int32 char)))
+    let decode_bin = Repr.(unstage (decode_bin (triple int63 int32 char)))
 
     let decode s off =
       let off, len, kind = snd (decode_bin s off) in
@@ -85,7 +71,6 @@ let decoded_seq_of_encoded_chan_with_prefixes :
   in
   Seq.unfold produce_op ()
 
-type int63 = Encoding.int63 [@@deriving repr]
 type config = { nb_ops : int; trace_data_file : string; root : string }
 
 module Trace = struct
@@ -98,7 +83,7 @@ module Trace = struct
     | Find of key * bool
     | Ro_mem of key * bool
     | Ro_find of key * bool
-    | Add of key * (int63 * int * char)
+    | Add of key * (Int63.t * int * char)
   [@@deriving repr]
 
   let open_ops_sequence path : op Seq.t =
@@ -147,7 +132,7 @@ end
 module Bench_suite
     (Store : S
                with type key = Encoding.Hash.t
-                and type value = int63 * int * char) =
+                and type value = Int63.t * int * char) =
 struct
   let key_to_hash k =
     match Encoding.Hash.of_string k with
