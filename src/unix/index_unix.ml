@@ -426,6 +426,7 @@ module Syscalls = Syscalls
 module Private = struct
   module IO = IO
   module Raw = Raw
+  module Thread = Thread
 
   module Make (K : Index.Key.S) (V : Index.Value.S) =
     Index.Private.Make (K) (V) (Platform)
