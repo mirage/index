@@ -35,6 +35,7 @@ depends: [
   "alcotest" {with-test}
   "crowbar"  {with-test & >= "0.2"}
   "re"       {with-test}
+  "lru"      {>= "0.3.0"}
 ]
 synopsis: "A platform-agnostic multi-level index for OCaml"
 description:"""

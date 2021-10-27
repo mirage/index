@@ -11,6 +11,8 @@ type t = {
   mutable replace_durations : float list;
   mutable nb_sync : int;
   mutable time_sync : float;
+  mutable lru_hits : int;
+  mutable lru_misses : int;
 }
 (** The type for stats for an index I.
 
@@ -34,6 +36,8 @@ val add_write : int -> unit
 val incr_nb_merge : unit -> unit
 val incr_nb_replace : unit -> unit
 val incr_nb_sync : unit -> unit
+val incr_nb_lru_hits : unit -> unit
+val incr_nb_lru_misses : unit -> unit
 
 module Make (_ : Platform.CLOCK) : sig
   val start_replace : unit -> unit

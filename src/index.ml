@@ -59,6 +59,40 @@ struct
 
   module Log_file = Log_file.Make (IO) (K) (V)
 
+  module Lru : sig
+    type t
+
+    val create : int -> t
+    val add : t -> key -> value -> unit
+    val find : t -> key -> value option
+    val clear : t -> unit
+  end = struct
+    module Lru =
+      Lru.M.Make
+        (K)
+        (struct
+          type t = V.t
+
+          let weight _ = 1
+        end)
+
+    type t = Lru.t ref
+
+    let create n = ref (Lru.create n)
+    let find t k = Lru.find k !t
+
+    (* NOTE: the provided [add] implementation never discards elements from the
+       LRU, and the user must manually discard any excess elements using [trim].
+       For safety, we shadow [add] with a re-implementation that always trims
+       after adding. *)
+    let add t k v =
+      let t = !t in
+      Lru.add k v t;
+      Lru.trim t
+
+    let clear t = t := Lru.create (Lru.capacity !t)
+  end
+
   module Entry = struct
     include Log_file.Entry
     module Key = K
@@ -88,6 +122,7 @@ struct
 
   type config = {
     log_size : int;  (** The log maximal size before triggering a [merge]. *)
+    lru_size : int;
     readonly : bool;
     fresh : bool;
         (** Whether the index was created from scratch, erasing existing data,
@@ -125,6 +160,7 @@ struct
             operation. It is only present when a merge is ongoing. *)
     mutable open_instances : int;
         (** The number of open instances that are shared through the [Cache.t]. *)
+    mutable lru : Lru.t;
     writer_lock : IO.Lock.t option;
         (** A lock that prevents multiple RW instances to be open at the same
             time. *)
@@ -163,6 +199,7 @@ struct
         t.generation <- Int63.succ t.generation;
         let log = Option.get t.log in
         let hook () = hook `IO_clear in
+        t.lru <- Lru.create t.config.lru_size;
         Log_file.clear ~generation:t.generation ~reopen:true ~hook log;
         Option.iter
           (fun l -> Log_file.clear ~generation:t.generation ~reopen:false l)
@@ -342,6 +379,7 @@ struct
           hook `Reload_log;
           t.generation <- h.generation;
           Log_file.close log;
+          Lru.clear t.lru;
           t.log <- try_load_log t (Layout.log ~root:t.root);
           (* The log file is never removed (even by clear). *)
           assert (t.log <> None);
@@ -419,10 +457,22 @@ struct
       find_if_exists ~name:"index" ~find:interpolation_search t.index
     in
     Semaphore.with_acquire "find_instance" t.rename_lock @@ fun () ->
-    match find_log_async () with
-    | e -> e
-    | exception Not_found -> (
-        match find_log () with e -> e | exception Not_found -> find_index ())
+    match Lru.find t.lru key with
+    | Some e ->
+        Stats.incr_nb_lru_hits ();
+        e
+    | None ->
+        Stats.incr_nb_lru_misses ();
+        let e =
+          match find_log_async () with
+          | e -> e
+          | exception Not_found -> (
+              match find_log () with
+              | e -> e
+              | exception Not_found -> find_index ())
+        in
+        Lru.add t.lru key e;
+        e
 
   let find t key =
     let t = check_open t in
@@ -463,7 +513,7 @@ struct
         IO.clear ~generation ~reopen:false log_async
 
   let v_no_cache ?(flush_callback = fun () -> ()) ~throttle ~fresh ~readonly
-      ~log_size root =
+      ?(lru_size = 30_000) ~log_size root =
     Log.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
@@ -473,6 +523,7 @@ struct
     let config =
       {
         log_size = log_size * Entry.encoded_size;
+        lru_size;
         readonly;
         fresh;
         throttle;
@@ -551,6 +602,7 @@ struct
       log_async = None;
       root;
       index;
+      lru = Lru.create lru_size;
       open_instances = 1;
       merge_lock = Semaphore.make true;
       rename_lock = Semaphore.make true;
@@ -564,11 +616,12 @@ struct
   let empty_cache = Cache.create
 
   let v ?(flush_callback = fun () -> ()) ?(cache = empty_cache ())
-      ?(fresh = false) ?(readonly = false) ?(throttle = `Block_writes) ~log_size
-      root =
+      ?(fresh = false) ?(readonly = false) ?(throttle = `Block_writes)
+      ?(lru_size = 30_000) ~log_size root =
     let new_instance () =
       let instance =
-        v_no_cache ~flush_callback ~fresh ~readonly ~log_size ~throttle root
+        v_no_cache ~flush_callback ~fresh ~readonly ~log_size ~lru_size
+          ~throttle root
       in
       if readonly then sync_instance instance;
       Cache.add cache (root, readonly) instance;
@@ -932,6 +985,7 @@ struct
             match t.log_async with Some log -> log | None -> Option.get t.log
           in
           Log_file.replace log key value;
+          Lru.add t.lru key value;
           let offset = IO.offset (Log_file.io log) in
           Int63.compare offset (Int63.of_int t.config.log_size) > 0)
     in

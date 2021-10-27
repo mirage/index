@@ -11,6 +11,8 @@ type t = {
   mutable replace_durations : float list;
   mutable nb_sync : int;
   mutable time_sync : float;
+  mutable lru_hits : int;
+  mutable lru_misses : int;
 }
 
 let fresh_stats () =
@@ -25,6 +27,8 @@ let fresh_stats () =
     replace_durations = [];
     nb_sync = 0;
     time_sync = 0.0;
+    lru_hits = 0;
+    lru_misses = 0;
   }
 
 let stats = fresh_stats ()
@@ -40,7 +44,9 @@ let reset_stats () =
   stats.nb_replace <- 0;
   stats.replace_durations <- [];
   stats.nb_sync <- 0;
-  stats.time_sync <- 0.0
+  stats.time_sync <- 0.0;
+  stats.lru_hits <- 0;
+  stats.lru_misses <- 0
 
 let incr_bytes_read n = stats.bytes_read <- stats.bytes_read + n
 let incr_bytes_written n = stats.bytes_written <- stats.bytes_written + n
@@ -49,6 +55,8 @@ let incr_nb_writes () = stats.nb_writes <- succ stats.nb_writes
 let incr_nb_merge () = stats.nb_merge <- succ stats.nb_merge
 let incr_nb_replace () = stats.nb_replace <- succ stats.nb_replace
 let incr_nb_sync () = stats.nb_sync <- succ stats.nb_sync
+let incr_nb_lru_hits () = stats.nb_sync <- succ stats.nb_sync
+let incr_nb_lru_misses () = stats.nb_sync <- succ stats.nb_sync
 
 let add_read n =
   incr_bytes_read n;
