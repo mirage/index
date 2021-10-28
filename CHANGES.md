@@ -1,3 +1,9 @@
+# Unreleased
+
+## Changed
+
+- The benchmarks now use `tezos-base58` instead of `tezos-context-hash` (#367)
+
 # 1.4.2 (2021-10-15)
 
 ## Fixed

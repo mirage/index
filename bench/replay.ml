@@ -18,7 +18,47 @@ open Common
 module Int63 = Optint.Int63
 
 module Encoding = struct
-  module Hash = Tezos_context_hash.Hash
+  module Hash : sig
+    type t
+
+    val t : t Repr.t
+    val short_hash : t -> int
+    val hash_size : int
+    val hash : string Digestif.iter -> t
+  end = struct
+    module H = Digestif.Make_BLAKE2B (struct
+      let digest_size = 32
+    end)
+
+    type t = H.t
+
+    let prefix = "\079\199" (* Co(52) *)
+
+    let pp ppf t =
+      let s = H.to_raw_string t in
+      Tezos_base58.pp ppf (Tezos_base58.encode ~prefix s)
+
+    let of_b58 : string -> (t, [ `Msg of string ]) result =
+     fun x ->
+      match Tezos_base58.decode ~prefix (Base58 x) with
+      | Some x -> Ok (H.of_raw_string x)
+      | None -> Error (`Msg "Failed to read b58check_encoding data")
+
+    let short_hash_string = Repr.(unstage (short_hash string))
+    let short_hash ?seed t = short_hash_string ?seed (H.to_raw_string t)
+
+    let t : t Repr.t =
+      Repr.map ~pp ~of_string:of_b58
+        Repr.(string_of (`Fixed H.digest_size))
+        ~short_hash H.of_raw_string H.to_raw_string
+
+    let short_hash =
+      let f = short_hash_string ?seed:None in
+      fun t -> f (H.to_raw_string t)
+
+    let hash_size = H.digest_size
+    let hash = H.digesti_string
+  end
 
   module Key : Index.Key.S with type t = Hash.t = struct
     type t = Hash.t [@@deriving repr]
@@ -129,13 +169,15 @@ module Index = struct
   let close t = Index.close t
 end
 
+let hash_of_string = Repr.of_string Encoding.Hash.t
+
 module Bench_suite
     (Store : S
                with type key = Encoding.Hash.t
                 and type value = Int63.t * int * char) =
 struct
   let key_to_hash k =
-    match Encoding.Hash.of_string k with
+    match hash_of_string k with
     | Ok k -> k
     | Error (`Msg m) -> Fmt.failwith "error decoding hash %s" m
 
