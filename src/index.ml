@@ -68,6 +68,8 @@ struct
     let to_value { value; _ } = value
   end
 
+  module IOArray = Io_array.Make (IO) (Entry)
+
   module Stats = struct
     include Stats.Make (Clock)
     include Stats
@@ -100,6 +102,7 @@ struct
 
   type index = {
     io : IO.t;  (** The disk file handler. *)
+    array : IOArray.t;
     fan_out : [ `Read ] Fan.t;
         (** The fan-out, used to map keys to small intervals in the file, in
             constant time. This is an in-memory object, also encoded in the
@@ -296,7 +299,7 @@ struct
         let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
         (* We maintain that [index] is [None] if the file is empty. *)
         if IO.offset io = Int63.zero then t.index <- None
-        else t.index <- Some { fan_out; io }
+        else t.index <- Some { fan_out; io; array = IOArray.v io }
 
   (** Syncs an instance entirely, by checking on-disk changes for [log], [sync],
       and [log_async]. *)
@@ -362,8 +365,6 @@ struct
 
   (** {1 Find and Mem}*)
 
-  module IOArray = Io_array.Make (IO) (Entry)
-
   module Search =
     Search.Make (Entry) (IOArray)
       (struct
@@ -397,7 +398,7 @@ struct
       Int63.
         (div low_bytes Entry.encoded_sizeL, div high_bytes Entry.encoded_sizeL)
     in
-    Search.interpolation_search (IOArray.v index.io) key ~low ~high
+    Search.interpolation_search index.array key ~low ~high
 
   (** Finds the value associated to [key] in [t]. In order, checks in
       [log_async] (in memory), then [log] (in memory), then [index] (on disk). *)
@@ -538,7 +539,7 @@ struct
             let fan_out =
               Fan.import ~hash_size:K.hash_size (IO.get_fanout io)
             in
-            Some { fan_out; io })
+            Some { fan_out; io; array = IOArray.v io })
         else (
           Log.debug (fun l ->
               l "[%s] no index file detected." (Filename.basename root));
@@ -775,7 +776,7 @@ struct
         (`Aborted, Mtime.Span.zero)
     | `Index_io io ->
         let fan_out = Fan.finalize fan_out in
-        let index = { io; fan_out } in
+        let index = { io; fan_out; array = IOArray.v io } in
         IO.set_fanout merge (Fan.export index.fan_out);
         let before_rename_lock = Clock.counter () in
         let rename_lock_duration =

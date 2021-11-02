@@ -42,10 +42,27 @@ module Make (IO : Io.S) (Elt : ELT) :
 
   type io = IO.t
   type elt = Elt.t
-  type buffer = { buf : bytes; low_off : int63; high_off : int63 }
-  type t = { io : IO.t; mutable buffer : buffer option }
 
-  let v io = { io; buffer = None }
+  module Buffers =
+    Lru.M.Make
+      (struct
+        type t = int63 * int63
+
+        let equal = ( = )
+        let hash = Hashtbl.hash
+      end)
+      (struct
+        type t = bytes
+
+        let weight _ = 1
+      end)
+
+  type large = { io : IO.t; buffers : Buffers.t }
+  type small = { low : int63; high : int63; buf : bytes }
+  type t = Large of large | Small of small
+
+  let cache_len = 100_000
+  let v io = Large { io; buffers = Buffers.create cache_len }
 
   let get_entry_from_io io off =
     let buf = Bytes.create Elt.encoded_size in
@@ -53,76 +70,53 @@ module Make (IO : Io.S) (Elt : ELT) :
     assert (n = Elt.encoded_size);
     Elt.decode (Bytes.unsafe_to_string buf) 0
 
-  let get_entry_from_buffer buf off =
-    let buf_off = Int63.(to_int_exn (off - buf.low_off)) in
-    assert (buf_off <= Bytes.length buf.buf);
-    Elt.decode (Bytes.unsafe_to_string buf.buf) buf_off
-
-  let is_in_buffer t off =
-    match t.buffer with
-    | None -> false
-    | Some b ->
-        Int63.compare off b.low_off >= 0 && Int63.compare off b.high_off <= 0
+  let get_entry_from_buffer ~low buf off =
+    let buf_off = Int63.(to_int_exn (off - low)) in
+    assert (Bytes.length buf - buf_off >= Elt.encoded_size);
+    Elt.decode (Bytes.unsafe_to_string buf) buf_off
 
   let get t i =
     let off = Int63.(i * Elt.encoded_sizeL) in
-    match t.buffer with
-    | Some b when is_in_buffer t off -> (
-        try get_entry_from_buffer b off with _ -> assert false)
-    | _ -> get_entry_from_io t.io off
+    match t with
+    | Small t ->
+        assert (t.low <= off && off <= t.high);
+        get_entry_from_buffer ~low:t.low t.buf off
+    | Large t -> get_entry_from_io t.io off
 
-  let length t = Int63.div (IO.offset t.io) Elt.encoded_sizeL
+  let length t =
+    let len =
+      match t with
+      | Small t -> Int63.(t.low + Int63.of_int (Bytes.length t.buf))
+      | Large t -> IO.offset t.io
+    in
+    Int63.div len Elt.encoded_sizeL
 
-  let max_buffer_size =
-    (* The prefetched area should not exceed 4096 in most cases, thanks to the
-       fan out. However, if the hash function is not well distributed, some
-       exceptions might happen where the prefetched area actually exceeds 4096.
-       As long as this excess is reasonable (x8), we still want to prefetch. *)
-    8 * 4096
-
-  let buf = Bytes.create max_buffer_size
-
-  let set_buffer t ~low ~high =
-    let range = Elt.encoded_size * (1 + Int63.(to_int_exn (high - low))) in
-    let low_off = Int63.mul low Elt.encoded_sizeL in
-    let high_off = Int63.mul high Elt.encoded_sizeL in
-    let n = IO.read t.io ~off:low_off ~len:range buf in
-    assert (n = range);
-    t.buffer <- Some { buf; low_off; high_off }
-
-  let pre_fetch t ~low ~high =
-    let range = Elt.encoded_size * (1 + Int63.(to_int_exn (high - low))) in
-    if Int63.compare low high > 0 then
-      Log.warn (fun m ->
-          m "Requested pre-fetch region is empty: [%a, %a]" Int63.pp low
-            Int63.pp high)
-    else if range > max_buffer_size then
-      Log.warn (fun m ->
-          m "Requested pre-fetch [%a, %a] is larger than %d" Int63.pp low
-            Int63.pp high max_buffer_size)
+  let with_buffer t (low, high) =
+    let range = Int63.(to_int_exn (high - low)) in
+    if range <= 0 then Large t
     else
-      match t.buffer with
-      | Some b ->
-          let low_buf, high_buf =
-            Int63.
-              (div b.low_off Elt.encoded_sizeL, div b.high_off Elt.encoded_sizeL)
-          in
-          if low >= low_buf && high <= high_buf then
-            Log.debug (fun m ->
-                m
-                  "Pre-existing buffer [%a, %a] encloses requested pre-fetch \
-                   [%a, %a]"
-                  Int63.pp low_buf Int63.pp high_buf Int63.pp low Int63.pp high)
-          else (
-            Log.warn (fun m ->
-                m
-                  "Current buffer [%a, %a] insufficient. Prefetching in range \
-                   [%a, %a]"
-                  Int63.pp low_buf Int63.pp high_buf Int63.pp low Int63.pp high);
-            set_buffer t ~low ~high)
-      | None ->
-          Log.debug (fun m ->
-              m "No existing buffer. Prefetching in range [%a, %a]" Int63.pp low
+      let buf = Bytes.create range in
+      let n = IO.read t.io ~off:low ~len:range buf in
+      assert (n = range);
+      Buffers.add (low, high) buf t.buffers;
+      Buffers.trim t.buffers;
+      let buffer = { low; high; buf } in
+      Small buffer
+
+  let sub t ~low ~high =
+    match t with
+    | Small _ as t -> t
+    | Large t as l -> (
+        if Int63.compare low high > 0 then (
+          Log.warn (fun m ->
+              m "Requested pre-fetch region is empty: [%a, %a]" Int63.pp low
                 Int63.pp high);
-          set_buffer t ~low ~high
+          l)
+        else
+          let low = Int63.(low * Elt.encoded_sizeL) in
+          let high = Int63.((high + Int63.of_int 1) * Elt.encoded_sizeL) in
+          let range = (low, high) in
+          match Buffers.find range t.buffers with
+          | Some buf -> Small { low; high; buf }
+          | _ -> with_buffer t range)
 end

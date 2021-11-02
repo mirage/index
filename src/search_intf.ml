@@ -23,7 +23,7 @@ module type ARRAY = sig
 
   val get : t -> int63 -> elt
   val length : t -> int63
-  val pre_fetch : t -> low:int63 -> high:int63 -> unit
+  val sub : t -> low:int63 -> high:int63 -> t
 end
 
 module type ENTRY = sig

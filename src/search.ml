@@ -44,10 +44,10 @@ module Make
     let ( > ) a b = compare a b > 0
   end
 
-  let look_around array key key_metric index =
+  let look_around ~low ~high array key key_metric index =
     let rec search (op : int63 -> int63) curr =
       let i = op curr in
-      if i < Int63.zero || i >= Array.length array then raise Not_found
+      if i < low || i > high || i >= Array.length array then raise Not_found
       else
         let e = array.(i) in
         let e_metric = Metric.of_entry e in
@@ -63,10 +63,10 @@ module Make
   let interpolation_search array key ~low ~high =
     let key_metric = Metric.of_key key in
     (* The core of the search *)
-    let rec search low high lowest_entry highest_entry =
+    let rec search array low high lowest_entry highest_entry =
       if high < low then raise Not_found
-      else (
-        Array.pre_fetch array ~low ~high;
+      else
+        let array = Array.sub array ~low ~high in
         let lowest_entry = Lazy.force lowest_entry in
         if high = low then
           if Key.(key = Entry.to_key lowest_entry) then
@@ -88,18 +88,19 @@ module Make
               let e_metric = Metric.of_entry e in
               if Metric.(key_metric = e_metric) then
                 if Key.(key = Entry.to_key e) then Entry.to_value e
-                else look_around array key key_metric next_index
+                else look_around array ~low ~high key key_metric next_index
               else if Metric.(key_metric > e_metric) then
-                (search [@tailcall])
+                (search [@tailcall]) array
                   Int63.(succ next_index)
                   high
                   (lazy array.(Int63.(succ next_index)))
                   (Lazy.from_val highest_entry)
               else
-                (search [@tailcall]) low (Int63.pred next_index)
+                (search [@tailcall]) array low (Int63.pred next_index)
                   (Lazy.from_val lowest_entry)
-                  (lazy array.(Int63.(pred next_index))))
+                  (lazy array.(Int63.(pred next_index)))
     in
     if high < Int63.zero then raise Not_found
-    else (search [@tailcall]) low high (lazy array.(low)) (lazy array.(high))
+    else
+      (search [@tailcall]) array low high (lazy array.(low)) (lazy array.(high))
 end

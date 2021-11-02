@@ -23,7 +23,7 @@ module EltArray = struct
 
   let get t i = t.(Int63.to_int i)
   let length t = Array.length t |> Int63.of_int
-  let pre_fetch _ ~low:_ ~high:_ = ()
+  let sub t ~low:_ ~high:_ = t
 end
 
 (* Metric equal to an integer key *)

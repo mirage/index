@@ -63,7 +63,7 @@ let read_sequential_prefetch () =
   let size = 1000 in
   let io = fresh_io "read_sequential_prefetch" in
   let mem_arr, io_arr = populate_random ~size io in
-  IOArray.pre_fetch io_arr ~low:Int63.zero ~high:(Int63.of_int 999);
+  let io_arr = IOArray.sub io_arr ~low:Int63.zero ~high:(Int63.of_int 999) in
 
   (* Read the arrays backwards *)
   for i = size - 1 to 0 do
