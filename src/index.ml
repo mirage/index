@@ -79,7 +79,15 @@ struct
     type t = Lru.t ref
 
     let create n = ref (Lru.create n)
-    let find t k = Lru.find k !t
+
+    let find t k =
+      let result = Lru.find k !t in
+      let () =
+        match result with
+        | None -> Stats.incr_nb_lru_misses ()
+        | Some _ -> Stats.incr_nb_lru_hits ()
+      in
+      result
 
     (* NOTE: the provided [add] implementation never discards elements from the
        LRU, and the user must manually discard any excess elements using [trim].
@@ -458,11 +466,8 @@ struct
     in
     Semaphore.with_acquire "find_instance" t.rename_lock @@ fun () ->
     match Lru.find t.lru key with
-    | Some e ->
-        Stats.incr_nb_lru_hits ();
-        e
+    | Some e -> e
     | None ->
-        Stats.incr_nb_lru_misses ();
         let e =
           match find_log_async () with
           | e -> e
