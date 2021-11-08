@@ -924,8 +924,9 @@ module Filter = struct
   (** Test that all bindings are removed when using [filter] with a false
       predicate. *)
   let filter_all () =
-    let* Context.{ rw; _ } = Context.with_full_index () in
+    let* Context.{ rw; tbl; _ } = Context.with_full_index () in
     Index.filter rw (fun _ -> false);
+    Hashtbl.iter (fun k _ -> Index.check_not_found rw k) tbl;
     check_equivalence rw (Hashtbl.create 0)
 
   (** Test that [filter] can be used to remove exactly a single binding. *)
