@@ -55,8 +55,8 @@ let incr_nb_writes () = stats.nb_writes <- succ stats.nb_writes
 let incr_nb_merge () = stats.nb_merge <- succ stats.nb_merge
 let incr_nb_replace () = stats.nb_replace <- succ stats.nb_replace
 let incr_nb_sync () = stats.nb_sync <- succ stats.nb_sync
-let incr_nb_lru_hits () = stats.nb_sync <- succ stats.nb_sync
-let incr_nb_lru_misses () = stats.nb_sync <- succ stats.nb_sync
+let incr_nb_lru_hits () = stats.lru_hits <- succ stats.lru_hits
+let incr_nb_lru_misses () = stats.lru_misses <- succ stats.lru_misses
 
 let add_read n =
   incr_bytes_read n;
