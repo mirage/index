@@ -66,6 +66,7 @@ end) : sig
 
   val with_empty_index :
     ?log_size:int ->
+    ?lru_size:int ->
     ?flush_callback:(unit -> unit) ->
     ?throttle:[ `Overcommit_memory | `Block_writes ] ->
     unit ->
@@ -76,6 +77,7 @@ end) : sig
 
   val with_full_index :
     ?log_size:int ->
+    ?lru_size:int ->
     ?flush_callback:(unit -> unit) ->
     ?throttle:[ `Overcommit_memory | `Block_writes ] ->
     ?size:int ->

@@ -513,7 +513,7 @@ struct
         IO.clear ~generation ~reopen:false log_async
 
   let v_no_cache ?(flush_callback = fun () -> ()) ~throttle ~fresh ~readonly
-      ?(lru_size = 30_000) ~log_size root =
+      ~lru_size ~log_size root =
     Log.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
