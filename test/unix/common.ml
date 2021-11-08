@@ -25,6 +25,7 @@ module Key = struct
   include Index.Key.String_fixed (String_size)
 
   let v = random_string
+  let pp = Fmt.Dump.string
 end
 
 module Value = struct
@@ -32,6 +33,7 @@ module Value = struct
 
   let v = random_string
   let equal = String.equal
+  let pp = Fmt.Dump.string
 end
 
 type binding = Key.t * Value.t

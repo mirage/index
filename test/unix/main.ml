@@ -1057,6 +1057,7 @@ let () =
       ("io_array", Io_array.tests);
       ("merge", Force_merge.tests);
       ("live", Live.tests);
+      ("lru", Test_lru.tests);
       ("on restart", DuplicateInstance.tests);
       ("readonly", Readonly.tests);
       ("close", Close.tests);
