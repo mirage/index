@@ -837,6 +837,9 @@ struct
               IO.rename ~src:merge ~dst:index.io;
               t.index <- Some index;
               t.generation <- generation;
+              (* The filter may have removed some of the bindings that exist in
+                 the LRU. We over-approximate by clearing the entire thing. *)
+              if Option.is_some filter then Lru.clear t.lru;
               Log_file.clear ~generation ~reopen:true log;
               hook `After_clear;
               let log_async = Option.get t.log_async in

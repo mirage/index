@@ -943,6 +943,7 @@ module Filter = struct
     let (_ : Value.t) = Index.find rw k in
     Hashtbl.remove tbl k;
     Index.filter rw (fun (k', _) -> not (String.equal k k'));
+    Index.check_not_found rw k;
     check_equivalence rw tbl
 
   (** Test that the results of [filter] are propagated to a clone which was
