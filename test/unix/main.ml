@@ -276,7 +276,11 @@ module Readonly = struct
       Alcotest.check_raises (Fmt.str "Find %s key after clearing." k) Not_found
         (fun () -> ignore_value (Index.find index k))
     in
-    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
+    let* Context.{ rw; tbl; clone; _ } =
+      (* Ensure that the clear also wipes the LRU *)
+      let lru_size = 10 in
+      Context.with_full_index ~lru_size ()
+    in
     let ro = clone ~readonly:true () in
     Index.clear rw;
     Index.sync ro;
@@ -915,31 +919,37 @@ end
 
 (* Tests of {Index.filter} *)
 module Filter = struct
+  (* Filtering should also affect the in-memory LRU. *)
+  let lru_size = 10
+
   (** Test that all bindings are kept when using [filter] with a true predicate. *)
   let filter_none () =
-    let* Context.{ rw; tbl; _ } = Context.with_full_index () in
+    let* Context.{ rw; tbl; _ } = Context.with_full_index ~lru_size () in
     Index.filter rw (fun _ -> true);
     check_equivalence rw tbl
 
   (** Test that all bindings are removed when using [filter] with a false
       predicate. *)
   let filter_all () =
-    let* Context.{ rw; _ } = Context.with_full_index () in
+    let* Context.{ rw; _ } = Context.with_full_index ~lru_size () in
     Index.filter rw (fun _ -> false);
     check_equivalence rw (Hashtbl.create 0)
 
   (** Test that [filter] can be used to remove exactly a single binding. *)
   let filter_one () =
-    let* Context.{ rw; tbl; _ } = Context.with_full_index () in
+    let* Context.{ rw; tbl; _ } = Context.with_full_index ~lru_size () in
     let k = random_existing_key tbl in
+    (* Ensure the key is cached in the LRU: [filter] must remove it from there too. *)
+    let (_ : Value.t) = Index.find rw k in
     Hashtbl.remove tbl k;
     Index.filter rw (fun (k', _) -> not (String.equal k k'));
+    Index.check_not_found rw k;
     check_equivalence rw tbl
 
   (** Test that the results of [filter] are propagated to a clone which was
       created before. *)
   let clone_then_filter () =
-    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index ~lru_size () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
     let rw2 = clone ~readonly:false () in
@@ -950,7 +960,7 @@ module Filter = struct
   (** Test that the results of [filter] are propagated to a clone which was
       created after. *)
   let filter_then_clone () =
-    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index ~lru_size () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
     Index.filter rw (fun (k', _) -> not (String.equal k k'));
@@ -961,7 +971,7 @@ module Filter = struct
   (** Test that using [filter] doesn't affect fresh clones created later at the
       same path. *)
   let empty_after_filter_and_fresh () =
-    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index () in
+    let* Context.{ rw; tbl; clone; _ } = Context.with_full_index ~lru_size () in
     let k = random_existing_key tbl in
     Hashtbl.remove tbl k;
     Index.filter rw (fun (k', _) -> not (String.equal k k'));
@@ -1047,6 +1057,7 @@ let () =
       ("io_array", Io_array.tests);
       ("merge", Force_merge.tests);
       ("live", Live.tests);
+      ("lru", Test_lru.tests);
       ("on restart", DuplicateInstance.tests);
       ("readonly", Readonly.tests);
       ("close", Close.tests);

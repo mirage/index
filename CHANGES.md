@@ -4,6 +4,9 @@
 
 - The benchmarks now use `tezos-base58` instead of `tezos-context-hash` (#367)
 
+- Add an LRU to cache the result of `Index.find` operations. The default LRU
+  capacity is 30_000 entries. (#366)
+
 # 1.4.2 (2021-10-15)
 
 ## Fixed
