@@ -1,4 +1,4 @@
-# Unreleased
+# 1.4.3 (2021-11-09)
 
 ## Changed
 
