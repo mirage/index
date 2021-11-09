@@ -1,4 +1,4 @@
-# Unreleased
+# 1.5.0 (2021-11-09)
 
 ## Changed
 
