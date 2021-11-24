@@ -15,12 +15,14 @@ module Key : sig
   include Index.Key.S with type t = string
 
   val v : unit -> t
+  val pp : t Fmt.t
 end
 
 module Value : sig
   include Index.Value.S with type t = string
 
   val v : unit -> t
+  val pp : t Fmt.t
 end
 
 module Tbl : sig
@@ -66,6 +68,7 @@ end) : sig
 
   val with_empty_index :
     ?log_size:int ->
+    ?lru_size:int ->
     ?flush_callback:(unit -> unit) ->
     ?throttle:[ `Overcommit_memory | `Block_writes ] ->
     unit ->
@@ -76,6 +79,7 @@ end) : sig
 
   val with_full_index :
     ?log_size:int ->
+    ?lru_size:int ->
     ?flush_callback:(unit -> unit) ->
     ?throttle:[ `Overcommit_memory | `Block_writes ] ->
     ?size:int ->

@@ -49,6 +49,7 @@ module type S = sig
     ?fresh:bool ->
     ?readonly:bool ->
     ?throttle:[ `Overcommit_memory | `Block_writes ] ->
+    ?lru_size:int ->
     log_size:int ->
     string ->
     t
@@ -71,7 +72,10 @@ module type S = sig
         progress. [Block_writes] (the default) blocks any new writes until the
         merge is completed. [Overcommit_memory] does not block but continues to
         fill the (already full) cache.
-      @param log_size the maximum number of bindings in the `log` IO. *)
+      @param log_size the maximum number of bindings in the `log` IO.
+      @param lru_size
+        the maximum number of recently-read index bindings kept in memory.
+        Defaults to 30_000. *)
 
   val clear : t -> unit
   (** [clear t] clears [t] so that there are no more bindings in it. *)

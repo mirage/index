@@ -69,10 +69,7 @@ module Encoding = struct
     let encode = Repr.(unstage (to_bin_string Hash.t))
     let encoded_size = Hash.hash_size
     let decode_bin = Repr.(unstage (decode_bin Hash.t))
-
-    let decode s off =
-      let _, v = decode_bin s off in
-      v
+    let decode s off = decode_bin s (ref off)
   end
 
   module Val = struct
@@ -83,7 +80,7 @@ module Encoding = struct
     let decode_bin = Repr.(unstage (decode_bin (triple int63 int32 char)))
 
     let decode s off =
-      let off, len, kind = snd (decode_bin s off) in
+      let off, len, kind = decode_bin s (ref off) in
       (off, Int32.to_int len, kind)
 
     let encoded_size = (64 / 8) + (32 / 8) + 1
@@ -99,13 +96,15 @@ let decoded_seq_of_encoded_chan_with_prefixes :
     try
       (* First read the prefix *)
       let prefix = really_input_string channel 4 in
-      let len', len = decode_prefix prefix 0 in
-      assert (len' = 4);
+      let pos_ref = ref 0 in
+      let len = decode_prefix prefix pos_ref in
+      assert (!pos_ref = 4);
       let len = Int32.to_int len in
       (* Then read the repr *)
+      pos_ref := 0;
       let content = really_input_string channel len in
-      let len', op = decode_bin content 0 in
-      assert (len' = len);
+      let op = decode_bin content pos_ref in
+      assert (!pos_ref = len);
       Some (op, ())
     with End_of_file -> None
   in
