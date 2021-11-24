@@ -44,3 +44,18 @@ A drawback of this scheme is that as the data becomes larger, the time to merge 
 ## Blocking merges
 
 Eventually, the index data gets sufficiently large that the "log_async" becomes full before the merge completes. At this point Index will block, waiting for the merge of the log to complete. When the merge completes, the full log_async causes another merge to be initiated. Thus, in a high write scenario, with a large data file, merges will be running most of the time, and there will be periodic blocking, waiting for a merge of the log to complete when the log_async is full.
+
+
+
+## Correctness
+
+Some care is taken to try to ensure that the code functions correctly even in the event of a system crash or similar. We consider some of the files involved, and what measures are taken.
+
+**Log files:** Note that these files are updated by appending data to the end. Reads can occur at arbitrary offsets, but writes add data at the end of the file. The log and log_async use the "IO" interface `io_intf.ml`, which is a model of the underlying filesystem (it includes eg a function "rename" to rename a file).  For files, operations are: create (v, v_readonly), get "offset" (which is actually the offset at which new data will be placed when flushed from the buffer), read from offset, and get/set header. 
+
+The header includes a "generation" and an "offset".
+
+Data can be buffered, hence the size of the underlying file (the "raw" file) can be less than the size of the in-memory data.
+
+FIXME not clear what header (int63) is; the offset at the end of the header info? Need to get someone to walk me through the code in index_unix.ml
+
