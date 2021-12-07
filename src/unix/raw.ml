@@ -160,3 +160,33 @@ module Header = struct
     unsafe_write t ~off:Int63.zero (Bytes.unsafe_to_string b) 0
       total_header_length
 end
+
+module Header_prefix = struct
+  type t = { offset : int63; version : string }
+
+  (** NOTE: These functions must be equivalent to calling the above [set] /
+      [get] functions individually. *)
+
+  let total_header_length = 8 + 8
+
+  let read_word buf off =
+    let result = Bytes.create 8 in
+    Bytes.blit buf off result 0 8;
+    Bytes.unsafe_to_string result
+
+  let get t =
+    let header = Bytes.create total_header_length in
+    let n = unsafe_read t ~off:Int63.zero ~len:total_header_length header in
+    assert_read ~len:total_header_length n;
+    let offset = read_word header 0 |> decode_int63 in
+    let version = read_word header 8 in
+    { offset; version }
+
+  let set t { offset; version } =
+    assert (String.length version = 8);
+    let b = Bytes.create total_header_length in
+    Bytes.blit_string (encode_int63 offset) 0 b 0 8;
+    Bytes.blit_string version 0 b 8 8;
+    unsafe_write t ~off:Int63.zero (Bytes.unsafe_to_string b) 0
+      total_header_length
+end
