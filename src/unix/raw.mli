@@ -59,3 +59,18 @@ module Header : sig
   val set : raw -> t -> unit
 end
 with type raw := t
+
+(** Functions for interacting with the header format {i without} the generation
+    number, provided for use in [irmin-pack]. *)
+module Header_prefix : sig
+  type raw
+
+  type t = {
+    offset : int63;  (** The length of the file containing valid data *)
+    version : string;  (** Format version *)
+  }
+
+  val get : raw -> t
+  val set : raw -> t -> unit
+end
+with type raw := t
