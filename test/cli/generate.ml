@@ -8,10 +8,8 @@ let random () =
 
 module Index =
   Index_unix.Make
-    (Index.Key.String_fixed
-       (Size))
-       (Index.Value.String_fixed (Size))
-       (Index.Cache.Noop)
+    (Index.Key.String_fixed (Size)) (Index.Value.String_fixed (Size))
+    (Index.Cache.Noop)
 
 let random () =
   let index = Index.v ~fresh:true ~log_size:100 "data/random" in
