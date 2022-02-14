@@ -1,3 +1,10 @@
+# 1.6.0 (2022-02-12)
+
+## Added
+
+- Added a `Raw.Header_prefix` function, for use by libraries that share the
+  file format used by `index.unix`. (#378)
+
 # 1.5.0 (2021-11-09)
 
 ## Changed
