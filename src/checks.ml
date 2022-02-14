@@ -157,10 +157,6 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
   module Cli = struct
     open Cmdliner
 
-    let deprecated_info = (Term.info [@alert "-deprecated"])
-    let deprecated_exit = (Term.exit [@alert "-deprecated"])
-    let deprecated_eval_choice = (Term.eval_choice [@alert "-deprecated"])
-
     let reporter =
       let pp_header ppf = function
         | Logs.App, header ->
@@ -171,26 +167,24 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
       Logs_fmt.reporter ~pp_header ()
 
     let main () : empty =
-      let default =
-        let default_info =
-          let doc = "Check and repair Index data-stores." in
-          deprecated_info ~doc "index-fsck"
-        in
-        Term.(ret (const (`Help (`Auto, None))), default_info)
+      let default = Term.(ret (const (`Help (`Auto, None)))) in
+      let info =
+        let doc = "Check and repair Index data-stores." in
+        Cmd.info ~doc "index-fsck"
       in
-      Term.(
-        deprecated_eval_choice default
-          [
-            ( Stat.term $ Log.setup_term ~reporter (module Clock),
-              deprecated_info
-                ~doc:"Print high-level statistics about the store." "stat" );
-            ( Integrity_check.term $ Log.setup_term ~reporter (module Clock),
-              deprecated_info
-                ~doc:"Search the store for integrity faults and corruption."
-                "integrity-check" );
-          ]
-        |> (deprecated_exit : unit result -> _));
-      assert false
+      let commands =
+        [
+          ( Term.(Stat.term $ Log.setup_term ~reporter (module Clock)),
+            Cmd.info ~doc:"Print high-level statistics about the store." "stat"
+          );
+          ( Term.(Integrity_check.term $ Log.setup_term ~reporter (module Clock)),
+            Cmd.info
+              ~doc:"Search the store for integrity faults and corruption."
+              "integrity-check" );
+        ]
+      in
+      let commands = List.map (fun (term, info) -> Cmd.v info term) commands in
+      exit @@ Cmd.eval (Cmd.group ~default info commands)
   end
 
   let cli = Cli.main
