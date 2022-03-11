@@ -4,6 +4,11 @@
 #include <caml/signals.h>
 #include <caml/unixsupport.h>
 
+#ifdef _MSC_VER
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
 CAMLprim value caml_index_pread_int
 (value v_fd, value v_fd_off, value v_buf, value v_buf_off, value v_len)
 {

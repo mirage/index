@@ -1,6 +1,8 @@
 ## Unreleased
 
 - Support all version of cmdliner (#386)
+- Support MSVC compiler. Still missing implementations of pread and
+  pwrite. (#383)
 
 # 1.6.0 (2022-02-12)
 
