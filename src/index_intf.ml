@@ -77,6 +77,18 @@ module type S = sig
         the maximum number of recently-read index bindings kept in memory.
         Defaults to 30_000. *)
 
+  val v_no_cache: 
+    ?flush_callback:(unit -> unit) ->
+    ?fresh:bool ->
+    ?readonly:bool ->
+    ?throttle:[ `Overcommit_memory | `Block_writes ] ->
+    ?lru_size:int ->
+    log_size:int ->
+    string ->
+    t
+  (** As {!v}, but without any caching; this is needed for layers (for example), where we
+     always want to open a new instance, and any sharing would lead to problems. *)
+
   val clear : t -> unit
   (** [clear t] clears [t] so that there are no more bindings in it. *)
 
