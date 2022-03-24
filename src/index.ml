@@ -622,8 +622,8 @@ struct
 
   (* Defaults shared between {!v} and {!v_no_cache}. *)
   module D = struct
-    let flush_callback,fresh,readonly,throttle,lru_size = 
-      (fun () -> ()),false,false,`Block_writes,30_000
+    let flush_callback, fresh, readonly, throttle, lru_size =
+      ((fun () -> ()), false, false, `Block_writes, 30_000)
   end
 
   let v ?(flush_callback = D.flush_callback) ?(cache = empty_cache ())
@@ -667,13 +667,13 @@ struct
   (* As {!v_no_cache} (i.e., avoiding any internal instance caching), but we need to
      return a reference to an option. This always returns ref (Some _). For the optional
      args, we try to match exactly {!v} above. *)
-  let v_no_cache 
-      ?(flush_callback = D.flush_callback)
-      ?(fresh = D.fresh) ?(readonly = D.readonly) ?(throttle = D.throttle)
-      ?(lru_size = D.lru_size) ~log_size root : t =
-    let x : instance = 
-      v_no_cache ~flush_callback ~throttle ~fresh ~readonly ~lru_size ~log_size root 
-    in    
+  let v_no_cache ?(flush_callback = D.flush_callback) ?(fresh = D.fresh)
+      ?(readonly = D.readonly) ?(throttle = D.throttle) ?(lru_size = D.lru_size)
+      ~log_size root : t =
+    let x : instance =
+      v_no_cache ~flush_callback ~throttle ~fresh ~readonly ~lru_size ~log_size
+        root
+    in
     ref (Some x)
 
   (** {1 Merges} *)
