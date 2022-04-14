@@ -553,7 +553,13 @@ let run filter root output seed with_metrics log_size nb_entries nb_exec json
 
 open Cmdliner
 
-let env_var s = Arg.env_var ("INDEX_BENCH_" ^ s)
+let deprecated_info = (Term.info [@alert "-deprecated"])
+let deprecated_exit = (Term.exit [@alert "-deprecated"])
+let deprecated_eval_choice = (Term.eval_choice [@alert "-deprecated"])
+let deprecated_pure = (Term.pure [@alert "-deprecated"])
+let deprecated_default_exits = (Term.default_exits [@alert "-deprecated"])
+let deprecated_env_var = (Arg.env_var [@alert "-deprecated"])
+let env_var s = deprecated_env_var ("INDEX_BENCH_" ^ s)
 
 let new_file =
   let parse s =
@@ -621,7 +627,7 @@ let nb_exec =
 
 let list_cmd =
   let doc = "List all available benchmarks." in
-  (Term.(pure list_benches $ const ()), Term.info "list" ~doc)
+  (Term.(deprecated_pure list_benches $ const ()), deprecated_info "list" ~doc)
 
 let json_flag =
   let doc = "Output the results as a json object." in
@@ -654,8 +660,8 @@ let cmd =
       $ json_flag
       $ sampling_interval
       $ minimal_flag),
-    Term.info "run" ~doc ~exits:Term.default_exits )
+    deprecated_info "run" ~doc ~exits:deprecated_default_exits )
 
 let () =
   let choices = [ list_cmd ] in
-  Term.(exit @@ eval_choice cmd choices)
+  deprecated_exit @@ deprecated_eval_choice cmd choices

@@ -157,6 +157,10 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
   module Cli = struct
     open Cmdliner
 
+    let deprecated_info = (Term.info [@alert "-deprecated"])
+    let deprecated_exit = (Term.exit [@alert "-deprecated"])
+    let deprecated_eval_choice = (Term.eval_choice [@alert "-deprecated"])
+
     let reporter =
       let pp_header ppf = function
         | Logs.App, header ->
@@ -170,22 +174,22 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
       let default =
         let default_info =
           let doc = "Check and repair Index data-stores." in
-          Term.info ~doc "index-fsck"
+          deprecated_info ~doc "index-fsck"
         in
         Term.(ret (const (`Help (`Auto, None))), default_info)
       in
       Term.(
-        eval_choice default
+        deprecated_eval_choice default
           [
             ( Stat.term $ Log.setup_term ~reporter (module Clock),
-              Term.info ~doc:"Print high-level statistics about the store."
-                "stat" );
+              deprecated_info
+                ~doc:"Print high-level statistics about the store." "stat" );
             ( Integrity_check.term $ Log.setup_term ~reporter (module Clock),
-              Term.info
+              deprecated_info
                 ~doc:"Search the store for integrity faults and corruption."
                 "integrity-check" );
           ]
-        |> (exit : unit result -> _));
+        |> (deprecated_exit : unit result -> _));
       assert false
   end
 
