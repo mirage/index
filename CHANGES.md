@@ -2,6 +2,11 @@
 
 - Support all version of cmdliner (#386)
 
+## Fixed
+
+- Make `index-bench`'s `bench` executable private, avoiding executable
+  name collisions in opam-monorepo projects. (#389, @NathanReb)
+
 # 1.6.0 (2022-02-12)
 
 ## Added
