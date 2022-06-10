@@ -28,6 +28,7 @@ module Syscalls = Syscalls
 module Private : sig
   module IO : Index.Platform.IO
   module Raw = Raw
+  module Raw_stats = Raw_stats
 
   module Make (K : Index.Key.S) (V : Index.Value.S) (C : Index.Cache.S) :
     Index.Private.S with type key = K.t and type value = V.t

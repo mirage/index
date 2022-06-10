@@ -1,10 +1,6 @@
 open! Import
 
 type t = {
-  mutable bytes_read : int;
-  mutable nb_reads : int;
-  mutable bytes_written : int;
-  mutable nb_writes : int;
   mutable nb_merge : int;
   mutable merge_durations : float list;
   mutable nb_replace : int;
@@ -30,9 +26,7 @@ type t = {
     - [time_sync] is the duration of the latest call to sync. *)
 
 val get : unit -> t
-val reset_stats : unit -> unit
-val add_read : int -> unit
-val add_write : int -> unit
+val reset : unit -> unit
 val incr_nb_merge : unit -> unit
 val incr_nb_replace : unit -> unit
 val incr_nb_sync : unit -> unit
@@ -45,3 +39,5 @@ module Make (_ : Platform.CLOCK) : sig
   val sync_with_timer : (unit -> unit) -> unit
   val add_merge_duration : Mtime.Span.t -> unit
 end
+
+module Io_stats (R : Platform.RAW_STATS) : Platform.IO_STATS with type t = R.t

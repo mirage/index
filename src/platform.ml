@@ -58,9 +58,39 @@ module type THREAD = sig
   (** Re-schedule the calling thread without suspending it. *)
 end
 
+module type RAW_STATS = sig
+  (** Stats for IO per file descriptor. *)
+
+  type t = {
+    mutable bytes_read : int;
+    mutable nb_reads : int;
+    mutable bytes_written : int;
+    mutable nb_writes : int;
+  }
+
+  val fresh_stats : unit -> t
+  val reset : t -> unit
+end
+
+module type IO_STATS = sig
+  (** Accumulated stats for all IO handlers in Index. *)
+
+  include RAW_STATS
+
+  val get : unit -> t
+  val get_by_file : string -> t
+  val get_all : unit -> (string * t) list
+  val reset_all : unit -> unit
+  val bytes_read : unit -> int
+  val bytes_written : unit -> int
+  val nb_reads : unit -> int
+  val nb_writes : unit -> int
+end
+
 module type S = sig
   module IO : IO
   module Semaphore : SEMAPHORE
   module Thread : THREAD
   module Clock : CLOCK
+  module Io_stats : IO_STATS
 end

@@ -115,6 +115,8 @@ struct
     include Stats
   end
 
+  module Io_stats = Platform.Io_stats
+
   module IO = struct
     include Io.Extend (IO)
 

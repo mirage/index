@@ -13,8 +13,11 @@ open! Import
 type t
 (** The type of [raw] file handles. *)
 
-val v : Unix.file_descr -> t
+val v : ?stats:Raw_stats.t -> Unix.file_descr -> t
 (** Construct a [raw] value from a file descriptor. *)
+
+val get_stats : t -> Raw_stats.t
+(** Get a [raw] stats. *)
 
 val unsafe_write : t -> off:int63 -> string -> int -> int -> unit
 val unsafe_read : t -> off:int63 -> len:int -> bytes -> int
