@@ -1,4 +1,6 @@
-## Unreleased
+# 1.6.1 (2022-06-08)
+
+## Added
 
 - Support all version of cmdliner (#386)
 
