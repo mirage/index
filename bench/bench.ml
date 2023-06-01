@@ -92,7 +92,7 @@ module Benchmark = struct
 
   let run ~nb_entries f =
     let time, stats = with_stats (fun () -> f ()) in
-    let time_sec = Mtime.Span.to_s time in
+    let time_sec = Mtime.Span.to_float_ns time *. 1e-9 in
     let nb_entriesf = float_of_int nb_entries in
     let entry_sizef = float_of_int entry_size in
     let read_amplification_size =

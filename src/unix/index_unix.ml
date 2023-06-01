@@ -373,7 +373,7 @@ module Semaphore = struct
     let x = Mtime_clock.counter () in
     S.acquire t;
     let y = Mtime_clock.count x in
-    if Mtime.Span.to_s y > 1. then
+    if Mtime.span_to_s y > 1. then
       Log.warn (fun l -> l "Semaphore %s was blocked for %a" n Mtime.Span.pp y)
 
   let with_acquire n t f =

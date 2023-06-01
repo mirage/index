@@ -18,7 +18,7 @@ depends: [
   "stdlib-shims"
   "yojson"
   "ppx_repr"
-  "mtime"
+  "mtime" {>= "2.0.0"}
   "logs" {>= "0.7.0"}
   "progress" {>= "0.2.1"}
   "tezos-base58" {>= "1.0.0" & with-test}
