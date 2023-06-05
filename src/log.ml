@@ -31,7 +31,7 @@ let default_reporter (type c) ?(prefix = "")
     in
     let ppf = match level with Logs.App -> Fmt.stdout | _ -> Fmt.stderr in
     let with_stamp h _tags k fmt =
-      let dt = Mtime.Span.to_us (Clock.count counter) in
+      let dt = Mtime.span_to_us (Clock.count counter) in
       Fmt.kpf k ppf
         ("%s%+04.0fus %a %a @[" ^^ fmt ^^ "@]@.")
         prefix dt Logs_fmt.pp_header (level, h)

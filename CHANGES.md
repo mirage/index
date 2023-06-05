@@ -1,3 +1,10 @@
+# Unreleased
+
+## Changed
+
+- Update for compatibility with `mtime.2.0.0`, which is now the lower bounds
+  (#392, @patricoferris)
+
 # 1.6.1 (2022-06-08)
 
 ## Added

@@ -77,7 +77,7 @@ module Make (Clock : Platform.CLOCK) = struct
     nb_replace := !nb_replace + 1;
     if !nb_replace = sampling_interval then (
       let span = Clock.count !replace_timer in
-      let average = Mtime.Span.to_us span /. float_of_int !nb_replace in
+      let average = Mtime.span_to_us span /. float_of_int !nb_replace in
       stats.replace_durations <- average :: stats.replace_durations;
       replace_timer := Clock.counter ();
       nb_replace := 0)
@@ -86,11 +86,11 @@ module Make (Clock : Platform.CLOCK) = struct
     let timer = Clock.counter () in
     f ();
     let span = Clock.count timer in
-    stats.time_sync <- Mtime.Span.to_us span
+    stats.time_sync <- Mtime.span_to_us span
 
   let drop_head l = if List.length l >= 10 then List.tl l else l
 
   let add_merge_duration span =
-    let span = Mtime.Span.to_us span in
+    let span = Mtime.span_to_us span in
     stats.merge_durations <- drop_head stats.merge_durations @ [ span ]
 end
