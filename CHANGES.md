@@ -1,4 +1,4 @@
-# Unreleased
+# 1.6.2 (2023-06-06)
 
 ## Changed
 
