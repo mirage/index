@@ -316,6 +316,7 @@ module type Index = sig
     module Fan = Fan
     module Data = Data
     module Layout = Layout
+    module Log_file = Log_file
 
     module Logs : sig
       val setup :

@@ -73,11 +73,15 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     assert (r = len);
     fst (Entry.decode_key (Bytes.unsafe_to_string scratch.buffer) 0)
 
-  let entry_of_offset t (scratch : Scratch.t) off =
+  let entry_of_offset' ~hook t (scratch : Scratch.t) off =
     let len = Entry.encoded_size in
     let r = IO.read t.io ~off ~len scratch.buffer in
+    hook ();
     assert (r = Entry.encoded_size);
     Entry.decode (Bytes.unsafe_to_string scratch.buffer) 0
+
+  let entry_of_offset t scratch off =
+    entry_of_offset' ~hook:Fun.id t scratch off
 
   let elt_index t key =
     (* NOTE: we use the _uppermost_ bits of the key hash to index the bucket
@@ -177,20 +181,22 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     IO.iter_keys (fun offset key -> replace_memory t scratch key offset) io;
     t
 
-  let find t key =
+  let find' ~hook t key =
     let elt_idx = elt_index t key in
     let bucket = t.hashtbl.(elt_idx) in
     let scratch = Scratch.create () in
     Small_list.find_map bucket ~f:(fun offset ->
         (* We expect the keys to match most of the time, so we decode the
            value at the same time. *)
-        let entry = entry_of_offset t scratch offset in
+        let entry = entry_of_offset' ~hook t scratch offset in
         match Key.equal key entry.key with
         | false -> None
         | true -> Some entry.value)
     |> function
     | None -> raise Not_found
     | Some x -> x
+
+  let find t key = find' ~hook:Fun.id t key
 
   let fold t ~f ~init =
     let scratch = Scratch.create () in
