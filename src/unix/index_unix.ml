@@ -304,7 +304,8 @@ module IO : Index.Platform.IO = struct
 
     let unsafe_lock op f =
       mkdir (Filename.dirname f);
-      let fd = Unix.openfile f [ Unix.O_CREAT; Unix.O_RDWR ] 0o600
+      let fd =
+        Unix.openfile f [ Unix.O_CREAT; Unix.O_RDWR; Unix.O_CLOEXEC ] 0o600
       and pid = string_of_int (Unix.getpid ()) in
       let pid_len = String.length pid in
       try

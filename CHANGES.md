@@ -1,3 +1,9 @@
+# Unreleased
+
+## Changed
+
+- Lock files are now opened with O_CLOEXEC flag (#394, @vect0r-vicall)
+
 # 1.6.2 (2023-06-06)
 
 ## Changed
