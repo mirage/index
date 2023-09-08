@@ -58,9 +58,16 @@ module type THREAD = sig
   (** Re-schedule the calling thread without suspending it. *)
 end
 
+module type FMT_TTY = sig
+  val setup_std_outputs :
+    ?style_renderer:Fmt.style_renderer -> ?utf_8:bool -> unit -> unit
+end
+
 module type S = sig
   module IO : IO
   module Semaphore : SEMAPHORE
   module Thread : THREAD
   module Clock : CLOCK
+  module Progress : Progress_engine.S
+  module Fmt_tty : FMT_TTY
 end

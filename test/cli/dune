@@ -1,12 +1,12 @@
 (executable
  (name index_fsck)
  (modules index_fsck)
- (libraries index index.unix))
+ (libraries index index.unix unix))
 
 (executable
  (name generate)
  (modules generate)
- (libraries index index.unix))
+ (libraries index index.unix unix))
 
 (rule
  (alias generate-cli-test-data)

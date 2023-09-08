@@ -323,11 +323,13 @@ module type Index = sig
         ?style_renderer:Fmt.style_renderer ->
         ?level:Logs.level ->
         (module Platform.CLOCK) ->
+        (module Platform.FMT_TTY) ->
         unit
 
       val setup_term :
         ?reporter:Logs.reporter ->
         (module Platform.CLOCK) ->
+        (module Platform.FMT_TTY) ->
         unit Cmdliner.Term.t
     end
 

@@ -42,7 +42,8 @@ let default_reporter (type c) ?(prefix = "")
   in
   { Logs.report }
 
-let setup ?reporter ?style_renderer ?level (module Clock : Platform.CLOCK) =
+let setup ?reporter ?style_renderer ?level (module Clock : Platform.CLOCK)
+    (module Fmt_tty : Platform.FMT_TTY) =
   let start_time = Clock.counter () in
   let reporter =
     match reporter with
@@ -59,7 +60,7 @@ open Cmdliner
 let ( let+ ) t f = Term.(const f $ t)
 let ( and+ ) a b = Term.(const (fun x y -> (x, y)) $ a $ b)
 
-let setup_term ?reporter (module Clock : Platform.CLOCK) =
+let setup_term ?reporter clock fmt_tty =
   let+ style_renderer = Fmt_cli.style_renderer ()
   and+ level = Logs_cli.level () in
-  setup ?reporter ?style_renderer ?level (module Clock : Platform.CLOCK)
+  setup ?reporter ?style_renderer ?level clock fmt_tty

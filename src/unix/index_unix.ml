@@ -417,6 +417,8 @@ module Platform = struct
   module Semaphore = Semaphore
   module Thread = Thread
   module Clock = Mtime_clock
+  module Progress = Progress
+  module Fmt_tty = Fmt_tty
 end
 
 module Make (K : Index.Key.S) (V : Index.Value.S) =
@@ -425,6 +427,7 @@ module Make (K : Index.Key.S) (V : Index.Value.S) =
 module Syscalls = Syscalls
 
 module Private = struct
+  module Platform = Platform
   module IO = IO
   module Raw = Raw
 
