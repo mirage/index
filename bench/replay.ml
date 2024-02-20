@@ -266,10 +266,6 @@ let main_term =
     $ nb_ops
     $ trace_data_file)
 
-let deprecated_info = (Term.info [@alert "-deprecated"])
-let deprecated_exit = (Term.exit [@alert "-deprecated"])
-let deprecated_eval = (Term.eval [@alert "-deprecated"])
-
 let () =
   let man =
     [
@@ -286,8 +282,8 @@ let () =
     ]
   in
   let info =
-    deprecated_info ~man
+    Cmd.info ~man
       ~doc:"Replay index operations done by the bootstrapping of a tezos node"
       "replay-index"
   in
-  deprecated_exit @@ deprecated_eval (main_term, info)
+  exit @@ Cmd.eval (Cmd.v info main_term)
