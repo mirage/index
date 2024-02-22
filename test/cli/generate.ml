@@ -12,7 +12,7 @@ module Index =
     (Index.Cache.Noop)
 
 let random () =
-  let index = Index.v ~fresh:true ~log_size:100 "data/random" in
+  let index = Index.v ~io:() ~fresh:true ~log_size:100 "data/random" in
   for _ = 1 to 1001 do
     Index.replace index (random ()) (random ())
   done;

@@ -1,0 +1,87 @@
+module Int63 = Optint.Int63
+
+module Make (Platform : Common.Platform) = struct
+  module IO = Platform.IO
+
+  let ( // ) = Filename.concat
+  let root = "_tests" // (Platform.name ^ ".io_array")
+
+  module Entry = struct
+    module Key = Common.Key
+    module Value = Common.Value
+
+    type t = Key.t * Value.t
+
+    let encoded_size = Key.encoded_size + Value.encoded_size
+
+    let decode string off =
+      let key = Key.decode string off in
+      let value = Value.decode string (off + Key.encoded_size) in
+      (key, value)
+
+    let append_io io (key, value) =
+      let encoded_key = Key.encode key in
+      let encoded_value = Value.encode value in
+      IO.append io encoded_key;
+      IO.append io encoded_value
+  end
+
+  module IOArray = Index.Private.Io_array.Make (IO) (Entry)
+
+  let entry = Alcotest.(pair string string)
+
+  let fresh_io ~io name =
+    IO.v ~io ~fresh:true ~generation:Int63.zero ~fan_size:Int63.zero
+      (root // name)
+
+  (* Append a random sequence of [size] keys to an IO instance and return
+     a pair of an IOArray and an equivalent in-memory array. *)
+  let populate_random ~size io =
+    let rec loop acc = function
+      | 0 -> acc
+      | n ->
+          let e = (Common.Key.v (), Common.Value.v ()) in
+          Entry.append_io io e;
+          loop (e :: acc) (n - 1)
+    in
+    let mem_arr = Array.of_list (List.rev (loop [] size)) in
+    let io_arr = IOArray.v io in
+    IO.flush io;
+    (mem_arr, io_arr)
+
+  (* Tests *)
+  let read_sequential ~io () =
+    let size = 1000 in
+    let fio = fresh_io ~io "read_sequential" in
+    let mem_arr, io_arr = populate_random ~size fio in
+    for i = 0 to size - 1 do
+      let expected = mem_arr.(i) in
+      let actual = IOArray.get io_arr (Int63.of_int i) in
+      Alcotest.(check entry)
+        (Fmt.str "Inserted key at index %i is accessible" i)
+        expected actual
+    done
+
+  let read_sequential_prefetch ~io () =
+    let size = 1000 in
+    let io = fresh_io ~io "read_sequential_prefetch" in
+    let mem_arr, io_arr = populate_random ~size io in
+    IOArray.pre_fetch io_arr ~low:Int63.zero ~high:(Int63.of_int 999);
+
+    (* Read the arrays backwards *)
+    for i = size - 1 to 0 do
+      let expected = mem_arr.(i) in
+      let actual = IOArray.get io_arr (Int63.of_int i) in
+      Alcotest.(check entry)
+        (Fmt.str "Inserted key at index %i is accessible" i)
+        expected actual
+    done
+
+  let tests ~io =
+    List.map
+      (fun (name, mode, test) -> (name, mode, test ~io))
+      [
+        ("fresh", `Quick, read_sequential);
+        ("prefetch", `Quick, read_sequential_prefetch);
+      ]
+end

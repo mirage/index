@@ -40,10 +40,12 @@ end
 module type THREAD = sig
   (** Cooperative threads. *)
 
+  type io
+
   type 'a t
   (** The type of thread handles. *)
 
-  val async : (unit -> 'a) -> 'a t
+  val async : io:io -> (unit -> 'a) -> 'a t
   (** [async f] creates a new thread of control which executes [f ()] and
       returns the corresponding thread handle. The thread terminates whenever
       [f ()] returns a value or raises an exception. *)
@@ -64,9 +66,11 @@ module type FMT_TTY = sig
 end
 
 module type S = sig
-  module IO : IO
+  type io
+
+  module IO : IO with type io = io
   module Semaphore : SEMAPHORE
-  module Thread : THREAD
+  module Thread : THREAD with type io = io
   module Clock : CLOCK
   module Progress : Progress_engine.S
   module Fmt_tty : FMT_TTY

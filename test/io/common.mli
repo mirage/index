@@ -33,9 +33,17 @@ module Tbl : sig
   (** Check that a binding exists in the table. *)
 end
 
-module Index : sig
+module type Platform = sig
+  include Index.Platform.S
+
+  val name : string
+end
+
+module Index (Platform : Platform) : sig
   open Index.Private
-  include S with type key = Key.t and type value = Value.t
+
+  include
+    S with type key = Key.t and type value = Value.t and type io = Platform.io
 
   val replace_random :
     ?hook:[ `Merge of merge_stages ] Hook.t ->
@@ -51,9 +59,13 @@ module Index : sig
 end
 
 (** Helper constructors for fresh pre-initialised indices *)
-module Make_context (Config : sig
-  val root : string
-end) : sig
+module Make_context
+    (Platform : Platform)
+    (Config : sig
+      val root : string
+    end) : sig
+  module Index : module type of Index (Platform)
+
   type t = private {
     rw : Index.t;
     tbl : (string, string) Hashtbl.t;
@@ -67,6 +79,7 @@ end) : sig
   (** [fresh_name typ] is a clean directory for a resource of type [typ]. *)
 
   val with_empty_index :
+    io:Platform.io ->
     ?log_size:int ->
     ?lru_size:int ->
     ?flush_callback:(unit -> unit) ->
@@ -78,6 +91,7 @@ end) : sig
       index and any clones are closed. *)
 
   val with_full_index :
+    io:Platform.io ->
     ?log_size:int ->
     ?lru_size:int ->
     ?flush_callback:(unit -> unit) ->
@@ -90,6 +104,9 @@ end) : sig
       key/value pairs. [f] also gets a constructor for opening clones of the
       index at the same location. Afterwards, the index and any clones are
       closed. *)
+
+  val check_equivalence : Index.t -> (Key.t, Value.t) Hashtbl.t -> unit
+  val check_disjoint : Index.t -> (Key.t, Value.t) Hashtbl.t -> unit
 end
 
 val ( let* ) : ('a -> 'b) -> 'a -> 'b
@@ -99,7 +116,6 @@ val ( >> ) : ('a -> 'b) -> ('b -> 'c) -> 'a -> 'c
 val uncurry : ('a -> 'b -> 'c) -> 'a * 'b -> 'c
 val ignore_value : Value.t -> unit
 val ignore_bool : bool -> unit
-val ignore_index : Index.t -> unit
 
 type binding = Key.t * Value.t
 
@@ -108,7 +124,5 @@ val pp_binding : binding Fmt.t
 val check_completed :
   ([ `Aborted | `Completed ], [ `Async_exn of exn ]) result -> unit
 
-val check_equivalence : Index.t -> (Key.t, Value.t) Hashtbl.t -> unit
-val check_disjoint : Index.t -> (Key.t, Value.t) Hashtbl.t -> unit
 val get_open_fd : string -> [> `Ok of string list | `Skip of string ]
 val partition : string -> string list -> string list * string list

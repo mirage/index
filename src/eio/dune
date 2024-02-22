@@ -1,0 +1,6 @@
+(library
+ (public_name index.eio)
+ (name index_eio)
+ (optional)
+ (libraries fmt fmt.tty index logs logs.threaded threads.posix unix eio
+   eio.core cstruct mtime mtime.clock.os optint progress))
