@@ -642,7 +642,7 @@ let cmd =
   let doc = "Run all the benchmarks." in
   ( Term.(
       const (fun () -> run)
-      $ Index_lib.Private.Logs.setup_term (module Mtime_clock)
+      $ Index_lib.Private.Logs.setup_term (module Mtime_clock) (module Fmt_tty)
       $ name_filter
       $ data_dir
       $ output

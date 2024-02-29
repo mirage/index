@@ -26,6 +26,7 @@ module Syscalls = Syscalls
 (** These modules should not be used. They are exposed purely for testing
     purposes. *)
 module Private : sig
+  module Platform : Index.Platform.S
   module IO : Index.Platform.IO
   module Raw = Raw
 

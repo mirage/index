@@ -174,10 +174,14 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
       in
       let commands =
         [
-          ( Term.(Stat.term $ Log.setup_term ~reporter (module Clock)),
+          ( Term.(
+              Stat.term
+              $ Log.setup_term ~reporter (module Clock) (module Fmt_tty)),
             Cmd.info ~doc:"Print high-level statistics about the store." "stat"
           );
-          ( Term.(Integrity_check.term $ Log.setup_term ~reporter (module Clock)),
+          ( Term.(
+              Integrity_check.term
+              $ Log.setup_term ~reporter (module Clock) (module Fmt_tty)),
             Cmd.info
               ~doc:"Search the store for integrity faults and corruption."
               "integrity-check" );

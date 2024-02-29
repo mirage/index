@@ -262,7 +262,7 @@ let trace_data_file =
 let main_term =
   Term.(
     const (fun () -> main)
-    $ Index_lib.Private.Logs.setup_term (module Mtime_clock)
+    $ Index_lib.Private.Logs.setup_term (module Mtime_clock) (module Fmt_tty)
     $ nb_ops
     $ trace_data_file)
 

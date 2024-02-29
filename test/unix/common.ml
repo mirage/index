@@ -5,7 +5,9 @@ module Log = (val Logs.src_log src : Logs.LOG)
 
 let report () =
   Logs_threaded.enable ();
-  Index.Private.Logs.setup ~level:Logs.Debug (module Mtime_clock)
+  Index.Private.Logs.setup ~level:Logs.Debug
+    (module Mtime_clock)
+    (module Fmt_tty)
 
 module String_size = struct
   let length = 20

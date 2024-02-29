@@ -1,7 +1,7 @@
 (library
  (name common)
  (modules common)
- (libraries progress logs fmt mtime mtime.clock.os))
+ (libraries progress logs fmt mtime mtime.clock.os unix))
 
 (executable
  (name bench)
@@ -9,7 +9,7 @@
  (preprocess
   (pps ppx_repr ppx_deriving_yojson))
  (libraries index index.unix cmdliner metrics metrics-unix yojson fmt re
-   stdlib-shims common mtime mtime.clock.os))
+   stdlib-shims common mtime mtime.clock.os unix))
 
 (alias
  (name bench)

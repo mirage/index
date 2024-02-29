@@ -28,6 +28,8 @@ end
 module type Platform_args = sig
   module IO : Io.S
   module Clock : Platform.CLOCK
+  module Progress : Progress_engine.S
+  module Fmt_tty : Platform.FMT_TTY
 end
 
 module type Checks = sig

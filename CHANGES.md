@@ -4,6 +4,7 @@
 
 - Lock files are now opened with O_CLOEXEC flag (#394, @vect0r-vicall)
 - Update to cmdliner.1.1.0 (#382, @MisterDA)
+- Mirage support: optional dependency to unix (#396, @art-w)
 
 # 1.6.2 (2023-06-06)
 
