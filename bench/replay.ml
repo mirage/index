@@ -164,7 +164,10 @@ module Index = struct
   include Index
 
   let cache = Index.empty_cache ()
-  let v root = Index.v ~cache ~readonly:false ~fresh:true ~log_size:500_000 root
+
+  let v root =
+    Index.v ~io:() ~cache ~readonly:false ~fresh:true ~log_size:500_000 root
+
   let close t = Index.close t
 end
 

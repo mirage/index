@@ -214,7 +214,7 @@ module Index = struct
 
   let run ~with_metrics ~nb_entries ~log_size ~root ~name ~fresh ~readonly b =
     let index =
-      Index.v ~cache:(Index.empty_cache ()) ~fresh ~readonly ~log_size
+      Index.v ~io:() ~cache:(Index.empty_cache ()) ~fresh ~readonly ~log_size
         (root // name)
     in
     let result = Benchmark.run ~nb_entries (b ~with_metrics index) in

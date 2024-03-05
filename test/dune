@@ -1,4 +1,5 @@
-(test
- (name main)
+(tests
+ (names main test_unix test_eio)
  (package index)
- (libraries index alcotest optint))
+ (libraries index alcotest optint unix test_io index.unix index.eio eio eio.core
+   eio.unix eio_main))

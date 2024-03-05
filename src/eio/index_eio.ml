@@ -17,7 +17,7 @@
 
 open! Import
 
-let src = Logs.Src.create "index_unix" ~doc:"Index_unix"
+let src = Logs.Src.create "index_eio" ~doc:"Index_eio"
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
@@ -27,14 +27,16 @@ let current_version = "00000001"
 
 module Stats = Index.Stats
 
-module IO : Index.Platform.IO with type io = unit = struct
-  type io = unit
+type io = { switch : Eio.Switch.t; root : Eio.Fs.dir_ty Eio.Path.t }
+
+module IO : Index.Platform.IO with type io = io = struct
+  type nonrec io = io
 
   let ( ++ ) = Int63.add
   let ( -- ) = Int63.sub
 
   type t = {
-    mutable file : string;
+    mutable file : Eio.Fs.dir_ty Eio.Path.t;
     mutable header : int63;
     mutable raw : Raw.t;
     mutable offset : int63;
@@ -43,6 +45,7 @@ module IO : Index.Platform.IO with type io = unit = struct
     readonly : bool;
     buf : Buffer.t;
     flush_callback : unit -> unit;
+    sw : Eio.Switch.t;
   }
 
   let flush ?no_callback ?(with_fsync = false) t =
@@ -51,7 +54,7 @@ module IO : Index.Platform.IO with type io = unit = struct
       let buf_len = Buffer.length t.buf in
       let offset = t.offset in
       (match no_callback with Some () -> () | None -> t.flush_callback ());
-      Log.debug (fun l -> l "[%s] flushing %d bytes" t.file buf_len);
+      Log.debug (fun l -> l "[%a] flushing %d bytes" Eio.Path.pp t.file buf_len);
       Buffer.write_with (Raw.unsafe_write t.raw ~off:t.flushed) t.buf;
       Buffer.clear t.buf;
       Raw.Offset.set t.raw offset;
@@ -62,7 +65,7 @@ module IO : Index.Platform.IO with type io = unit = struct
   let rename ~src ~dst =
     flush ~with_fsync:true src;
     Raw.close dst.raw;
-    Unix.rename src.file dst.file;
+    Eio.Path.rename src.file dst.file;
     Buffer.clear dst.buf;
     src.file <- dst.file;
     dst.header <- src.header;
@@ -151,44 +154,32 @@ module IO : Index.Platform.IO with type io = unit = struct
       let Raw.Header.{ offset; generation; _ } = Raw.Header.get t.raw in
       t.offset <- offset;
       let headers = { offset; generation } in
-      Log.debug (fun m -> m "[%s] get_headers: %a" t.file pp headers);
+      Log.debug (fun m ->
+          m "[%a] get_headers: %a" Eio.Path.pp t.file pp headers);
       headers
 
     let set t { offset; generation } =
       let version = current_version in
       Log.debug (fun m ->
-          m "[%s] set_header %a" t.file pp { offset; generation });
+          m "[%a] set_header %a" Eio.Path.pp t.file pp { offset; generation });
       Raw.Header.(set t.raw { offset; version; generation })
   end
 
-  let protect_unix_exn = function
-    | Unix.Unix_error _ as e -> failwith (Printexc.to_string e)
-    | e -> raise e
+  let mkdir dirname = Eio.Path.mkdirs ~exists_ok:true ~perm:0o755 dirname
 
-  let ignore_enoent = function
-    | Unix.Unix_error (Unix.ENOENT, _, _) -> ()
-    | e -> raise e
+  let mkdir_of file =
+    match Eio.Path.split file with
+    | None -> ()
+    | Some (dirname, _) -> mkdir dirname
 
-  let protect f x = try f x with e -> protect_unix_exn e
-  let safe f x = try f x with e -> ignore_enoent e
-
-  let mkdir dirname =
-    let rec aux dir k =
-      if Sys.file_exists dir && Sys.is_directory dir then k ()
-      else (
-        if Sys.file_exists dir then safe Unix.unlink dir;
-        (aux [@tailcall]) (Filename.dirname dir) (fun () ->
-            protect (Unix.mkdir dir) 0o755;
-            k ()))
-    in
-    (aux [@tailcall]) dirname (fun () -> ())
-
-  let raw_file ~flags ~version ~offset ~generation file =
-    let x = Unix.openfile file flags 0o644 in
+  let raw_file ~sw ~version ~offset ~generation file =
+    Eio.Switch.run @@ fun _sw ->
+    let x = Eio.Path.open_out ~sw ~create:(`If_missing 0o644) file in
     let raw = Raw.v x in
     let header = { Raw.Header.offset; version; generation } in
     Log.debug (fun m ->
-        m "[%s] raw set_header %a" file Header.pp { offset; generation });
+        m "[%a] raw set_header %a" Eio.Path.pp file Header.pp
+          { offset; generation });
     Raw.Header.set raw header;
     Raw.Fan.set raw "";
     Raw.fsync raw;
@@ -203,16 +194,18 @@ module IO : Index.Platform.IO with type io = unit = struct
     if reopen then (
       (* Open a fresh file and rename it to ensure atomicity:
          concurrent readers should never see the file disapearing. *)
-      let tmp_file = t.file ^ "_tmp" in
+      let tmp_file =
+        let dir, path = t.file in
+        (dir, path ^ "_tmp")
+      in
       t.raw <-
-        raw_file ~version:current_version ~generation ~offset:Int63.zero
-          ~flags:Unix.[ O_CREAT; O_RDWR; O_CLOEXEC ]
-          tmp_file;
-      Unix.rename tmp_file t.file)
+        raw_file ~sw:t.sw ~version:current_version ~generation
+          ~offset:Int63.zero tmp_file;
+      Eio.Path.rename tmp_file t.file)
     else
       (* Remove the file current file. This allows a fresh file to be
          created, before writing the new generation in the old file. *)
-      Unix.unlink t.file;
+      Eio.Path.unlink t.file;
 
     hook ();
 
@@ -223,8 +216,8 @@ module IO : Index.Platform.IO with type io = unit = struct
 
   let () = assert (String.length current_version = 8)
 
-  let v_instance ?(flush_callback = fun () -> ()) ~readonly ~fan_size ~offset
-      file raw =
+  let v_instance ~sw ?(flush_callback = fun () -> ()) ~readonly ~fan_size
+      ~offset file raw =
     let eight = Int63.of_int 8 in
     let header = eight ++ eight ++ eight ++ eight ++ fan_size in
     {
@@ -237,23 +230,27 @@ module IO : Index.Platform.IO with type io = unit = struct
       buf = Buffer.create (if readonly then 0 else 4 * 1024);
       flushed = header ++ offset;
       flush_callback;
+      sw;
     }
 
-  let v ~io:() ?flush_callback ~fresh ~generation ~fan_size file =
-    let v = v_instance ?flush_callback ~readonly:false file in
-    mkdir (Filename.dirname file);
+  let v ~io ?flush_callback ~fresh ~generation ~fan_size filename =
+    let file = Eio.Path.(io.root / filename) in
+    let v = v_instance ~sw:io.switch ?flush_callback ~readonly:false file in
+    mkdir_of file;
     let header =
       { Raw.Header.offset = Int63.zero; version = current_version; generation }
     in
-    match Sys.file_exists file with
+    match Eio.Path.is_file file with
     | false ->
-        let x = Unix.openfile file Unix.[ O_CREAT; O_CLOEXEC; O_RDWR ] 0o644 in
+        let x =
+          Eio.Path.open_out ~sw:io.switch file ~create:(`Exclusive 0o644)
+        in
         let raw = Raw.v x in
         Raw.Header.set raw header;
         Raw.Fan.set_size raw fan_size;
         v ~fan_size ~offset:Int63.zero raw
     | true ->
-        let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDWR ] 0o644 in
+        let x = Eio.Path.open_out ~sw:io.switch file ~create:`Never in
         let raw = Raw.v x in
         if fresh then (
           Raw.Header.set raw header;
@@ -270,11 +267,11 @@ module IO : Index.Platform.IO with type io = unit = struct
           let fan_size = Raw.Fan.get_size raw in
           v ~fan_size ~offset raw
 
-  let v_readonly ~io:() file =
-    let v = v_instance ~readonly:true file in
-    mkdir (Filename.dirname file);
+  let v_readonly ~io filename =
+    let file = Eio.Path.(io.root / filename) in
+    let v = v_instance ~sw:io.switch ~readonly:true file in
     try
-      let x = Unix.openfile file Unix.[ O_EXCL; O_CLOEXEC; O_RDONLY ] 0o644 in
+      let x = Eio.Path.open_out ~sw:io.switch ~create:`Never file in
       let raw = Raw.v x in
       try
         let version = Raw.Version.get raw in
@@ -290,39 +287,42 @@ module IO : Index.Platform.IO with type io = unit = struct
         Raw.close raw;
         Error `No_file_on_disk
     with
-    | Unix.Unix_error (Unix.ENOENT, _, _) ->
-        (* The readonly instance cannot open a non existing file. *)
-        Error `No_file_on_disk
+    | Eio.Io (Eio.Fs.E (Not_found _), _) -> Error `No_file_on_disk
     | e -> raise e
 
   let exists = Sys.file_exists
-  let size { raw; _ } = (Raw.fstat raw).st_size
+  let size { raw; _ } = (Raw.fstat raw).Eio.File.Stat.size |> Int63.to_int
   let size_header t = t.header |> Int63.to_int
 
   module Lock = struct
-    type t = { path : string; fd : Unix.file_descr }
+    type t = { path : string; fd : Eio.File.rw_ty Eio.Resource.t }
 
     exception Locked of string
 
-    let unsafe_lock op f =
-      mkdir (Filename.dirname f);
-      let fd =
-        Unix.openfile f [ Unix.O_CREAT; Unix.O_RDWR; Unix.O_CLOEXEC ] 0o600
-      and pid = string_of_int (Unix.getpid ()) in
+    let single_write fd str =
+      let cstruct = Cstruct.string str in
+      Eio.File.pwrite_single fd ~file_offset:Int63.zero [ cstruct ]
+
+    let unsafe_lock ~io _op filename =
+      let f = Eio.Path.(io.root / filename) in
+      mkdir_of f;
+      let fd = Eio.Path.open_out ~sw:io.switch ~create:(`If_missing 0o600) f in
+      let pid = string_of_int (Unix.getpid ()) in
       let pid_len = String.length pid in
       try
-        Unix.lockf fd op 0;
-        if Unix.single_write_substring fd pid 0 pid_len <> pid_len then (
-          Unix.close fd;
+        (* TODO: Unix.lockf fd op 0; *)
+        if single_write fd pid <> pid_len then (
+          Eio.Resource.close fd;
           failwith "Unable to write PID to lock file")
         else Some fd
       with
-      | Unix.Unix_error (Unix.EAGAIN, _, _) ->
-          Unix.close fd;
-          None
+      (* TODO:
+         | Unix.Unix_error (Unix.EAGAIN, _, _) ->
+             Eio.Resource.close fd;
+             None *)
       | e ->
-          Unix.close fd;
-          raise e
+        Eio.Resource.close fd;
+        raise e
 
     let with_ic path f =
       let ic = open_in path in
@@ -340,15 +340,15 @@ module IO : Index.Platform.IO with type io = unit = struct
             path pid (Unix.getpid ()));
       raise (Locked path)
 
-    let lock ~io:() path =
+    let lock ~io path =
       Log.debug (fun l -> l "Locking %s" path);
-      match unsafe_lock Unix.F_TLOCK path with
+      match unsafe_lock ~io Unix.F_TLOCK path with
       | Some fd -> { path; fd }
       | None -> err_rw_lock path
 
     let unlock { path; fd } =
       Log.debug (fun l -> l "Unlocking %s" path);
-      Unix.close fd
+      Eio.Resource.close fd
 
     let pp_dump path =
       match Sys.file_exists path with
@@ -363,61 +363,50 @@ module IO : Index.Platform.IO with type io = unit = struct
 end
 
 module Semaphore = struct
-  module S = Semaphore_compat.Semaphore.Binary
+  module S = Eio.Mutex
+
+  type t = S.t
 
   let is_held t =
-    let acquired = S.try_acquire t in
-    if acquired then S.release t;
+    let acquired = S.try_lock t in
+    if acquired then S.unlock t;
     not acquired
 
-  include S
+  let make b =
+    let t = S.create () in
+    if not b then S.lock t;
+    t
+
+  let release t = S.unlock t
 
   let acquire n t =
     let x = Mtime_clock.counter () in
-    S.acquire t;
+    S.lock t;
     let y = Mtime_clock.count x in
     if Mtime.span_to_s y > 1. then
       Log.warn (fun l -> l "Semaphore %s was blocked for %a" n Mtime.Span.pp y)
 
   let with_acquire n t f =
     acquire n t;
-    Fun.protect ~finally:(fun () -> S.release t) f
+    Fun.protect ~finally:(fun () -> S.unlock t) f
 end
 
 module Thread = struct
-  type nonrec io = IO.io
+  type io = IO.io
+  type 'a t = 'a Eio.Promise.or_exn
 
-  type 'a t =
-    | Async of { thread : Thread.t; result : ('a, exn) result option ref }
-    | Value of 'a
-
-  let async ~io:() f =
-    let result = ref None in
-    let protected_f x =
-      try result := Some (Ok (f x))
-      with exn ->
-        result := Some (Error exn);
-        raise exn
-    in
-    let thread = Thread.create protected_f () in
-    Async { thread; result }
-
-  let yield = Thread.yield
-  let return a = Value a
+  let async ~io f = Eio.Fiber.fork_promise ~sw:io.switch f
+  let yield = Eio.Fiber.yield
+  let return a = Eio.Promise.create_resolved (Ok a)
 
   let await t =
-    match t with
-    | Value v -> Ok v
-    | Async { thread; result } -> (
-        let () = Thread.join thread in
-        match !result with
-        | Some (Ok _ as o) -> o
-        | Some (Error exn) -> Error (`Async_exn exn)
-        | None -> assert false)
+    match Eio.Promise.await t with
+    | Ok v -> Ok v
+    | Error exn -> Error (`Async_exn exn)
 end
 
 module Platform = struct
-  type io = unit
+  type nonrec io = io
 
   module IO = IO
   module Semaphore = Semaphore
@@ -427,10 +416,8 @@ module Platform = struct
   module Fmt_tty = Fmt_tty
 end
 
-module Make (K : Index.Key.S) (V : Index.Value.S) =
-  Index.Make (K) (V) (Platform)
-
-module Syscalls = Syscalls
+module Make (K : Index.Key.S) (V : Index.Value.S) (C : Index.Cache.S) =
+  Index.Make (K) (V) (Platform) (C)
 
 module Private = struct
   module Platform = Platform

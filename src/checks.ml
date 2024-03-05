@@ -42,6 +42,8 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
     @@ pos 0 (some string) None
     @@ info ~doc:"Path to the Index store on disk" ~docv:"PATH" []
 
+  type io = Platform.IO.io
+
   module Stat = struct
     type io = {
       size : size;
@@ -62,16 +64,17 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
 
     type t = { entry_size : size; files : files } [@@deriving repr]
 
-    let with_io : type a. string -> (IO.t -> a) -> a option =
-     fun path f ->
-      match IO.v path with
+    let with_io : type a. io:Platform.IO.io -> string -> (IO.t -> a) -> a option
+        =
+     fun ~io path f ->
+      match IO.v ~io path with
       | Error `No_file_on_disk -> None
       | Ok io ->
           let a = f io in
           IO.close io;
           Some a
 
-    let io path =
+    let run_io path =
       with_io path @@ fun io ->
       let IO.Header.{ offset; generation } = IO.Header.get io in
       let fanout_size = Bytes (IO.get_fanout_size io) in
@@ -80,12 +83,12 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
       let generation = Int63.to_int64 generation in
       { size; offset; generation; fanout_size }
 
-    let run ~root =
+    let run ~io ~root =
       Logs.app (fun f -> f "Getting statistics for store: `%s'@," root);
-      let data = io (Layout.data ~root) in
-      let log = io (Layout.log ~root) in
-      let log_async = io (Layout.log_async ~root) in
-      let merge = io (Layout.merge ~root) in
+      let data = run_io ~io (Layout.data ~root) in
+      let log = run_io ~io (Layout.log ~root) in
+      let log_async = run_io ~io (Layout.log_async ~root) in
+      let merge = run_io ~io (Layout.merge ~root) in
       let lock =
         IO.Lock.pp_dump (Layout.lock ~root)
         |> Option.map (fun f ->
@@ -99,7 +102,7 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
       }
       |> Repr.pp_json ~minify:false t Fmt.stdout
 
-    let term = Cmdliner.Term.(const (fun root () -> run ~root) $ path)
+    let term ~io = Cmdliner.Term.(const (fun root () -> run ~io ~root) $ path)
   end
 
   module Integrity_check = struct
@@ -120,9 +123,9 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
              highlight (fun ppf () -> (Repr.pp Entry.t) ppf entry))
       |> Fmt.(concat ~sep:cut)
 
-    let run ~root =
+    let run ~io ~root =
       let context = 2 in
-      match IO.v (Layout.data ~root) with
+      match IO.v ~io (Layout.data ~root) with
       | Error `No_file_on_disk -> Fmt.failwith "No data file in %s" root
       | Ok io ->
           let io_offset = IO.offset io in
@@ -151,7 +154,7 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
                            ());
                    previous := e)
 
-    let term = Cmdliner.Term.(const (fun root () -> run ~root) $ path)
+    let term ~io = Cmdliner.Term.(const (fun root () -> run ~io ~root) $ path)
   end
 
   module Cli = struct
@@ -166,7 +169,7 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
       in
       Logs_fmt.reporter ~pp_header ()
 
-    let main () : empty =
+    let main ~io () : empty =
       let default = Term.(ret (const (`Help (`Auto, None)))) in
       let info =
         let doc = "Check and repair Index data-stores." in
@@ -175,12 +178,12 @@ module Make (K : Data.Key) (V : Data.Value) (Platform : Platform_args) = struct
       let commands =
         [
           ( Term.(
-              Stat.term
+              Stat.term ~io
               $ Log.setup_term ~reporter (module Clock) (module Fmt_tty)),
             Cmd.info ~doc:"Print high-level statistics about the store." "stat"
           );
           ( Term.(
-              Integrity_check.term
+              Integrity_check.term ~io
               $ Log.setup_term ~reporter (module Clock) (module Fmt_tty)),
             Cmd.info
               ~doc:"Search the store for integrity faults and corruption."

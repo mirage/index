@@ -1,9 +1,11 @@
 open! Import
 
 module type S = sig
+  type io
   type t
 
   val v :
+    io:io ->
     ?flush_callback:(unit -> unit) ->
     fresh:bool ->
     generation:int63 ->
@@ -11,7 +13,7 @@ module type S = sig
     string ->
     t
 
-  val v_readonly : string -> (t, [ `No_file_on_disk ]) result
+  val v_readonly : io:io -> string -> (t, [ `No_file_on_disk ]) result
   val offset : t -> int63
   val read : t -> off:int63 -> len:int -> bytes -> int
 
@@ -34,7 +36,7 @@ module type S = sig
   module Lock : sig
     type t
 
-    val lock : string -> t
+    val lock : io:io -> string -> t
     val unlock : t -> unit
 
     val pp_dump : string -> (Format.formatter -> unit) option
@@ -64,7 +66,7 @@ module type Io = sig
   module type S = S
 
   module Extend (S : S) : sig
-    include S with type t = S.t
+    include S with type t = S.t and type io = S.io
 
     val iter :
       page_size:int63 ->

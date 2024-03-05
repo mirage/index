@@ -64,8 +64,14 @@ module Tbl = struct
   let check_binding tbl = check_entry (Hashtbl.find tbl) "table"
 end
 
-module Index = struct
-  include Index_unix.Private.Make (Key) (Value) (Index.Cache.Unbounded)
+module type Platform = sig
+  include Index.Platform.S
+
+  val name : string
+end
+
+module Index (Platform : Platform) = struct
+  include Index.Private.Make (Key) (Value) (Platform) (Index.Cache.Unbounded)
 
   let replace_random ?hook t =
     let ((key, value) as binding) = (Key.v (), Value.v ()) in
@@ -88,10 +94,14 @@ let check_completed = function
       Alcotest.failf "Unexpected asynchronous exception: %s"
         (Printexc.to_string exn)
 
-module Make_context (Config : sig
-  val root : string
-end) =
+module Make_context
+    (Platform : Platform)
+    (Config : sig
+      val root : string
+    end) =
 struct
+  module Index = Index (Platform)
+
   let fresh_name =
     let c = ref 0 in
     fun object_type ->
@@ -110,19 +120,19 @@ struct
 
   let ignore (_ : t) = ()
 
-  let empty_index ?(log_size = Default.log_size) ?(lru_size = Default.lru_size)
-      ?flush_callback ?throttle () =
+  let empty_index ~io ?(log_size = Default.log_size)
+      ?(lru_size = Default.lru_size) ?flush_callback ?throttle () =
     let name = fresh_name "empty_index" in
     let cache = Index.empty_cache () in
     let rw =
-      Index.v ?flush_callback ?throttle ~cache ~fresh:true ~log_size ~lru_size
-        name
+      Index.v ~io ?flush_callback ?throttle ~cache ~fresh:true ~log_size
+        ~lru_size name
     in
     let close_all = ref (fun () -> Index.close rw) in
     let tbl = Hashtbl.create 0 in
     let clone ?(fresh = false) ~readonly () =
       let t =
-        Index.v ?flush_callback ?throttle ~cache ~fresh ~log_size ~lru_size
+        Index.v ~io ?flush_callback ?throttle ~cache ~fresh ~log_size ~lru_size
           ~readonly name
       in
       (close_all := !close_all >> fun () -> Index.close t);
@@ -130,7 +140,7 @@ struct
     in
     { rw; tbl; clone; close_all = (fun () -> !close_all ()) }
 
-  let full_index ?(size = Default.size) ?(log_size = Default.log_size)
+  let full_index ~io ?(size = Default.size) ?(log_size = Default.log_size)
       ?(lru_size = Default.lru_size) ?(flush_callback = fun () -> ()) ?throttle
       () =
     let f =
@@ -140,7 +150,7 @@ struct
     let name = fresh_name "full_index" in
     let cache = Index.empty_cache () in
     let rw =
-      Index.v
+      Index.v ~io
         ~flush_callback:(fun () -> !f ())
         ?throttle ~cache ~fresh:true ~log_size ~lru_size name
     in
@@ -157,7 +167,7 @@ struct
     f := flush_callback (* Enable [flush_callback] *);
     let clone ?(fresh = false) ~readonly () =
       let t =
-        Index.v ~flush_callback ?throttle ~cache ~fresh ~log_size ~lru_size
+        Index.v ~io ~flush_callback ?throttle ~cache ~fresh ~log_size ~lru_size
           ~readonly name
       in
       (close_all := !close_all >> fun () -> Index.close t);
@@ -170,38 +180,38 @@ struct
     t.close_all ();
     a
 
-  let with_empty_index ?log_size ?lru_size ?flush_callback ?throttle () f =
+  let with_empty_index ~io ?log_size ?lru_size ?flush_callback ?throttle () f =
     call_then_close
-      (empty_index ?log_size ?lru_size ?flush_callback ?throttle ())
+      (empty_index ~io ?log_size ?lru_size ?flush_callback ?throttle ())
       f
 
-  let with_full_index ?log_size ?lru_size ?flush_callback ?throttle ?size () f =
+  let with_full_index ~io ?log_size ?lru_size ?flush_callback ?throttle ?size ()
+      f =
     call_then_close
-      (full_index ?log_size ?lru_size ?flush_callback ?throttle ?size ())
+      (full_index ~io ?log_size ?lru_size ?flush_callback ?throttle ?size ())
       f
+
+  let check_equivalence index htbl =
+    Hashtbl.iter (Index.check_binding index) htbl;
+    Index.iter (Tbl.check_binding htbl) index
+
+  let check_disjoint index htbl =
+    Hashtbl.iter
+      (fun k v ->
+        match Index.find index k with
+        | exception Not_found -> ()
+        | v' when Value.equal v v' ->
+            Alcotest.failf "Binding %a should not be present" pp_binding (k, v)
+        | v' ->
+            Alcotest.failf "Found value %a when checking for the absence of %a"
+              (Repr.pp Value.t) v' pp_binding (k, v))
+      htbl
 end
 
 let ( let* ) f k = f k
 let uncurry f (x, y) = f x y
 let ignore_value (_ : Value.t) = ()
 let ignore_bool (_ : bool) = ()
-let ignore_index (_ : Index.t) = ()
-
-let check_equivalence index htbl =
-  Hashtbl.iter (Index.check_binding index) htbl;
-  Index.iter (Tbl.check_binding htbl) index
-
-let check_disjoint index htbl =
-  Hashtbl.iter
-    (fun k v ->
-      match Index.find index k with
-      | exception Not_found -> ()
-      | v' when Value.equal v v' ->
-          Alcotest.failf "Binding %a should not be present" pp_binding (k, v)
-      | v' ->
-          Alcotest.failf "Found value %a when checking for the absence of %a"
-            (Repr.pp Value.t) v' pp_binding (k, v))
-    htbl
 
 let get_open_fd root =
   let ( >>? ) x f = match x with `Ok x -> f x | `Skip err -> `Skip err in

@@ -36,7 +36,15 @@ depends: [
   "crowbar"  {with-test & >= "0.2"}
   "re"       {with-test}
   "lru"      {>= "0.3.0"}
+  "eio"      {with-test & >= "0.14" }
+  "eio_main" {with-test & >= "0.14" }
 ]
+
+depopts: [
+  "eio"      {>= "0.14" }
+  "eio_main" {>= "0.14" }
+]
+
 synopsis: "A platform-agnostic multi-level index for OCaml"
 description:"""
 Index is a scalable implementation of persistent indices in OCaml.

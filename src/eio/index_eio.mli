@@ -17,19 +17,18 @@
 
 open! Import
 
-module Make (K : Index.Key.S) (V : Index.Value.S) (C : Index.Cache.S) :
-  Index.S with type key = K.t and type value = V.t and type io = unit
+type io = { switch : Eio.Switch.t; root : Eio.Fs.dir_ty Eio.Path.t }
 
-module Syscalls = Syscalls
-(** Bindings to Unix system calls. *)
+module Make (K : Index.Key.S) (V : Index.Value.S) (C : Index.Cache.S) :
+  Index.S with type key = K.t and type value = V.t and type io = io
 
 (** These modules should not be used. They are exposed purely for testing
     purposes. *)
 module Private : sig
-  module Platform : Index.Platform.S with type io = unit
-  module IO : Index.Platform.IO with type io = unit
+  module Platform : Index.Platform.S with type io = io
+  module IO : Index.Platform.IO with type io = io
   module Raw = Raw
 
   module Make (K : Index.Key.S) (V : Index.Value.S) (C : Index.Cache.S) :
-    Index.Private.S with type key = K.t and type value = V.t and type io = unit
+    Index.Private.S with type key = K.t and type value = V.t and type io = io
 end

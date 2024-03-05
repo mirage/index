@@ -43,7 +43,11 @@ module type S = sig
   val empty_cache : unit -> cache
   (** Construct a new empty cache of index instances. *)
 
+  type io
+  (** The type of IO context required by the backend. *)
+
   val v :
+    io:io ->
     ?flush_callback:(unit -> unit) ->
     ?cache:cache ->
     ?fresh:bool ->
@@ -147,7 +151,7 @@ module type S = sig
   (** Offline [fsck]-like utility for checking the integrity of Index stores
       built using this module. *)
   module Checks : sig
-    include Checks.S
+    include Checks.S with type io = io
     (** @inline *)
   end
 end
@@ -290,8 +294,8 @@ module type Index = sig
   (** The exception raised when any operation is attempted on a closed index,
       except for [close], which is idempotent. *)
 
-  module Make (K : Key.S) (V : Value.S) (_ : Platform.S) (C : Cache.S) :
-    S with type key = K.t and type value = V.t
+  module Make (K : Key.S) (V : Value.S) (P : Platform.S) (C : Cache.S) :
+    S with type key = K.t and type value = V.t and type io = P.io
 
   (** Run-time metric tracking for index instances. *)
   module Stats : sig
@@ -335,7 +339,7 @@ module type Index = sig
 
     module type S = Private with type 'a hook := 'a Hook.t
 
-    module Make (K : Key) (V : Value) (_ : Platform.S) (C : Cache.S) :
-      S with type key = K.t and type value = V.t
+    module Make (K : Key) (V : Value) (P : Platform.S) (C : Cache.S) :
+      S with type key = K.t and type value = V.t and type io = P.io
   end
 end

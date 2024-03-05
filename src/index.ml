@@ -149,8 +149,11 @@ struct
             header of [io]. *)
   }
 
+  type io = Platform.IO.io
+
   type instance = {
     config : config;
+    io : io;
     root : string;  (** The root location of the index *)
     mutable generation : int63;
         (** The generation is a counter of rewriting operations (e.g. [clear]
@@ -281,7 +284,7 @@ struct
       the temporary [log_async], or to fill the [log] field when they have been
       created before their RW counterpart. *)
   let try_load_log t path =
-    match IO.v_readonly path with
+    match IO.v_readonly ~io:t.io path with
     | Error `No_file_on_disk -> None
     | Ok io ->
         let log = Log_file.create io in
@@ -335,7 +338,7 @@ struct
        changed after a merge. *)
     Option.iter (fun (i : index) -> IO.close i.io) t.index;
     let index_path = Layout.data ~root:t.root in
-    match IO.v_readonly index_path with
+    match IO.v_readonly ~io:t.io index_path with
     | Error `No_file_on_disk -> t.index <- None
     | Ok io ->
         let fan_out = Fan.import ~hash_size:K.hash_size (IO.get_fanout io) in
@@ -517,13 +520,13 @@ struct
         Log_file.flush ~with_fsync:true log;
         IO.clear ~generation ~reopen:false log_async
 
-  let v_no_cache ?(flush_callback = fun () -> ()) ~throttle ~fresh ~readonly
+  let v_no_cache ~io ?(flush_callback = fun () -> ()) ~throttle ~fresh ~readonly
       ~lru_size ~log_size root =
     Log.debug (fun l ->
         l "[%s] not found in cache, creating a new instance"
           (Filename.basename root));
     let writer_lock =
-      if not readonly then Some (IO.Lock.lock (Layout.lock ~root)) else None
+      if not readonly then Some (IO.Lock.lock ~io (Layout.lock ~root)) else None
     in
     let config =
       {
@@ -541,7 +544,7 @@ struct
       if readonly then if fresh then raise RO_not_allowed else None
       else
         let io =
-          IO.v ~flush_callback ~fresh ~generation:Int63.zero
+          IO.v ~io ~flush_callback ~fresh ~generation:Int63.zero
             ~fan_size:Int63.zero log_path
         in
         let entries = Int63.(to_int_exn (IO.offset io / Entry.encoded_sizeL)) in
@@ -562,7 +565,7 @@ struct
            during sync_log so there is no need to do it here. *)
       if (not readonly) && IO.exists log_async_path then
         let io =
-          IO.v ~flush_callback ~fresh ~generation ~fan_size:Int63.zero
+          IO.v ~io ~flush_callback ~fresh ~generation ~fan_size:Int63.zero
             log_async_path
         in
         (* in fresh mode, we need to wipe the existing [log_async] file. *)
@@ -582,8 +585,8 @@ struct
             (* NOTE: No [flush_callback] on the Index IO as we maintain the
                invariant that any bindings it contains were previously persisted
                in either [log] or [log_async]. *)
-            IO.v ?flush_callback:None ~fresh ~generation ~fan_size:Int63.zero
-              index_path
+            IO.v ~io ?flush_callback:None ~fresh ~generation
+              ~fan_size:Int63.zero index_path
           in
           let entries = Int63.div (IO.offset io) Entry.encoded_sizeL in
           if entries = Int63.zero then None
@@ -602,6 +605,7 @@ struct
     in
     {
       config;
+      io;
       generation;
       log;
       log_async = None;
@@ -620,12 +624,12 @@ struct
 
   let empty_cache = Cache.create
 
-  let v ?(flush_callback = fun () -> ()) ?(cache = empty_cache ())
+  let v ~io ?(flush_callback = fun () -> ()) ?(cache = empty_cache ())
       ?(fresh = false) ?(readonly = false) ?(throttle = `Block_writes)
       ?(lru_size = 30_000) ~log_size root =
     let new_instance () =
       let instance =
-        v_no_cache ~flush_callback ~fresh ~readonly ~log_size ~lru_size
+        v_no_cache ~io ~flush_callback ~fresh ~readonly ~log_size ~lru_size
           ~throttle root
       in
       if readonly then sync_instance instance;
@@ -802,7 +806,7 @@ struct
     in
     let merge =
       let merge_path = Layout.merge ~root:t.root in
-      IO.v ~fresh:true ~generation
+      IO.v ~io:t.io ~fresh:true ~generation
         ~fan_size:(Int63.of_int (Fan.exported_size fan_out))
         merge_path
     in
@@ -813,7 +817,7 @@ struct
           | `Abort -> `Aborted
           | `Continue ->
               let io =
-                IO.v ~fresh:true ~generation ~fan_size:Int63.zero
+                IO.v ~io:t.io ~fresh:true ~generation ~fan_size:Int63.zero
                   (Layout.data ~root:t.root)
               in
               append_remaining_log fan_out sorted_log_bindings merge;
@@ -872,7 +876,7 @@ struct
   let reset_log_async t =
     let io =
       let log_async_path = Layout.log_async ~root:t.root in
-      IO.v ~flush_callback:t.config.flush_callback ~fresh:true
+      IO.v ~io:t.io ~flush_callback:t.config.flush_callback ~fresh:true
         ~generation:(Int63.succ t.generation) ~fan_size:Int63.zero
         log_async_path
     in
@@ -928,7 +932,7 @@ struct
             merge_lock_wait Mtime.Span.pp rename_lock_wait);
       merge_result
     in
-    if blocking then go () |> Thread.return else Thread.async go
+    if blocking then go () |> Thread.return else Thread.async ~io:t.io go
 
   let is_empty t =
     (* A read-only instance may have not yet loaded the [log], if no explicit
