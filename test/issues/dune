@@ -1,0 +1,4 @@
+(test
+ (name issue398)
+ (modules issue398)
+ (libraries index index.unix))

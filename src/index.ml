@@ -310,12 +310,14 @@ struct
           Log_file.close log;
           (* check that file is on disk, reopen and reload everything. *)
           hook `Reload_log_async;
+          Lru.clear t.lru;
           t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
           (* else if the disk offset is greater, reload the newest data. *))
-        else if old_offset < h.offset then
+        else if old_offset < h.offset then (
+          Lru.clear t.lru;
           Log_file.sync_entries ~min:old_offset log
           (* else if the offset is lesser, that means the [log_async] was
-             cleared, and the generation should have changed. *)
+             cleared, and the generation should have changed. *))
         else if old_offset > h.offset then (
           (* Should never occur, but we can recover by reloading the log from
              scratch rather than just hard failing. *)
@@ -397,6 +399,7 @@ struct
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
                 (Filename.basename t.root));
+          Lru.clear t.lru;
           Log_file.sync_entries ~min:log_offset log)
         else
           (* Here the disk offset should be equal to the known one. A smaller
