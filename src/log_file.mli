@@ -65,4 +65,7 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) : sig
     generation:int63 -> ?hook:(unit -> unit) -> reopen:bool -> t -> unit
   (** [clear t] clears both [t]'s in-memory state and its underlying IO handle.
       The flags are passed to [IO.clear]. *)
+
+  val find' : hook:(unit -> unit) -> t -> key -> value
+  (** Similar to [find] but to be used in tests. *)
 end

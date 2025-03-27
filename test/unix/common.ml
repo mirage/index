@@ -43,8 +43,8 @@ type binding = Key.t * Value.t
 let pp_binding ppf (key, value) =
   Fmt.pf ppf "{ %a → %a }" (Repr.pp Key.t) key (Repr.pp Value.t) value
 
-let check_entry findf typ k v =
-  match findf k with
+let check_entry ~find typ k v =
+  match find k with
   | v' when Value.equal v v' -> ()
   | v' (* v =/= v' *) ->
       Alcotest.failf "Found %s when checking for binding %a in %s" v' pp_binding
@@ -61,7 +61,7 @@ module Tbl = struct
     assert (Hashtbl.length h = size);
     h
 
-  let check_binding tbl = check_entry (Hashtbl.find tbl) "table"
+  let check_binding tbl = check_entry ~find:(Hashtbl.find tbl) "table"
 end
 
 module Index = struct
@@ -71,7 +71,7 @@ module Index = struct
     let ((key, value) as binding) = (Key.v (), Value.v ()) in
     (binding, replace' ?hook t key value)
 
-  let check_binding index = check_entry (find index) "index"
+  let check_binding index = check_entry ~find:(find index) "index"
 
   let check_not_found index k =
     match find index k with
