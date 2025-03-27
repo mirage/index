@@ -18,6 +18,8 @@
 ## Added
 
 - Support all version of cmdliner (#386)
+- Support MSVC compiler. Supply Windows implementations of pread and pwrite.
+  (#383)
 
 ## Fixed
 
