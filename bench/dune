@@ -26,7 +26,7 @@
  (preprocess
   (pps ppx_repr))
  (libraries index index.unix unix cmdliner logs repr ppx_repr common
-   tezos-base58 optint fmt rusage mtime mtime.clock.os digestif))
+   digestif.ocaml tezos-base58 optint fmt rusage mtime mtime.clock.os))
 
 ;; Require the above executables to compile during tests
 
