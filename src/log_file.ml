@@ -77,7 +77,17 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     let len = Entry.encoded_size in
     let r = IO.read t.io ~off ~len scratch.buffer in
     assert (r = Entry.encoded_size);
-    Entry.decode (Bytes.unsafe_to_string scratch.buffer) 0
+    let s =
+      if Value.encoded_size = 0 then
+        (* Quickfix for a situation where [Key.decode] kept a pointer to [s]
+           when [Value.encoded_size = 0]. This led to a bug where some entries
+           dissapeared post-merge.
+
+           A proper solution will be implemented in the future. *)
+        Bytes.to_string scratch.buffer
+      else Bytes.unsafe_to_string scratch.buffer
+    in
+    Entry.decode s 0
 
   let elt_index t key =
     (* NOTE: we use the _uppermost_ bits of the key hash to index the bucket
