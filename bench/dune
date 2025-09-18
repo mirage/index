@@ -8,8 +8,8 @@
  (modules bench)
  (preprocess
   (pps ppx_repr ppx_deriving_yojson))
- (libraries index index.unix cmdliner metrics metrics-unix yojson fmt re
-   stdlib-shims common mtime mtime.clock.os unix))
+ (libraries index index.unix cmdliner metrics metrics-unix yojson fmt fmt.tty
+   re stdlib-shims common mtime mtime.clock.os unix))
 
 (alias
  (name bench)
@@ -26,7 +26,8 @@
  (preprocess
   (pps ppx_repr))
  (libraries index index.unix unix cmdliner logs repr ppx_repr common
-   tezos-base58 optint fmt rusage mtime mtime.clock.os digestif))
+   tezos-base58 optint fmt fmt.tty rusage mtime mtime.clock.os digestif
+   digestif.c))
 
 ;; Require the above executables to compile during tests
 

@@ -558,10 +558,10 @@ let env_var s = Cmd.Env.info ("INDEX_BENCH_" ^ s)
 let new_file =
   let parse s =
     match Sys.file_exists s && Sys.is_directory s with
-    | false -> `Ok s
-    | true -> `Error (Printf.sprintf "Error: `%s' is a directory" s)
+    | false -> Ok s
+    | true -> Error (`Msg (Printf.sprintf "Error: `%s' is a directory" s))
   in
-  (parse, Format.pp_print_string)
+  Arg.conv (parse, Format.pp_print_string)
 
 let regex =
   let parse s =
