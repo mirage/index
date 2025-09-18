@@ -1,18 +1,18 @@
 open! Import
 
 type t = {
-  mutable bytes_read : int;
-  mutable nb_reads : int;
-  mutable bytes_written : int;
-  mutable nb_writes : int;
-  mutable nb_merge : int;
-  mutable merge_durations : float list;
-  mutable nb_replace : int;
-  mutable replace_durations : float list;
-  mutable nb_sync : int;
-  mutable time_sync : float;
-  mutable lru_hits : int;
-  mutable lru_misses : int;
+  bytes_read : int;
+  nb_reads : int;
+  bytes_written : int;
+  nb_writes : int;
+  nb_merge : int;
+  merge_durations : float list;
+  nb_replace : int;
+  replace_durations : float list;
+  nb_sync : int;
+  time_sync : float;
+  lru_hits : int;
+  lru_misses : int;
 }
 (** The type for stats for an index I.
 

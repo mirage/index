@@ -88,7 +88,7 @@ module Encoding = struct
 end
 
 let decoded_seq_of_encoded_chan_with_prefixes :
-      'a. 'a Repr.ty -> in_channel -> 'a Seq.t =
+    'a. 'a Repr.ty -> in_channel -> 'a Seq.t =
  fun repr channel ->
   let decode_bin = Repr.decode_bin repr |> Repr.unstage in
   let decode_prefix = Repr.(decode_bin int32 |> unstage) in
@@ -171,9 +171,8 @@ end
 let hash_of_string = Repr.of_string Encoding.Hash.t
 
 module Bench_suite
-    (Store : S
-               with type key = Encoding.Hash.t
-                and type value = Int63.t * int * char) =
+    (Store :
+      S with type key = Encoding.Hash.t and type value = Int63.t * int * char) =
 struct
   let key_to_hash k =
     match hash_of_string k with

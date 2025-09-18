@@ -133,10 +133,11 @@ module Benchmark = struct
        Write amplification in syscalls: %f@,\
        Write amplification in bytes: %f@,\
        Last 10 merges cumulated duration (μs): %f@\n\
-       Number of merges : %d@]" Mtime.Span.pp result.time result.ops_per_sec
-      result.mbs_per_sec result.read_amplification_calls
-      result.read_amplification_size result.write_amplification_calls
-      result.write_amplification_size result.merges_duration result.nb_merges
+       Number of merges : %d@]"
+      Mtime.Span.pp result.time result.ops_per_sec result.mbs_per_sec
+      result.read_amplification_calls result.read_amplification_size
+      result.write_amplification_calls result.write_amplification_size
+      result.merges_duration result.nb_merges
 end
 
 let make_bindings_pool nb_entries =
@@ -382,9 +383,9 @@ let pp_config fmt config =
      Log size: %d@,\
      Seed: %d@,\
      Metrics: %b@,\
-     Sampling interval: %d@]" config.key_size config.value_size
-    config.nb_entries config.log_size config.seed config.with_metrics
-    config.sampling_interval
+     Sampling interval: %d@]"
+    config.key_size config.value_size config.nb_entries config.log_size
+    config.seed config.with_metrics config.sampling_interval
 
 let cleanup root =
   let files = [ "data"; "log"; "lock"; "log_async"; "merge" ] in

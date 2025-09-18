@@ -12,7 +12,8 @@ module type Key = sig
   (** The equality function for keys. *)
 
   val hash : t -> int
-  (** Note: Unevenly distributed hash functions may result in performance drops. *)
+  (** Note: Unevenly distributed hash functions may result in performance drops.
+  *)
 
   val hash_size : int
   (** The number of bits necessary to encode the maximum output value of

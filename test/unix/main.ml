@@ -922,7 +922,8 @@ module Filter = struct
   (* Filtering should also affect the in-memory LRU. *)
   let lru_size = 10
 
-  (** Test that all bindings are kept when using [filter] with a true predicate. *)
+  (** Test that all bindings are kept when using [filter] with a true predicate.
+  *)
   let filter_none () =
     let* Context.{ rw; tbl; _ } = Context.with_full_index ~lru_size () in
     Index.filter rw (fun _ -> true);

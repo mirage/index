@@ -34,7 +34,8 @@ exception RO_not_allowed
 (** Raised whenever a read-only instance performs a write action. *)
 
 exception RW_not_allowed
-(** Raised whenever a read-write instance performs a reserved read-only action. *)
+(** Raised whenever a read-write instance performs a reserved read-only action.
+*)
 
 exception Closed
 (** Raised whenever a closed instance is used. *)
@@ -167,7 +168,8 @@ struct
         (** The log_async file contains bindings added concurrently to a [merge]
             operation. It is only present when a merge is ongoing. *)
     mutable open_instances : int;
-        (** The number of open instances that are shared through the [Cache.t]. *)
+        (** The number of open instances that are shared through the [Cache.t].
+        *)
     mutable lru : Lru.t;
     writer_lock : IO.Lock.t option;
         (** A lock that prevents multiple RW instances to be open at the same
@@ -175,7 +177,8 @@ struct
     sync_lock : Semaphore.t;
         (** A lock that prevents multiple [sync] to happen at the same time. *)
     merge_lock : Semaphore.t;
-        (** A lock that prevents multiple [merges] to happen at the same time. *)
+        (** A lock that prevents multiple [merges] to happen at the same time.
+        *)
     rename_lock : Semaphore.t;
         (** A lock used to protect a critical bit when finalizing a [merge]
             operation. All operations should be guarded by this lock. *)
@@ -303,7 +306,8 @@ struct
         if
           (* the generation has changed *)
           h.generation > Int63.succ old_generation
-          || (* the last sync was done between clear(log) and clear(log_async) *)
+          ||
+          (* the last sync was done between clear(log) and clear(log_async) *)
           (h.generation = Int63.succ old_generation && h.offset = Int63.zero)
         then (
           (* close the file .*)
@@ -324,9 +328,9 @@ struct
                 "[%s] log_async IO header monotonicity violated during sync:@,\
                 \  offset: %a -> %a@,\
                 \  generation: %a -> %a@,\
-                 Reloading the log to compensate." (Filename.basename t.root)
-                Int63.pp old_offset Int63.pp h.offset Int63.pp old_generation
-                Int63.pp h.generation);
+                 Reloading the log to compensate."
+                (Filename.basename t.root) Int63.pp old_offset Int63.pp h.offset
+                Int63.pp old_generation Int63.pp h.generation);
           Log_file.reload log)
 
   (** Syncs the [index] of the instance by checking on-disk changes. *)
@@ -446,7 +450,8 @@ struct
     Search.interpolation_search (IOArray.v index.io) key ~low ~high
 
   (** Finds the value associated to [key] in [t]. In order, checks in
-      [log_async] (in memory), then [log] (in memory), then [index] (on disk). *)
+      [log_async] (in memory), then [log] (in memory), then [index] (on disk).
+  *)
   let find_instance t key =
     let find_if_exists ~name ~find db =
       match db with

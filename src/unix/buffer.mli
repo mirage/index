@@ -32,10 +32,12 @@ val clear : t -> unit
 
 val add_substring : t -> string -> off:int -> len:int -> unit
 (** [add_substring t s ~off ~len] appends the substring
-    [s.(off) .. s.(off + len - 1)] at the end of [t], resizing [t] if necessary. *)
+    [s.(off) .. s.(off + len - 1)] at the end of [t], resizing [t] if necessary.
+*)
 
 val add_string : t -> string -> unit
-(** [add_string t s] appends [s] at the end of [t], resizing [t] if necessary. *)
+(** [add_string t s] appends [s] at the end of [t], resizing [t] if necessary.
+*)
 
 val write_with : (string -> int -> int -> unit) -> t -> unit
 (** [write_with writer t] uses [writer] to write the contents of [t]. [writer]
