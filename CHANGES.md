@@ -35,6 +35,7 @@
 
 ## Changed
 
+- Added high-level documentation in `Documentation.md`
 - The benchmarks now use `tezos-base58` instead of `tezos-context-hash` (#367)
 
 - Add an LRU to cache the result of `Index.find` operations. The default LRU
