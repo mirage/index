@@ -31,8 +31,8 @@ let fresh_stats () =
     lru_misses = 0;
   }
 
-let fresh_stats () = Domain.DLS.new_key (fun () -> fresh_stats ())
-let kstats = fresh_stats ()
+let fresh_stats_dls () = Domain.DLS.new_key (fun () -> fresh_stats ())
+let kstats = fresh_stats_dls ()
 let get () = Domain.DLS.get kstats
 
 let reset_stats () =
@@ -79,6 +79,37 @@ let add_write n =
   let stats = Domain.DLS.get kstats in
   stats.bytes_written <- stats.bytes_written + n;
   stats.nb_writes <- succ stats.nb_writes
+
+let merge s1 s2 =
+  {
+    bytes_read = s1.bytes_read + s2.bytes_read;
+    nb_reads = s1.nb_reads + s2.nb_reads;
+    bytes_written = s1.bytes_written + s2.bytes_written;
+    nb_writes = s1.nb_writes + s2.nb_writes;
+    nb_merge = s1.nb_merge + s2.nb_merge;
+    merge_durations = s1.merge_durations @ s2.merge_durations;
+    nb_replace = s1.nb_replace + s2.nb_replace;
+    replace_durations = s1.replace_durations @ s2.replace_durations;
+    nb_sync = s1.nb_sync + s2.nb_sync;
+    time_sync = s1.time_sync +. s2.time_sync;
+    lru_hits = s1.lru_hits + s2.lru_hits;
+    lru_misses = s1.lru_misses + s2.lru_misses;
+  }
+
+let merge_in s2 =
+  let s1 = Domain.DLS.get kstats in
+  s1.bytes_read <- s1.bytes_read + s2.bytes_read;
+  s1.nb_reads <- s1.nb_reads + s2.nb_reads;
+  s1.bytes_written <- s1.bytes_written + s2.bytes_written;
+  s1.nb_writes <- s1.nb_writes + s2.nb_writes;
+  s1.nb_merge <- s1.nb_merge + s2.nb_merge;
+  s1.merge_durations <- s1.merge_durations @ s2.merge_durations;
+  s1.nb_replace <- s1.nb_replace + s2.nb_replace;
+  s1.replace_durations <- s1.replace_durations @ s2.replace_durations;
+  s1.nb_sync <- s1.nb_sync + s2.nb_sync;
+  s1.time_sync <- s1.time_sync +. s2.time_sync;
+  s1.lru_hits <- s1.lru_hits + s2.lru_hits;
+  s1.lru_misses <- s1.lru_misses + s2.lru_misses
 
 module Make (Clock : Platform.CLOCK) = struct
   let replace_timer = ref (Clock.counter ())
