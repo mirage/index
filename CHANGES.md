@@ -2,6 +2,7 @@
 
 ## Changed
 
+- Replace global value of Stats by a DLS.key (#404, @lyrm)
 - Lock files are now opened with O_CLOEXEC flag (#394, @vect0r-vicall)
 - Update to cmdliner.1.1.0 (#382, @MisterDA)
 - Mirage support: optional dependency to unix (#396, @art-w)

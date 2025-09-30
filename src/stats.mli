@@ -38,6 +38,8 @@ val incr_nb_replace : unit -> unit
 val incr_nb_sync : unit -> unit
 val incr_nb_lru_hits : unit -> unit
 val incr_nb_lru_misses : unit -> unit
+val merge : t -> t -> t
+val merge_in : t -> unit
 
 module Make (_ : Platform.CLOCK) : sig
   val start_replace : unit -> unit
