@@ -1101,6 +1101,7 @@ module Private = struct
   module Data = Data
   module Layout = Layout
   module Logs = Log
+  module Log_file = Log_file
 
   module Hook = struct
     type 'a t = 'a -> unit

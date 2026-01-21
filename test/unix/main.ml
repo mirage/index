@@ -2,6 +2,8 @@ module Hook = Index.Private.Hook
 module Layout = Index.Private.Layout
 module Semaphore = Semaphore_compat.Semaphore.Binary
 module I = Index
+module IO = Index_unix.Private.IO
+module Int63 = Optint.Int63
 open Common
 
 type index = Common.Index.t
@@ -127,16 +129,15 @@ module Live = struct
     Index.flush rw;
     Index.clear rw;
     Index.close rw;
-    let module I = Index_unix.Private.IO in
     let test_there path =
-      match I.v_readonly path with
+      match IO.v_readonly path with
       | Error `No_file_on_disk -> Alcotest.failf "expected file: %s" path
       | Ok data ->
-          Alcotest.(check int) path (I.size data) (I.size_header data);
-          I.close data
+          Alcotest.(check int) path (IO.size data) (IO.size_header data);
+          IO.close data
     in
     let test_not_there path =
-      match I.v_readonly path with
+      match IO.v_readonly path with
       | Error `No_file_on_disk -> ()
       | Ok _ -> Alcotest.failf "do not expect file: %s" path
     in
@@ -1050,6 +1051,43 @@ module Throttle = struct
     ]
 end
 
+module Log_file = struct
+  module Log_file = I.Private.Log_file.Make (IO) (Key) (Value)
+  module Thread = Index_unix.Private.Thread
+
+  let reads () =
+    let root = Context.fresh_name "empty_index" in
+    let log_path = Layout.log ~root in
+    let log_io =
+      IO.v ~fresh:false ~fan_size:Int63.zero ~generation:Int63.zero log_path
+    in
+    let log = Log_file.create log_io in
+    let k1, v1 = (Key.v (), Value.v ()) in
+    let k2, v2 = (Key.v (), Value.v ()) in
+    Log_file.replace log k1 v1;
+    Log_file.replace log k2 v2;
+    let find = Log_file.find log in
+    check_entry ~find "log" k1 v1;
+    let find = Log_file.find log in
+    check_entry ~find "log" k2 v2;
+    let hook () = ignore_value (Log_file.find log k1) in
+    let () =
+      let thread =
+        Thread.async (fun () ->
+            let find = Log_file.find' ~hook log in
+            check_entry ~find "log" k2 v2)
+      in
+      Thread.await thread |> function
+      | Ok () -> ()
+      | Error (`Async_exn exn) ->
+          Alcotest.failf "Unexpected asynchronous exception: %s"
+            (Printexc.to_string exn)
+    in
+    Log_file.close log
+
+  let tests = [ ("interleaved reads", `Quick, reads) ]
+end
+
 let () =
   Common.report ();
   Alcotest.run "index.unix"
@@ -1064,4 +1102,5 @@ let () =
       ("filter", Filter.tests);
       ("flush_callback", Flush_callback.tests);
       ("throttle", Throttle.tests);
+      ("log file", Log_file.tests);
     ]
