@@ -1,12 +1,33 @@
-# Unreleased
+# 1.7.0 (2026-10-09)
+
+## Added
+
+- Add `Stats.merge` and `Stats.merge_in`, to combine the statistics recorded
+  by several domains (#404, @lyrm)
+- Expose the Unix platform as `Index_unix.Private.Platform`, so that
+  `Index.Make` can be applied to it directly (#396, @art-w)
 
 ## Changed
 
-- Replace global value of Stats by a DLS.key (#404, @lyrm)
-- Lock files are now opened with O_CLOEXEC flag (#394, @vect0r-vicall)
-- Update to cmdliner.1.1.0 (#382, @MisterDA)
-- Mirage support: optional dependency to unix (#396, @art-w)
-- Fix RO sync: clear LRU for all log updates (#399, @art-w)
+- OCaml 5.0 or later is now required (#404, @lyrm)
+- Statistics are now recorded per domain, in a `Domain.DLS` key, instead of
+  in a global value (#404, @lyrm)
+- Mirage support: `index` no longer depends on `unix`, and `index.unix` is
+  now an optional library (#396, @art-w)
+- Breaking: `Platform.S` and `Checks.Platform_args` now require a `Progress`
+  and a `Fmt_tty` module, and `Private.Logs.setup` and
+  `Private.Logs.setup_term` take an extra `(module Platform.FMT_TTY)`
+  argument (#396, @art-w)
+- Support cmdliner 2.0.0. Cmdliner 1.1.0 or later is now required (#382,
+  @MisterDA, #402, @art-w)
+
+## Fixed
+
+- Lock files are now opened with the `O_CLOEXEC` flag (#394, @vect0r-vicall)
+- Read-only instances could return stale values after `sync`: their LRU is
+  now cleared on every log update detected (#399, @art-w)
+- Add the missing `logs.threaded` dependency of the Unix tests (#400,
+  @anmonteiro)
 
 # 1.6.2 (2023-06-06)
 
