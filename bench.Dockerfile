@@ -6,6 +6,6 @@ RUN sudo chown opam .
 COPY *.opam ./
 RUN opam remote add origin https://github.com/ocaml/opam-repository.git && opam update
 RUN opam pin -yn --with-version=dev .
-RUN opam install -y --deps-only --with-test .
+RUN sudo apt-get update && opam install -y --deps-only --with-test .
 COPY . ./
 ENTRYPOINT opam exec -- make bench
