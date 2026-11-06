@@ -30,7 +30,11 @@ type t = {
     - [time_sync] is the duration of the latest call to sync. *)
 
 val get : unit -> t
+(** [get ()] is the stats recorded by the calling domain. *)
+
 val reset_stats : unit -> unit
+(** [reset_stats ()] resets the stats of the calling domain. *)
+
 val add_read : int -> unit
 val add_write : int -> unit
 val incr_nb_merge : unit -> unit
@@ -38,8 +42,15 @@ val incr_nb_replace : unit -> unit
 val incr_nb_sync : unit -> unit
 val incr_nb_lru_hits : unit -> unit
 val incr_nb_lru_misses : unit -> unit
+
 val merge : t -> t -> t
+(** [merge s1 s2] is the sum of [s1] and [s2], for instance to combine the stats
+    of several domains. The duration lists are concatenated, so
+    [merge_durations] may hold more than 10 elements, and [time_sync] is the sum
+    of the two latest sync durations. *)
+
 val merge_in : t -> unit
+(** [merge_in s] adds [s] to the stats of the calling domain, as {!merge} does. *)
 
 module Make (_ : Platform.CLOCK) : sig
   val start_replace : unit -> unit
