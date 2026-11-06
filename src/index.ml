@@ -295,7 +295,12 @@ struct
     match t.log_async with
     | None ->
         hook `Reload_log_async;
-        t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
+        let log_async = try_load_log t (Layout.log_async ~root:t.root) in
+        (* The entries of a new [log_async] may update keys cached in the LRU. *)
+        (match log_async with
+        | Some log when Log_file.cardinal log > 0 -> Lru.clear t.lru
+        | Some _ | None -> ());
+        t.log_async <- log_async
     | Some log ->
         let old_generation = t.generation in
         let old_offset = IO.offset (Log_file.io log) in
@@ -329,6 +334,7 @@ struct
                  Reloading the log to compensate." (Filename.basename t.root)
                 Int63.pp old_offset Int63.pp h.offset Int63.pp old_generation
                 Int63.pp h.generation);
+          Lru.clear t.lru;
           Log_file.reload log)
 
   (** Syncs the [index] of the instance by checking on-disk changes. *)

@@ -611,6 +611,34 @@ module Readonly = struct
     Index.sync ro;
     Index.check_binding ro k v2
 
+  (** Readonly finds the new value of a key cached in its LRU, after a sync that
+      loads the update from a new log_async. *)
+  let sync_after_log_async_update () =
+    let* Context.{ rw; clone; _ } = Context.with_empty_index ~lru_size:10 () in
+    let ro = clone ~readonly:true () in
+    let merge = Semaphore.make false and merge_started = Semaphore.make false in
+    let merge_hook =
+      I.Private.Hook.v @@ function
+      | `Before ->
+          Semaphore.release merge_started;
+          Semaphore.acquire merge
+      | _ -> ()
+    in
+    let k, v1, v2 = (Key.v (), Value.v (), Value.v ()) in
+    Index.replace rw k v1;
+    Index.flush rw;
+    Index.sync ro;
+    Index.check_binding ro k v1;
+    let t = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
+    Semaphore.acquire merge_started;
+    Index.replace rw k v2;
+    Index.flush rw;
+    Index.sync ro;
+    let found = Index.find ro k in
+    Semaphore.release merge;
+    Index.await t |> check_completed;
+    Alcotest.(check string) "value found during the merge" v2 found
+
   let tests =
     [
       ("add", `Quick, readonly);
@@ -638,6 +666,7 @@ module Readonly = struct
         readonly_sync_and_merge_clear );
       ("reload log and log async", `Quick, reload_log_async);
       ("sync after log update", `Quick, sync_after_log_update);
+      ("sync after log_async update", `Quick, sync_after_log_async_update);
     ]
 end
 
