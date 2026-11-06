@@ -596,6 +596,21 @@ module Readonly = struct
     Alcotest.(check int) "reloadings of log async per merge" 1 !reload_log_async;
     Index.await t |> check_completed
 
+  (** Readonly finds the new value of a key cached in its LRU, after a sync that
+      reads the update from the log (#398). *)
+  let sync_after_log_update () =
+    let* Context.{ rw; clone; _ } = Context.with_empty_index ~lru_size:10 () in
+    let ro = clone ~readonly:true () in
+    let k, v1, v2 = (Key.v (), Value.v (), Value.v ()) in
+    Index.replace rw k v1;
+    Index.flush rw;
+    Index.sync ro;
+    Index.check_binding ro k v1;
+    Index.replace rw k v2;
+    Index.flush rw;
+    Index.sync ro;
+    Index.check_binding ro k v2
+
   let tests =
     [
       ("add", `Quick, readonly);
@@ -622,6 +637,7 @@ module Readonly = struct
         `Quick,
         readonly_sync_and_merge_clear );
       ("reload log and log async", `Quick, reload_log_async);
+      ("sync after log update", `Quick, sync_after_log_update);
     ]
 end
 
