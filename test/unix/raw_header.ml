@@ -50,5 +50,27 @@ let fan () =
       Alcotest.(check string)
         "complete fan" (String.make 16 'f') (Raw.Fan.get raw))
 
+(** Writing a version that is not 8 bytes long raises [Invalid_argument]. *)
+let version_length () =
+  with_file (String.make 32 '\000') (fun raw ->
+      let invalid name f =
+        match f () with
+        | () -> Alcotest.failf "%s: Invalid_argument expected" name
+        | exception Invalid_argument _ -> ()
+      in
+      invalid "Version.set" (fun () -> Raw.Version.set raw "v1");
+      invalid "Header.set" (fun () ->
+          Raw.Header.set raw
+            { offset = Int63.zero; version = "v1"; generation = Int63.zero });
+      invalid "Header_prefix.set" (fun () ->
+          Raw.Header_prefix.set raw
+            { offset = Int63.zero; version = "000000001" });
+      Raw.Version.set raw "00000001";
+      Alcotest.(check string) "version" "00000001" (Raw.Version.get raw))
+
 let tests =
-  [ ("truncated header", `Quick, truncated_header); ("fan", `Quick, fan) ]
+  [
+    ("truncated header", `Quick, truncated_header);
+    ("fan", `Quick, fan);
+    ("version length", `Quick, version_length);
+  ]

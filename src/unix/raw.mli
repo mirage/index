@@ -80,9 +80,9 @@ module Version : sig
   (** [get t] is the version, a string of 8 bytes. *)
 
   val set : t -> string -> unit
-  (** [set t s] writes the first 8 bytes of [s] as the version. [s] must be at
-      least 8 bytes long: this is not checked, and the bytes written after the
-      end of a shorter string are unspecified. *)
+  (** [set t s] writes [s] as the version.
+
+      @raise Invalid_argument if [s] is not 8 bytes long. *)
 end
 
 (** The offset, in bytes 0 to 7. *)
@@ -131,7 +131,7 @@ module Header : sig
   val set : raw -> t -> unit
   (** [set t h] writes bytes 0 to 23.
 
-      @raise Assert_failure if [h.version] is not 8 bytes long. *)
+      @raise Invalid_argument if [h.version] is not 8 bytes long. *)
 end
 with type raw := t
 
@@ -153,6 +153,6 @@ module Header_prefix : sig
   val set : raw -> t -> unit
   (** [set t h] writes bytes 0 to 15.
 
-      @raise Assert_failure if [h.version] is not 8 bytes long. *)
+      @raise Invalid_argument if [h.version] is not 8 bytes long. *)
 end
 with type raw := t

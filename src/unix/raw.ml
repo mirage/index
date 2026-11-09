@@ -60,6 +60,10 @@ exception Not_written
    header is missing or was only partly written. *)
 let check_read ~len n = if n < len then raise Not_written [@@inline always]
 
+let check_version_length ~fn v =
+  if String.length v <> 8 then
+    Fmt.invalid_arg "Raw.%s: the version %S is not 8 bytes long" fn v
+
 module Offset = struct
   let off = Int63.zero
   let set t n = unsafe_write t ~off (encode_int63 n) 0 8
@@ -82,7 +86,9 @@ module Version = struct
     check_read ~len n;
     Bytes.unsafe_to_string buf
 
-  let set t v = unsafe_write t ~off v 0 8
+  let set t v =
+    check_version_length ~fn:"Version.set" v;
+    unsafe_write t ~off v 0 8
 end
 
 module Generation = struct
@@ -149,7 +155,7 @@ module Header = struct
     { offset; version; generation }
 
   let set t { offset; version; generation } =
-    assert (String.length version = 8);
+    check_version_length ~fn:"Header.set" version;
     let b = Bytes.create total_header_length in
     Bytes.blit_string (encode_int63 offset) 0 b 0 8;
     Bytes.blit_string version 0 b 8 8;
@@ -180,7 +186,7 @@ module Header_prefix = struct
     { offset; version }
 
   let set t { offset; version } =
-    assert (String.length version = 8);
+    check_version_length ~fn:"Header_prefix.set" version;
     let b = Bytes.create total_header_length in
     Bytes.blit_string (encode_int63 offset) 0 b 0 8;
     Bytes.blit_string version 0 b 8 8;
