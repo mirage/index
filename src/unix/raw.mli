@@ -28,7 +28,7 @@
     made of the offset and the version only, and their data starts at byte 16.
 
     The functions below that read the header raise {!Not_written} when the file
-    ends at or before the first byte they read. *)
+    ends before the last byte they read. *)
 
 open! Import
 
@@ -71,10 +71,9 @@ val fstat : t -> Unix.stats
     Its [st_size] includes the header. *)
 
 exception Not_written
-(** The exception raised when reading the header of a file that ends at or
-    before the first byte to read, for instance an empty file. A file that ends
-    after this byte but before the end of what is read raises [Assert_failure]
-    instead. *)
+(** The exception raised when reading the header of a file that ends before the
+    last byte to read: the header is missing, as in an empty file, or was only
+    partly written. *)
 
 module Version : sig
   val get : t -> string
