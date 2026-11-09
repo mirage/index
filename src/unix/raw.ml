@@ -10,7 +10,10 @@ let v fd = { fd }
 let really_write fd fd_offset buffer buffer_offset length =
   let rec aux fd_offset buffer_offset length =
     let w = Syscalls.pwrite ~fd ~fd_offset ~buffer ~buffer_offset ~length in
-    if w = 0 || w = length then ()
+    if w = length then ()
+    else if w = 0 then
+      Fmt.failwith
+        "Raw.unsafe_write: %d bytes left to write, but pwrite wrote none" length
     else
       (aux [@tailcall])
         (fd_offset ++ Int63.of_int w)

@@ -47,7 +47,8 @@ val unsafe_write : t -> off:int63 -> string -> int -> int -> unit
     The bounds are not checked: [soff] and [len] must designate a valid
     substring of [s].
 
-    @raise Unix.Unix_error if a system call fails. *)
+    @raise Unix.Unix_error if a system call fails.
+    @raise Failure if a system call writes nothing while bytes remain. *)
 
 val unsafe_read : t -> off:int63 -> len:int -> bytes -> int
 (** [unsafe_read t ~off ~len buf] reads at most [len] bytes from the file, at
