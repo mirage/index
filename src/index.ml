@@ -65,6 +65,7 @@ struct
     val create : int -> t
     val add : t -> key -> value -> unit
     val find : t -> key -> value option
+    val remove : t -> key -> unit
     val clear : t -> unit
   end = struct
     module Lru =
@@ -98,6 +99,7 @@ struct
       Lru.add k v t;
       Lru.trim t
 
+    let remove t k = Lru.remove k !t
     let clear t = t := Lru.create (Lru.capacity !t)
   end
 
@@ -280,14 +282,15 @@ struct
 
   (** {1 RO instances syncing} *)
 
-  (** Loads the log file at [path], if it exists. Used by RO instances to load
-      the temporary [log_async], or to fill the [log] field when they have been
-      created before their RW counterpart. *)
-  let try_load_log t path =
+  (** Loads the log file at [path], if it exists, calling [on_key] on the key of
+      each of its entries. Used by RO instances to load the temporary
+      [log_async], or to fill the [log] field when they have been created before
+      their RW counterpart. *)
+  let try_load_log ?on_key t path =
     match IO.v_readonly path with
     | Error `No_file_on_disk -> None
     | Ok io ->
-        let log = Log_file.create io in
+        let log = Log_file.create ?on_key io in
         Log.debug (fun l ->
             l "[%s] loaded %d entries from %s" (Filename.basename t.root)
               (Log_file.cardinal log) (Filename.basename path));
@@ -298,12 +301,10 @@ struct
     match t.log_async with
     | None ->
         hook `Reload_log_async;
-        let log_async = try_load_log t (Layout.log_async ~root:t.root) in
         (* The entries of a new [log_async] may update keys cached in the LRU. *)
-        (match log_async with
-        | Some log when Log_file.cardinal log > 0 -> Lru.clear t.lru
-        | Some _ | None -> ());
-        t.log_async <- log_async
+        t.log_async <-
+          try_load_log ~on_key:(Lru.remove t.lru) t
+            (Layout.log_async ~root:t.root)
     | Some log ->
         let old_generation = t.generation in
         let old_offset = IO.offset (Log_file.io log) in
@@ -318,14 +319,17 @@ struct
           Log_file.close log;
           (* check that file is on disk, reopen and reload everything. *)
           hook `Reload_log_async;
-          Lru.clear t.lru;
-          t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
+          (* Only the keys of the new [log_async] must leave the LRU: the
+             bindings of the previous one were copied into [log], and a merge
+             changes the generation of [log], which clears the LRU. *)
+          t.log_async <-
+            try_load_log ~on_key:(Lru.remove t.lru) t
+              (Layout.log_async ~root:t.root)
           (* else if the disk offset is greater, reload the newest data. *))
-        else if old_offset < h.offset then (
-          Lru.clear t.lru;
-          Log_file.sync_entries ~min:old_offset log
+        else if old_offset < h.offset then
+          Log_file.sync_entries ~on_key:(Lru.remove t.lru) ~min:old_offset log
           (* else if the offset is lesser, that means the [log_async] was
-             cleared, and the generation should have changed. *))
+             cleared, and the generation should have changed. *)
         else if old_offset > h.offset then (
           (* Should never occur, but we can recover by reloading the log from
              scratch rather than just hard failing. *)
@@ -359,7 +363,10 @@ struct
 
       It holds [rename_lock], like [find]: a [find] running between the
       invalidation of the LRU and the loading of the new bindings would put an
-      outdated value back in the LRU. This also serializes the syncs. *)
+      outdated value back in the LRU. This also serializes the syncs.
+
+      New bindings only remove their keys from the LRU. A new generation of
+      [log] clears it, as a merge or a clear may have changed any binding. *)
   let sync_instance ?(hook = fun _ -> ()) t =
     Semaphore.with_acquire "sync" t.rename_lock @@ fun () ->
     Log.debug (fun l ->
@@ -412,8 +419,7 @@ struct
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
                 (Filename.basename t.root));
-          Lru.clear t.lru;
-          Log_file.sync_entries ~min:log_offset log)
+          Log_file.sync_entries ~on_key:(Lru.remove t.lru) ~min:log_offset log)
         else
           (* Here the disk offset should be equal to the known one. A smaller
              offset should not be possible, because that would mean a [clear] or

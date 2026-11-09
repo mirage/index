@@ -116,10 +116,35 @@ let test_filter () =
     (fun () -> ignore (Index.find idx k));
   check_lru_stats __POS__ ~hits:0 ~misses:1
 
+(* Check that a read-only [sync] only removes the updated keys from the LRU: *)
+let test_ro_sync () =
+  let lru_size = 2 in
+  let* { rw; clone; _ } = Context.with_empty_index ~lru_size () in
+  let ro = clone ~readonly:true () in
+  let k1, v1 = (Key.v (), Value.v ()) in
+  let k2, v2, v2' = (Key.v (), Value.v (), Value.v ()) in
+  Index.replace rw k1 v1;
+  Index.replace rw k2 v2;
+  Index.flush rw;
+  Index.sync ro;
+  check_value __POS__ ~expected:v1 (Index.find ro k1);
+  check_value __POS__ ~expected:v2 (Index.find ro k2);
+
+  (* Update [k2] only: [k1] stays in the LRU. *)
+  Index.replace rw k2 v2';
+  Index.flush rw;
+  Index.sync ro;
+  Stats.reset_stats ();
+  check_value __POS__ ~expected:v1 (Index.find ro k1);
+  check_lru_stats __POS__ ~hits:1 ~misses:0;
+  check_value __POS__ ~expected:v2' (Index.find ro k2);
+  check_lru_stats __POS__ ~hits:1 ~misses:1
+
 let tests =
   [
     ("replace_and_find", `Quick, test_replace_and_find);
     ("mem", `Quick, test_mem);
     ("clear", `Quick, test_clear);
     ("filter", `Quick, test_filter);
+    ("readonly sync", `Quick, test_ro_sync);
   ]

@@ -1,6 +1,11 @@
 (* Regression test for a read-only instance that syncs in one domain while
    another domain calls [find] on it. A [find] running in the middle of the sync
-   must not put an outdated value in the LRU. *)
+   must not put an outdated value in the LRU.
+
+   This test reliably detects a sync that clears the LRU before loading the new
+   bindings without holding the lock of [find]. With the per-key invalidation
+   of the LRU, the race window is much narrower, and a missing lock is only
+   detected now and then. *)
 
 open Common
 

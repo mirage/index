@@ -23,11 +23,13 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) : sig
   type key := Key.t
   type value := Value.t
 
-  val create : IO.t -> t
+  val create : ?on_key:(key -> unit) -> IO.t -> t
   (** [create io] constructs a write-ahead log from an IO handle referencing an
       unordered sequence of (binary encoded) [key * value] bindings. The
       bindings are read into memory, and any subsequent {!replace} operations
-      are reflected on disk. *)
+      are reflected on disk. [on_key], which does nothing by default, is called
+      on the key of each binding read. It must not keep the key, which may be
+      reused for the next binding. *)
 
   val close : t -> unit
 
@@ -50,9 +52,9 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) : sig
   (** [io t] is [t]'s underlying IO handle. Any updates to the file will not be
       reflected in the in-memory mirror of its state. *)
 
-  val sync_entries : min:int63 -> t -> unit
+  val sync_entries : ?on_key:(key -> unit) -> min:int63 -> t -> unit
   (** [sync_entries ~min t] loads the entries from [log]'s IO into memory,
-      starting from offset [min]. *)
+      starting from offset [min]. [on_key] is called as in {!create}. *)
 
   val flush : ?no_callback:unit -> with_fsync:bool -> t -> unit
   (** [flush t] is [IO.flush (io t)]. *)
