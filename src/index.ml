@@ -177,8 +177,6 @@ struct
     writer_lock : IO.Lock.t option;
         (** A lock that prevents multiple RW instances to be open at the same
             time. *)
-    sync_lock : Semaphore.t;
-        (** A lock that prevents multiple [sync] to happen at the same time. *)
     merge_lock : Semaphore.t;
         (** A lock that prevents multiple [merges] to happen at the same time. *)
     rename_lock : Semaphore.t;
@@ -357,9 +355,13 @@ struct
         else t.index <- Some { fan_out; io }
 
   (** Syncs an instance entirely, by checking on-disk changes for [log], [sync],
-      and [log_async]. *)
+      and [log_async].
+
+      It holds [rename_lock], like [find]: a [find] running between the
+      invalidation of the LRU and the loading of the new bindings would put an
+      outdated value back in the LRU. This also serializes the syncs. *)
   let sync_instance ?(hook = fun _ -> ()) t =
-    Semaphore.with_acquire "sync" t.sync_lock @@ fun () ->
+    Semaphore.with_acquire "sync" t.rename_lock @@ fun () ->
     Log.debug (fun l ->
         l "[%s] checking for changes on disk (generation=%a)"
           (Filename.basename t.root) Int63.pp t.generation);
@@ -628,7 +630,6 @@ struct
       open_instances = 1;
       merge_lock = Semaphore.make true;
       rename_lock = Semaphore.make true;
-      sync_lock = Semaphore.make true;
       writer_lock;
       pending_cancel = false;
     }

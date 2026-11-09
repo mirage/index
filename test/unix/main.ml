@@ -1115,5 +1115,6 @@ let () =
       ("throttle", Throttle.tests);
       ("zero-size values", Zero_size_value.tests);
       ("concurrent find", Concurrent_find.tests);
+      ("concurrent sync", Concurrent_sync.tests);
       ("raw header", Raw_header.tests);
     ]
