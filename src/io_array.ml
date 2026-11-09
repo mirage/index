@@ -92,8 +92,7 @@ module Make (IO : Io.S) (Elt : ELT) :
   let get t i =
     let off = Int63.(i * Elt.encoded_sizeL) in
     match t.window with
-    | Some b when is_in_buffer t off -> (
-        try get_entry_from_buffer t b off with _ -> assert false)
+    | Some b when is_in_buffer t off -> get_entry_from_buffer t b off
     | _ -> get_entry_from_io t.io off
 
   let length t = Int63.div (IO.offset t.io) Elt.encoded_sizeL
