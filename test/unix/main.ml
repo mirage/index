@@ -1110,4 +1110,5 @@ let () =
       ("flush_callback", Flush_callback.tests);
       ("throttle", Throttle.tests);
       ("zero-size values", Zero_size_value.tests);
+      ("concurrent find", Concurrent_find.tests);
     ]

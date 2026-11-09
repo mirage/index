@@ -149,6 +149,8 @@ struct
             header of [io]. *)
   }
 
+  module IOArray = Io_array.Make (IO) (Entry)
+
   type instance = {
     config : config;
     root : string;  (** The root location of the index *)
@@ -169,6 +171,9 @@ struct
     mutable open_instances : int;
         (** The number of open instances that are shared through the [Cache.t]. *)
     mutable lru : Lru.t;
+    prefetch_buffer : IOArray.prefetch_buffer;
+        (** The buffer in which [find] prefetches entries of [index], guarded by
+            [rename_lock]. *)
     writer_lock : IO.Lock.t option;
         (** A lock that prevents multiple RW instances to be open at the same
             time. *)
@@ -417,8 +422,6 @@ struct
 
   (** {1 Find and Mem}*)
 
-  module IOArray = Io_array.Make (IO) (Entry)
-
   module Search =
     Search.Make (Entry) (IOArray)
       (struct
@@ -445,14 +448,16 @@ struct
           Int63.of_float rounded
       end)
 
-  let interpolation_search index key =
+  let interpolation_search prefetch_buffer index key =
     let hashed_key = K.hash key in
     let low_bytes, high_bytes = Fan.search index.fan_out hashed_key in
     let low, high =
       Int63.
         (div low_bytes Entry.encoded_sizeL, div high_bytes Entry.encoded_sizeL)
     in
-    Search.interpolation_search (IOArray.v index.io) key ~low ~high
+    Search.interpolation_search
+      (IOArray.v prefetch_buffer index.io)
+      key ~low ~high
 
   (** Finds the value associated to [key] in [t]. In order, checks in
       [log_async] (in memory), then [log] (in memory), then [index] (on disk). *)
@@ -471,7 +476,9 @@ struct
     in
     let find_log () = find_if_exists ~name:"log" ~find:Log_file.find t.log in
     let find_index () =
-      find_if_exists ~name:"index" ~find:interpolation_search t.index
+      find_if_exists ~name:"index"
+        ~find:(interpolation_search t.prefetch_buffer)
+        t.index
     in
     Semaphore.with_acquire "find_instance" t.rename_lock @@ fun () ->
     match Lru.find t.lru key with
@@ -617,6 +624,7 @@ struct
       root;
       index;
       lru = Lru.create lru_size;
+      prefetch_buffer = IOArray.prefetch_buffer ();
       open_instances = 1;
       merge_lock = Semaphore.make true;
       rename_lock = Semaphore.make true;

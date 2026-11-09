@@ -29,7 +29,16 @@ module type S = sig
 
   type io
 
-  val v : io -> t
+  type prefetch_buffer
+  (** The buffer in which an array prefetches its entries. *)
+
+  val prefetch_buffer : unit -> prefetch_buffer
+  (** [prefetch_buffer ()] is a fresh prefetch buffer, of 32 KiB. *)
+
+  val v : prefetch_buffer -> io -> t
+  (** [v buf io] is the array of the entries of [io]. It prefetches entries in
+      [buf], which can be reused by successive arrays, but not by arrays used
+      concurrently. *)
 end
 
 (** Takes an IO instance and wraps it in an Array interface with support for
