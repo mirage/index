@@ -1,127 +1,159 @@
-(** [Raw] wraps a file-descriptor with an file-format used internally by Index;
-    now it is is also used by irmin-pack's pack store (and maybe others)
+(** [Raw] wraps a file descriptor with the file format used by Index.
 
-    The implementation uses a file descriptor, but uses space at the beginning
-    of the file for 4 fields:
+    The file starts with a header made of four fields, followed by the data:
 
-    - {b offset}: a 64-bit integer, denoting the length of the file containing
-      valid data; typically data is written to the end of a file, but not
-      considered "valid" until a later fsync completes; in this module, there is
-      no relation between the {!fsync} function, and the offset field - the
-      offset field is uninterpreted and it is up to users of this module to set
-      the offset appropriately
+    - {b offset} (bytes 0 to 7): the length of the valid data that follows the
+      header. This module does not interpret it: callers update it after writing
+      data, and {!fsync} does not write it;
+    - {b version} (bytes 8 to 15): an 8-byte string, not interpreted by this
+      module. Index writes ["00000001"] and refuses to open a file with another
+      version;
+    - {b generation} (bytes 16 to 23): not interpreted by this module. Index
+      increments it on every [clear] and [merge], and writes it in the headers
+      of the files it rewrites. Read-only instances compare the generation of
+      the log file with the one they know to decide whether to reload their
+      files;
+    - {b fan} (from byte 24): the length of the fan on bytes 24 to 31, followed
+      by the fan itself. Index stores the fan-out of its data file there, and an
+      empty fan in its log files.
 
-    - {b version}: an 8-byte version string; in this module we don't impose any
-      restrictions on this field, but elsewhere it is typically used to
-      distinguish different formats of the file data (see irmin-pack's [Version]
-      module - were the way to encode objects was changed from [`V1] to [`V2];
-      [Version.set t s] will use exactly the first 8 bytes of the version
-      string; if the string is smaller there will be an error
+    Offset, generation and the length of the fan are [int63] values encoded on 8
+    bytes, in big-endian order.
 
-    - {b generation}: a 64-bit integer denoting the generation number; like
-      [version], this is not interpreted any further in this module, but
-      elsewhere it may be used, for example, as a counter to indicate that other
-      RO processes need to reload data
+    Because of the fan, the header has no fixed size: it is 32 bytes plus the
+    length of the fan. This module does not compute it: callers do, as
+    [Index_unix] does.
 
-    - {b fan}: a 64-bit length field, followed by a string containing that many
-      bytes; again, this is uninterpreted in this module, but is used by the
-      Index's fan; note that this field means that the header does not have a
-      fixed size
+    Files written with {!Header_prefix} have a different layout: their header is
+    made of the offset and the version only, and their data starts at byte 16.
 
-    How does the user know where the header ends and the file data begins? One
-    option is to call {!fstat} after initializing the header info. In fact, in
-    {!Index_unix} there is a separate computation of the header size:
-    [let header = eight ++ eight ++ eight ++ eight ++
-fan_size]; presumably
-    other users of this module do the same. *)
+    The functions below that read the header raise {!Not_written} when the file
+    ends at or before the first byte they read. *)
 
 open! Import
 
 type t
-(** The type of [raw] file handles. The implementation is just a plain
-    {!Unix.file_descr}. *)
+(** The type of [raw] file handles. *)
 
 val v : Unix.file_descr -> t
-(** Construct a [raw] value from a file descriptor; this just wraps the file
-    descriptor; it does not read or write headers etc; for example, when called
-    on an empty file the [v] constructor will not read or write any data to the
-    file; it is up to the user to correctly initialize the headers. *)
+(** [v fd] is a [raw] file handle for [fd]. It does not read or write anything:
+    the caller must initialise the header of a new file. *)
 
 val unsafe_write : t -> off:int63 -> string -> int -> int -> unit
-(** [unsafe_write t ~off s soff len] writes data from [s] at position [soff] to
-    the underlying file at position [off]; No account is made for the existence
-    of the header
-    - the user must make sure they write at offsets beyond the end of the header
-      data. *)
+(** [unsafe_write t ~off s soff len] writes the [len] bytes of [s] starting at
+    [soff] to the file, at offset [off]. Offsets are absolute: the caller must
+    write past the header.
+
+    The bounds are not checked: [soff] and [len] must designate a valid
+    substring of [s].
+
+    @raise Unix.Unix_error if a system call fails. *)
 
 val unsafe_read : t -> off:int63 -> len:int -> bytes -> int
-(** [unsafe_read t ~off ~len buf] reads upto [len] bytes of data into [buf] and
-    returns the number of bytes actually read. Again, no account is made for the
-    existence of the header - the user must make sure they read at offsets
-    beyond the end of the header data. *)
+(** [unsafe_read t ~off ~len buf] reads at most [len] bytes from the file, at
+    offset [off], into [buf] starting at index [0]. It returns the number of
+    bytes read, which is less than [len] only at the end of the file. Offsets
+    are absolute: the caller must read past the header.
+
+    The bounds are not checked: [len] must be between [0] and the length of
+    [buf].
+
+    @raise Unix.Unix_error if a system call fails. *)
 
 val fsync : t -> unit
-val close : t -> unit
-val fstat : t -> Unix.stats
+(** [fsync t] flushes the file to disk with [Unix.fsync]. *)
 
-(* FIXME rename this exception? *)
+val close : t -> unit
+(** [close t] closes the underlying file descriptor. *)
+
+val fstat : t -> Unix.stats
+(** [fstat t] is the result of [Unix.fstat] on the underlying file descriptor.
+    Its [st_size] includes the header. *)
+
 exception Not_written
-(** An exception that can be raised when {b reading} (not writing!) header
-    fields, in case the amount of bytes requested for a field is not the amount
-    of bytes actually read from file. This presumably happens only for files
-    that are not initialized correctly, i.e., they do not contain a full header. *)
+(** The exception raised when reading the header of a file that ends at or
+    before the first byte to read, for instance an empty file. A file that ends
+    after this byte but before the end of what is read raises [Assert_failure]
+    instead. *)
 
 module Version : sig
   val get : t -> string
-  (** Return the version as a string of length 8 *)
+  (** [get t] is the version, a string of 8 bytes. *)
 
   val set : t -> string -> unit
-  (** [set t s] sets the version to [s]; uses first 8 bytes of [s]; error if
-      [s]'s length is less than 8 *)
+  (** [set t s] writes the first 8 bytes of [s] as the version. [s] must be at
+      least 8 bytes long: this is not checked, and the bytes written after the
+      end of a shorter string are unspecified. *)
 end
 
+(** The offset, in bytes 0 to 7. *)
 module Offset : sig
   val get : t -> int63
   val set : t -> int63 -> unit
 end
 
+(** The generation, in bytes 16 to 23. *)
 module Generation : sig
   val get : t -> int63
   val set : t -> int63 -> unit
 end
 
+(** The fan, from byte 24. *)
 module Fan : sig
   val get : t -> string
+  (** [get t] reads the length of the fan, then the fan itself. *)
+
   val set : t -> string -> unit
+  (** [set t s] writes the length of [s], then [s]. The data follows the fan, so
+      [s] must have the length reserved with {!set_size}. *)
+
   val get_size : t -> int63
+  (** [get_size t] is the length of the fan. *)
+
   val set_size : t -> int63 -> unit
+  (** [set_size t n] writes the length of the fan only. It reserves [n] bytes
+      for a fan written later with {!set}. *)
 end
 
+(** The first three fields of the header, read or written with a single system
+    call. The fan is not read nor written. *)
 module Header : sig
   type raw
 
   type t = {
-    offset : int63;  (** The length of the file containing valid data *)
-    version : string;  (** Format version *)
-    generation : int63;  (** Generation number *)
+    offset : int63;  (** The length of the valid data after the header. *)
+    version : string;  (** The version, a string of 8 bytes. *)
+    generation : int63;  (** The generation. *)
   }
 
   val get : raw -> t
+  (** [get t] reads bytes 0 to 23. *)
+
   val set : raw -> t -> unit
+  (** [set t h] writes bytes 0 to 23.
+
+      @raise Assert_failure if [h.version] is not 8 bytes long. *)
 end
 with type raw := t
 
-(** Functions for interacting with the header format {i without} the generation
-    number, provided for use in [irmin-pack]. *)
+(** The header of the files that only have an offset and a version, and whose
+    data starts at byte 16, as in the legacy stores of irmin-pack up to 3.8.
+    {!Generation}, {!Fan} and {!Header} must not be used on such files: the
+    fields they access overlap the data. *)
 module Header_prefix : sig
   type raw
 
   type t = {
-    offset : int63;  (** The length of the file containing valid data *)
-    version : string;  (** Format version *)
+    offset : int63;  (** The length of the valid data after the header. *)
+    version : string;  (** The version, a string of 8 bytes. *)
   }
 
   val get : raw -> t
+  (** [get t] reads bytes 0 to 15. *)
+
   val set : raw -> t -> unit
+  (** [set t h] writes bytes 0 to 15.
+
+      @raise Assert_failure if [h.version] is not 8 bytes long. *)
 end
 with type raw := t

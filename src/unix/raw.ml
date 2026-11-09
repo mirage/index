@@ -18,8 +18,9 @@ let really_write fd fd_offset buffer buffer_offset length =
   in
   aux fd_offset buffer_offset length
 
-(* NOTE the return value is the number of bytes read; this is not completely obvious from
-   the code *)
+(* [really_read fd off len buf] reads [len] bytes at [off] into [buf], from
+   index 0, retrying after short reads. It returns the number of bytes read,
+   which is less than [len] only at the end of the file. *)
 let really_read fd fd_offset length buffer =
   let rec aux fd_offset buffer_offset length =
     let r = Syscalls.pread ~fd ~fd_offset ~buffer ~buffer_offset ~length in
