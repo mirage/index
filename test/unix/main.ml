@@ -631,11 +631,15 @@ module Readonly = struct
     Index.check_binding ro k v1;
     let t = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
     Semaphore.acquire merge_started;
-    Index.replace rw k v2;
-    Index.flush rw;
-    Index.sync ro;
-    let found = Index.find ro k in
-    Semaphore.release merge;
+    let found =
+      Fun.protect
+        ~finally:(fun () -> Semaphore.release merge)
+        (fun () ->
+          Index.replace rw k v2;
+          Index.flush rw;
+          Index.sync ro;
+          Index.find ro k)
+    in
     Index.await t |> check_completed;
     Alcotest.(check string) "value found during the merge" v2 found
 
