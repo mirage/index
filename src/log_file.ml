@@ -73,15 +73,17 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     assert (r = len);
     fst (Entry.decode_key (Bytes.unsafe_to_string scratch.buffer) 0)
 
-  let entry_of_offset t (scratch : Scratch.t) off =
+  (* [entry_of_offset ~kept t scratch off] is the entry at [off]. [kept] tells
+     whether the caller may keep its key after [scratch] is reused. *)
+  let entry_of_offset ~kept t (scratch : Scratch.t) off =
     let len = Entry.encoded_size in
     let r = IO.read t.io ~off ~len scratch.buffer in
     assert (r = Entry.encoded_size);
     let s =
-      if Value.encoded_size = 0 then
+      if kept && Value.encoded_size = 0 then
         (* The scratch buffer then holds exactly one key, which [Key.decode]
-           may return without copying it (see [Data.Key.decode]). The entries
-           are kept, for instance by [to_sorted_seq], so copy the buffer. *)
+           may return without copying it (see [Data.Key.decode]): copy the
+           buffer so that the key outlives it. *)
         Bytes.to_string scratch.buffer
       else Bytes.unsafe_to_string scratch.buffer
     in
@@ -191,8 +193,8 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     let scratch = Scratch.create () in
     Small_list.find_map bucket ~f:(fun offset ->
         (* We expect the keys to match most of the time, so we decode the
-           value at the same time. *)
-        let entry = entry_of_offset t scratch offset in
+           value at the same time. Only the value is kept. *)
+        let entry = entry_of_offset ~kept:false t scratch offset in
         match Key.equal key entry.key with
         | false -> None
         | true -> Some entry.value)
@@ -204,14 +206,14 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     let scratch = Scratch.create () in
     ArrayLabels.fold_left t.hashtbl ~init ~f:(fun acc bucket ->
         Small_list.fold_left bucket ~init:acc ~f:(fun acc offset ->
-            let entry = entry_of_offset t scratch offset in
+            let entry = entry_of_offset ~kept:true t scratch offset in
             f acc entry))
 
   let iter t ~f =
     let scratch = Scratch.create () in
     ArrayLabels.iter t.hashtbl ~f:(fun bucket ->
         Small_list.iter bucket ~f:(fun offset ->
-            f (entry_of_offset t scratch offset)))
+            f (entry_of_offset ~kept:true t scratch offset)))
 
   let to_sorted_seq t =
     let scratch = Scratch.create () in
@@ -219,7 +221,7 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     |> Seq.flat_map (fun bucket ->
            let arr =
              Small_list.to_array bucket
-             |> Array.map (fun off -> entry_of_offset t scratch off)
+             |> Array.map (fun off -> entry_of_offset ~kept:true t scratch off)
            in
            Array.sort Entry.compare arr;
            Array.to_seq arr)
