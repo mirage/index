@@ -31,7 +31,11 @@ module type Key = sig
 
   val decode : string -> int -> t
   (** [decode s off] is the decoded form of the encoded value at the offset
-      [off] of string [s]. Must satisfy [decode (encode t) 0 = t]. *)
+      [off] of string [s]. Must satisfy [decode (encode t) 0 = t].
+
+      [s] may be a buffer that is overwritten later, so the result must not keep
+      a reference to [s], except when [off = 0] and [s] holds exactly one key:
+      [Repr.decode_bin] returns [s] itself in that case. *)
 end
 
 module type Value = sig
@@ -39,7 +43,11 @@ module type Value = sig
 
   val encode : t -> string
   val encoded_size : int
+
   val decode : string -> int -> t
+  (** [decode s off] is the decoded form of the encoded value at the offset
+      [off] of string [s]. [s] may be a buffer that is overwritten later, so the
+      result must not keep a reference to [s]. *)
 end
 
 module Entry = struct

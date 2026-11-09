@@ -79,11 +79,9 @@ module Make (IO : Io.S) (Key : Data.Key) (Value : Data.Value) = struct
     assert (r = Entry.encoded_size);
     let s =
       if Value.encoded_size = 0 then
-        (* Quickfix for a situation where [Key.decode] kept a pointer to [s]
-           when [Value.encoded_size = 0]. This led to a bug where some entries
-           dissapeared post-merge.
-
-           A proper solution will be implemented in the future. *)
+        (* The scratch buffer then holds exactly one key, which [Key.decode]
+           may return without copying it (see [Data.Key.decode]). The entries
+           are kept, for instance by [to_sorted_seq], so copy the buffer. *)
         Bytes.to_string scratch.buffer
       else Bytes.unsafe_to_string scratch.buffer
     in
