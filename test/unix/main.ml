@@ -611,11 +611,10 @@ module Readonly = struct
     Index.sync ro;
     Index.check_binding ro k v2
 
-  (** Readonly finds the new value of a key cached in its LRU, after a sync that
-      loads the update from a new log_async. *)
-  let sync_after_log_async_update () =
-    let* Context.{ rw; clone; _ } = Context.with_empty_index ~lru_size:10 () in
-    let ro = clone ~readonly:true () in
+  (** [with_blocked_merge rw f] starts a merge of [rw] and calls [f] while the
+      merge waits to start, so that the bindings added by [f] go to log_async.
+      It then completes the merge, and returns the result of [f]. *)
+  let with_blocked_merge rw f =
     let merge = Semaphore.make false and merge_started = Semaphore.make false in
     let merge_hook =
       I.Private.Hook.v @@ function
@@ -624,24 +623,83 @@ module Readonly = struct
           Semaphore.acquire merge
       | _ -> ()
     in
-    let k, v1, v2 = (Key.v (), Value.v (), Value.v ()) in
-    Index.replace rw k v1;
-    Index.flush rw;
-    Index.sync ro;
-    Index.check_binding ro k v1;
     let t = Index.try_merge_aux ~force:true ~hook:merge_hook rw in
     Semaphore.acquire merge_started;
+    let complete_merge () =
+      Semaphore.release merge;
+      Index.await t
+    in
+    match f () with
+    | result ->
+        complete_merge () |> check_completed;
+        result
+    | exception e ->
+        (* Wait for the merge before closing the instances, and report the
+           failure of [f] rather than the outcome of the merge. *)
+        let bt = Printexc.get_raw_backtrace () in
+        let (_ : (_, _) result) = complete_merge () in
+        Printexc.raise_with_backtrace e bt
+
+  (** [update ?hook rw ro k v] binds [k] to [v] in [rw], then syncs [ro]. *)
+  let update ?hook rw ro k v =
+    Index.replace rw k v;
+    Index.flush rw;
+    Index.sync' ?hook ro
+
+  (** Readonly finds the new value of a key cached in its LRU, after a sync that
+      loads the update from a new log_async. *)
+  let sync_after_log_async_update () =
+    let* Context.{ rw; clone; _ } = Context.with_empty_index ~lru_size:10 () in
+    let ro = clone ~readonly:true () in
+    let k, v1, v2 = (Key.v (), Value.v (), Value.v ()) in
+    update rw ro k v1;
+    Index.check_binding ro k v1;
     let found =
-      Fun.protect
-        ~finally:(fun () -> Semaphore.release merge)
-        (fun () ->
-          Index.replace rw k v2;
-          Index.flush rw;
-          Index.sync ro;
+      with_blocked_merge rw (fun () ->
+          update rw ro k v2;
           Index.find ro k)
     in
-    Index.await t |> check_completed;
     Alcotest.(check string) "value found during the merge" v2 found
+
+  (** Readonly finds the new value of a key cached in its LRU, after a sync that
+      reads the update from the log_async it has already loaded. *)
+  let sync_after_log_async_append () =
+    let* Context.{ rw; clone; _ } = Context.with_empty_index ~lru_size:10 () in
+    let ro = clone ~readonly:true () in
+    let k, v1, v2, v3 = (Key.v (), Value.v (), Value.v (), Value.v ()) in
+    update rw ro k v1;
+    let found =
+      with_blocked_merge rw (fun () ->
+          update rw ro k v2;
+          Index.check_binding ro k v2;
+          update rw ro k v3;
+          Index.find ro k)
+    in
+    Alcotest.(check string) "value found during the merge" v3 found
+
+  (** Readonly finds the new value of a key cached in its LRU, after a sync that
+      reloads the log_async of a second merge. *)
+  let sync_after_second_merge () =
+    let* Context.{ rw; clone; _ } = Context.with_empty_index ~lru_size:10 () in
+    let ro = clone ~readonly:true () in
+    let k, v1, v2, v3 = (Key.v (), Value.v (), Value.v (), Value.v ()) in
+    update rw ro k v1;
+    with_blocked_merge rw (fun () ->
+        update rw ro k v2;
+        Index.check_binding ro k v2);
+    let reload_log_async = ref 0 in
+    let hook =
+      I.Private.Hook.v @@ function
+      | `Reload_log_async -> incr reload_log_async
+      | _ -> ()
+    in
+    let found =
+      with_blocked_merge rw (fun () ->
+          update ~hook rw ro k v3;
+          Index.find ro k)
+    in
+    Alcotest.(check int) "reloadings of log_async" 1 !reload_log_async;
+    Alcotest.(check string) "value found during the merge" v3 found
 
   let tests =
     [
@@ -671,6 +729,8 @@ module Readonly = struct
       ("reload log and log async", `Quick, reload_log_async);
       ("sync after log update", `Quick, sync_after_log_update);
       ("sync after log_async update", `Quick, sync_after_log_async_update);
+      ("sync after log_async append", `Quick, sync_after_log_async_append);
+      ("sync after a second merge", `Quick, sync_after_second_merge);
     ]
 end
 
