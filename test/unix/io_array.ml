@@ -42,7 +42,7 @@ let populate_random ~size io =
         loop (e :: acc) (n - 1)
   in
   let mem_arr = Array.of_list (List.rev (loop [] size)) in
-  let io_arr = IOArray.v io in
+  let io_arr = IOArray.v (IOArray.prefetch_buffer ()) io in
   IO.flush io;
   (mem_arr, io_arr)
 

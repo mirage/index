@@ -10,7 +10,10 @@ let v fd = { fd }
 let really_write fd fd_offset buffer buffer_offset length =
   let rec aux fd_offset buffer_offset length =
     let w = Syscalls.pwrite ~fd ~fd_offset ~buffer ~buffer_offset ~length in
-    if w = 0 || w = length then ()
+    if w = length then ()
+    else if w = 0 then
+      Fmt.failwith
+        "Raw.unsafe_write: %d bytes left to write, but pwrite wrote none" length
     else
       (aux [@tailcall])
         (fd_offset ++ Int63.of_int w)
@@ -18,6 +21,9 @@ let really_write fd fd_offset buffer buffer_offset length =
   in
   aux fd_offset buffer_offset length
 
+(* [really_read fd off len buf] reads [len] bytes at [off] into [buf], from
+   index 0, retrying after short reads. It returns the number of bytes read,
+   which is less than [len] only at the end of the file. *)
 let really_read fd fd_offset length buffer =
   let rec aux fd_offset buffer_offset length =
     let r = Syscalls.pread ~fd ~fd_offset ~buffer ~buffer_offset ~length in
@@ -53,15 +59,13 @@ let decode_int63 buf = Int63.decode ~off:0 buf
 
 exception Not_written
 
-let assert_read ~len n =
-  if n = 0 && n <> len then raise Not_written;
-  assert (
-    if Int.equal n len then true
-    else (
-      Printf.eprintf "Attempted to read %d bytes, but got %d bytes instead!\n%!"
-        len n;
-      false))
-[@@inline always]
+(* A short read means that the file ends before the end of the field: the
+   header is missing or was only partly written. *)
+let check_read ~len n = if n < len then raise Not_written [@@inline always]
+
+let check_version_length ~fn v =
+  if String.length v <> 8 then
+    Fmt.invalid_arg "Raw.%s: the version %S is not 8 bytes long" fn v
 
 module Offset = struct
   let off = Int63.zero
@@ -71,7 +75,7 @@ module Offset = struct
     let len = 8 in
     let buf = Bytes.create len in
     let n = unsafe_read t ~off ~len buf in
-    assert_read ~len n;
+    check_read ~len n;
     decode_int63 (Bytes.unsafe_to_string buf)
 end
 
@@ -82,10 +86,12 @@ module Version = struct
     let len = 8 in
     let buf = Bytes.create len in
     let n = unsafe_read t ~off ~len buf in
-    assert_read ~len n;
+    check_read ~len n;
     Bytes.unsafe_to_string buf
 
-  let set t v = unsafe_write t ~off v 0 8
+  let set t v =
+    check_version_length ~fn:"Version.set" v;
+    unsafe_write t ~off v 0 8
 end
 
 module Generation = struct
@@ -95,7 +101,7 @@ module Generation = struct
     let len = 8 in
     let buf = Bytes.create len in
     let n = unsafe_read t ~off ~len buf in
-    assert_read ~len n;
+    check_read ~len n;
     decode_int63 (Bytes.unsafe_to_string buf)
 
   let set t gen = unsafe_write t ~off (encode_int63 gen) 0 8
@@ -114,7 +120,7 @@ module Fan = struct
     let len = 8 in
     let size_buf = Bytes.create len in
     let n = unsafe_read t ~off ~len size_buf in
-    assert_read ~len n;
+    check_read ~len n;
     decode_int63 (Bytes.unsafe_to_string size_buf)
 
   let set_size t size =
@@ -125,7 +131,7 @@ module Fan = struct
     let size = Int63.to_int (get_size t) in
     let buf = Bytes.create size in
     let n = unsafe_read t ~off:(off ++ Int63.of_int 8) ~len:size buf in
-    assert_read ~len:size n;
+    check_read ~len:size n;
     Bytes.unsafe_to_string buf
 end
 
@@ -145,14 +151,14 @@ module Header = struct
   let get t =
     let header = Bytes.create total_header_length in
     let n = unsafe_read t ~off:Int63.zero ~len:total_header_length header in
-    assert_read ~len:total_header_length n;
+    check_read ~len:total_header_length n;
     let offset = read_word header 0 |> decode_int63 in
     let version = read_word header 8 in
     let generation = read_word header 16 |> decode_int63 in
     { offset; version; generation }
 
   let set t { offset; version; generation } =
-    assert (String.length version = 8);
+    check_version_length ~fn:"Header.set" version;
     let b = Bytes.create total_header_length in
     Bytes.blit_string (encode_int63 offset) 0 b 0 8;
     Bytes.blit_string version 0 b 8 8;
@@ -177,13 +183,13 @@ module Header_prefix = struct
   let get t =
     let header = Bytes.create total_header_length in
     let n = unsafe_read t ~off:Int63.zero ~len:total_header_length header in
-    assert_read ~len:total_header_length n;
+    check_read ~len:total_header_length n;
     let offset = read_word header 0 |> decode_int63 in
     let version = read_word header 8 in
     { offset; version }
 
   let set t { offset; version } =
-    assert (String.length version = 8);
+    check_version_length ~fn:"Header_prefix.set" version;
     let b = Bytes.create total_header_length in
     Bytes.blit_string (encode_int63 offset) 0 b 0 8;
     Bytes.blit_string version 0 b 8 8;

@@ -223,7 +223,10 @@ module type Private = sig
 
       - [`Before_offset_read]: before reading the generation number and the
         offset.
-      - [`After_offset_read]: after reading the generation number and offset. *)
+      - [`After_offset_read]: after reading the generation number and offset.
+
+      The hooks run while [sync] holds the lock of the instance, so they must
+      not call [find], [mem] or [sync] on it. *)
 
   val log : t -> (key * value) list option
   val log_async : t -> (key * value) list option

@@ -65,6 +65,7 @@ struct
     val create : int -> t
     val add : t -> key -> value -> unit
     val find : t -> key -> value option
+    val remove : t -> key -> unit
     val clear : t -> unit
   end = struct
     module Lru =
@@ -98,6 +99,7 @@ struct
       Lru.add k v t;
       Lru.trim t
 
+    let remove t k = Lru.remove k !t
     let clear t = t := Lru.create (Lru.capacity !t)
   end
 
@@ -149,6 +151,8 @@ struct
             header of [io]. *)
   }
 
+  module IOArray = Io_array.Make (IO) (Entry)
+
   type instance = {
     config : config;
     root : string;  (** The root location of the index *)
@@ -169,11 +173,12 @@ struct
     mutable open_instances : int;
         (** The number of open instances that are shared through the [Cache.t]. *)
     mutable lru : Lru.t;
+    prefetch_buffer : IOArray.prefetch_buffer;
+        (** The buffer in which [find] prefetches entries of [index], guarded by
+            [rename_lock]. *)
     writer_lock : IO.Lock.t option;
         (** A lock that prevents multiple RW instances to be open at the same
             time. *)
-    sync_lock : Semaphore.t;
-        (** A lock that prevents multiple [sync] to happen at the same time. *)
     merge_lock : Semaphore.t;
         (** A lock that prevents multiple [merges] to happen at the same time. *)
     rename_lock : Semaphore.t;
@@ -277,14 +282,15 @@ struct
 
   (** {1 RO instances syncing} *)
 
-  (** Loads the log file at [path], if it exists. Used by RO instances to load
-      the temporary [log_async], or to fill the [log] field when they have been
-      created before their RW counterpart. *)
-  let try_load_log t path =
+  (** Loads the log file at [path], if it exists, calling [on_key] on the key of
+      each of its entries. Used by RO instances to load the temporary
+      [log_async], or to fill the [log] field when they have been created before
+      their RW counterpart. *)
+  let try_load_log ?on_key t path =
     match IO.v_readonly path with
     | Error `No_file_on_disk -> None
     | Ok io ->
-        let log = Log_file.create io in
+        let log = Log_file.create ?on_key io in
         Log.debug (fun l ->
             l "[%s] loaded %d entries from %s" (Filename.basename t.root)
               (Log_file.cardinal log) (Filename.basename path));
@@ -295,7 +301,10 @@ struct
     match t.log_async with
     | None ->
         hook `Reload_log_async;
-        t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
+        (* The entries of a new [log_async] may update keys cached in the LRU. *)
+        t.log_async <-
+          try_load_log ~on_key:(Lru.remove t.lru) t
+            (Layout.log_async ~root:t.root)
     | Some log ->
         let old_generation = t.generation in
         let old_offset = IO.offset (Log_file.io log) in
@@ -310,10 +319,15 @@ struct
           Log_file.close log;
           (* check that file is on disk, reopen and reload everything. *)
           hook `Reload_log_async;
-          t.log_async <- try_load_log t (Layout.log_async ~root:t.root)
+          (* Only the keys of the new [log_async] must leave the LRU: the
+             bindings of the previous one were copied into [log], and a merge
+             changes the generation of [log], which clears the LRU. *)
+          t.log_async <-
+            try_load_log ~on_key:(Lru.remove t.lru) t
+              (Layout.log_async ~root:t.root)
           (* else if the disk offset is greater, reload the newest data. *))
         else if old_offset < h.offset then
-          Log_file.sync_entries ~min:old_offset log
+          Log_file.sync_entries ~on_key:(Lru.remove t.lru) ~min:old_offset log
           (* else if the offset is lesser, that means the [log_async] was
              cleared, and the generation should have changed. *)
         else if old_offset > h.offset then (
@@ -327,6 +341,7 @@ struct
                  Reloading the log to compensate." (Filename.basename t.root)
                 Int63.pp old_offset Int63.pp h.offset Int63.pp old_generation
                 Int63.pp h.generation);
+          Lru.clear t.lru;
           Log_file.reload log)
 
   (** Syncs the [index] of the instance by checking on-disk changes. *)
@@ -344,9 +359,16 @@ struct
         else t.index <- Some { fan_out; io }
 
   (** Syncs an instance entirely, by checking on-disk changes for [log], [sync],
-      and [log_async]. *)
+      and [log_async].
+
+      It holds [rename_lock], like [find]: a [find] running between the
+      invalidation of the LRU and the loading of the new bindings would put an
+      outdated value back in the LRU. This also serializes the syncs.
+
+      New bindings only remove their keys from the LRU. A new generation of
+      [log] clears it, as a merge or a clear may have changed any binding. *)
   let sync_instance ?(hook = fun _ -> ()) t =
-    Semaphore.with_acquire "sync" t.sync_lock @@ fun () ->
+    Semaphore.with_acquire "sync" t.rename_lock @@ fun () ->
     Log.debug (fun l ->
         l "[%s] checking for changes on disk (generation=%a)"
           (Filename.basename t.root) Int63.pp t.generation);
@@ -397,7 +419,7 @@ struct
           Log.debug (fun l ->
               l "[%s] new entries detected, reading log from disk"
                 (Filename.basename t.root));
-          Log_file.sync_entries ~min:log_offset log)
+          Log_file.sync_entries ~on_key:(Lru.remove t.lru) ~min:log_offset log)
         else
           (* Here the disk offset should be equal to the known one. A smaller
              offset should not be possible, because that would mean a [clear] or
@@ -407,8 +429,6 @@ struct
               l "[%s] no changes detected" (Filename.basename t.root))
 
   (** {1 Find and Mem}*)
-
-  module IOArray = Io_array.Make (IO) (Entry)
 
   module Search =
     Search.Make (Entry) (IOArray)
@@ -436,14 +456,16 @@ struct
           Int63.of_float rounded
       end)
 
-  let interpolation_search index key =
+  let interpolation_search prefetch_buffer index key =
     let hashed_key = K.hash key in
     let low_bytes, high_bytes = Fan.search index.fan_out hashed_key in
     let low, high =
       Int63.
         (div low_bytes Entry.encoded_sizeL, div high_bytes Entry.encoded_sizeL)
     in
-    Search.interpolation_search (IOArray.v index.io) key ~low ~high
+    Search.interpolation_search
+      (IOArray.v prefetch_buffer index.io)
+      key ~low ~high
 
   (** Finds the value associated to [key] in [t]. In order, checks in
       [log_async] (in memory), then [log] (in memory), then [index] (on disk). *)
@@ -462,7 +484,9 @@ struct
     in
     let find_log () = find_if_exists ~name:"log" ~find:Log_file.find t.log in
     let find_index () =
-      find_if_exists ~name:"index" ~find:interpolation_search t.index
+      find_if_exists ~name:"index"
+        ~find:(interpolation_search t.prefetch_buffer)
+        t.index
     in
     Semaphore.with_acquire "find_instance" t.rename_lock @@ fun () ->
     match Lru.find t.lru key with
@@ -608,10 +632,10 @@ struct
       root;
       index;
       lru = Lru.create lru_size;
+      prefetch_buffer = IOArray.prefetch_buffer ();
       open_instances = 1;
       merge_lock = Semaphore.make true;
       rename_lock = Semaphore.make true;
-      sync_lock = Semaphore.make true;
       writer_lock;
       pending_cancel = false;
     }

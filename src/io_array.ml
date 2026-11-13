@@ -29,7 +29,16 @@ module type S = sig
 
   type io
 
-  val v : io -> t
+  type prefetch_buffer
+  (** The buffer in which an array prefetches its entries. *)
+
+  val prefetch_buffer : unit -> prefetch_buffer
+  (** [prefetch_buffer ()] is a fresh prefetch buffer, of 32 KiB. *)
+
+  val v : prefetch_buffer -> io -> t
+  (** [v buf io] is the array of the entries of [io]. It prefetches entries in
+      [buf], which can be reused by successive arrays, but not by arrays used
+      concurrently. *)
 end
 
 module Make (IO : Io.S) (Elt : ELT) :
@@ -42,36 +51,16 @@ module Make (IO : Io.S) (Elt : ELT) :
 
   type io = IO.t
   type elt = Elt.t
-  type buffer = { buf : bytes; low_off : int63; high_off : int63 }
-  type t = { io : IO.t; mutable buffer : buffer option }
+  type prefetch_buffer = bytes
 
-  let v io = { io; buffer = None }
+  type window = { low_off : int63; high_off : int63 }
+  (** The region of the file held in the prefetch buffer. *)
 
-  let get_entry_from_io io off =
-    let buf = Bytes.create Elt.encoded_size in
-    let n = IO.read io ~off ~len:Elt.encoded_size buf in
-    assert (n = Elt.encoded_size);
-    Elt.decode (Bytes.unsafe_to_string buf) 0
-
-  let get_entry_from_buffer buf off =
-    let buf_off = Int63.(to_int_exn (off - buf.low_off)) in
-    assert (buf_off <= Bytes.length buf.buf);
-    Elt.decode (Bytes.unsafe_to_string buf.buf) buf_off
-
-  let is_in_buffer t off =
-    match t.buffer with
-    | None -> false
-    | Some b ->
-        Int63.compare off b.low_off >= 0 && Int63.compare off b.high_off <= 0
-
-  let get t i =
-    let off = Int63.(i * Elt.encoded_sizeL) in
-    match t.buffer with
-    | Some b when is_in_buffer t off -> (
-        try get_entry_from_buffer b off with _ -> assert false)
-    | _ -> get_entry_from_io t.io off
-
-  let length t = Int63.div (IO.offset t.io) Elt.encoded_sizeL
+  type t = {
+    io : IO.t;
+    prefetch_buffer : prefetch_buffer;
+    mutable window : window option;
+  }
 
   let max_buffer_size =
     (* The prefetched area should not exceed 4096 in most cases, thanks to the
@@ -80,15 +69,41 @@ module Make (IO : Io.S) (Elt : ELT) :
        As long as this excess is reasonable (x8), we still want to prefetch. *)
     8 * 4096
 
-  let buf = Bytes.create max_buffer_size
+  let prefetch_buffer () = Bytes.create max_buffer_size
+  let v prefetch_buffer io = { io; prefetch_buffer; window = None }
+
+  let get_entry_from_io io off =
+    let buf = Bytes.create Elt.encoded_size in
+    let n = IO.read io ~off ~len:Elt.encoded_size buf in
+    assert (n = Elt.encoded_size);
+    Elt.decode (Bytes.unsafe_to_string buf) 0
+
+  let get_entry_from_buffer t window off =
+    let buf_off = Int63.(to_int_exn (off - window.low_off)) in
+    assert (buf_off <= Bytes.length t.prefetch_buffer);
+    Elt.decode (Bytes.unsafe_to_string t.prefetch_buffer) buf_off
+
+  let is_in_buffer t off =
+    match t.window with
+    | None -> false
+    | Some b ->
+        Int63.compare off b.low_off >= 0 && Int63.compare off b.high_off <= 0
+
+  let get t i =
+    let off = Int63.(i * Elt.encoded_sizeL) in
+    match t.window with
+    | Some b when is_in_buffer t off -> get_entry_from_buffer t b off
+    | _ -> get_entry_from_io t.io off
+
+  let length t = Int63.div (IO.offset t.io) Elt.encoded_sizeL
 
   let set_buffer t ~low ~high =
     let range = Elt.encoded_size * (1 + Int63.(to_int_exn (high - low))) in
     let low_off = Int63.mul low Elt.encoded_sizeL in
     let high_off = Int63.mul high Elt.encoded_sizeL in
-    let n = IO.read t.io ~off:low_off ~len:range buf in
+    let n = IO.read t.io ~off:low_off ~len:range t.prefetch_buffer in
     assert (n = range);
-    t.buffer <- Some { buf; low_off; high_off }
+    t.window <- Some { low_off; high_off }
 
   let pre_fetch t ~low ~high =
     let range = Elt.encoded_size * (1 + Int63.(to_int_exn (high - low))) in
@@ -101,7 +116,7 @@ module Make (IO : Io.S) (Elt : ELT) :
           m "Requested pre-fetch [%a, %a] is larger than %d" Int63.pp low
             Int63.pp high max_buffer_size)
     else
-      match t.buffer with
+      match t.window with
       | Some b ->
           let low_buf, high_buf =
             Int63.

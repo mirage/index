@@ -11,6 +11,7 @@ homepage:     "https://github.com/mirage/index"
 bug-reports:  "https://github.com/mirage/index/issues"
 dev-repo:     "git+https://github.com/mirage/index.git"
 doc:          "https://mirage.github.io/index/"
+x-maintenance-intent: [ "(latest)" ]
 
 build: [
  ["dune" "subst"] {dev}

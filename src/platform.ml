@@ -59,8 +59,12 @@ module type THREAD = sig
 end
 
 module type FMT_TTY = sig
+  (** Terminal setup of the standard formatters, as done by [Fmt_tty]. *)
+
   val setup_std_outputs :
     ?style_renderer:Fmt.style_renderer -> ?utf_8:bool -> unit -> unit
+  (** [setup_std_outputs ?style_renderer ?utf_8 ()] sets up the standard
+      formatters, as [Fmt_tty.setup_std_outputs] does. *)
 end
 
 module type S = sig

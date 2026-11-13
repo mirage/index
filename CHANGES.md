@@ -1,11 +1,53 @@
-# Unreleased
+# 1.7.0 (2026-11-13)
+
+## Added
+
+- Add `Stats.merge` and `Stats.merge_in`, to combine the statistics recorded
+  by several domains (#404, @lyrm)
+- Expose the Unix platform as `Index_unix.Private.Platform`, so that
+  `Index.Make` can be applied to it directly (#396, @art-w)
+- Document the file format of `Index_unix.Private.Raw` (#380, @tomjridge,
+  @balat)
 
 ## Changed
 
-- Replace global value of Stats by a DLS.key (#404, @lyrm)
-- Lock files are now opened with O_CLOEXEC flag (#394, @vect0r-vicall)
-- Update to cmdliner.1.1.0 (#382, @MisterDA)
-- Mirage support: optional dependency to unix (#396, @art-w)
+- Breaking: OCaml 5.0 or later is now required (#404, @lyrm)
+- Breaking: statistics are now recorded per domain, in a `Domain.DLS` key,
+  instead of in a global value. `Stats.get` and `Stats.reset_stats` only see
+  the calling domain (#404, @lyrm)
+- Mirage support: `index` no longer depends on `unix`, and `index.unix` is
+  now an optional library (#396, @art-w)
+- Breaking: `Platform.S` and `Checks.Platform_args` now require a `Progress`
+  and a `Fmt_tty` module, and `Private.Logs.setup` and
+  `Private.Logs.setup_term` take an extra `(module Platform.FMT_TTY)`
+  argument (#396, @art-w)
+- Support cmdliner 2.0.0. Cmdliner 1.1.0 or later is now required (#382,
+  @MisterDA, #402, @art-w)
+
+## Fixed
+
+- Lock files are now opened with the `O_CLOEXEC` flag (#394, @vect0r-vicall)
+- Read-only instances could return stale values after `sync`. `sync` now
+  removes from their LRU the keys of the entries it loads, from the log or
+  from the log used during merges. It also holds the lock that `find` takes,
+  so that a concurrent `find` cannot cache an outdated value in the middle of
+  a `sync` (#398, #399, @art-w, #406, @balat)
+- Merges could lose entries, and `iter` could give wrong keys, when values
+  are encoded on zero bytes and the key decoder returns its input string
+  without copying it, as `Repr.decode_bin` does (#387, @Ngoguey42)
+- Concurrent `find`s on distinct instances of the same `Index.Make`
+  application, from several threads or domains, could miss bindings: they
+  shared the buffer in which they prefetch entries of the data file. Each
+  instance now has its own buffer, created with
+  `Private.Io_array.prefetch_buffer` and passed to `Private.Io_array.v`
+  (#406, @balat)
+- `Index_unix.Private.Raw`: reading a truncated header now raises
+  `Not_written`, as for a missing header, instead of failing an assertion.
+  Writing a version that is not 8 bytes long raises `Invalid_argument`, and a
+  write that makes no progress raises `Failure` instead of being dropped
+  (#406, @balat)
+- Add the missing `logs.threaded` dependency of the Unix tests (#400,
+  @anmonteiro)
 
 # 1.6.2 (2023-06-06)
 
